@@ -10,6 +10,8 @@ Una **sesión real del agente Merlin original**, usando su LLM, sus herramientas
 
 El problema se toma **sin reescritura** de `evals/categories/policyImplementation.js`. Se selecciona uno de los escenarios de desarrollo existentes; el agente recibe el **modelo inicial**, la petición original de proponer/implementar una política y los límites del problema. Al finalizar, el evaluador original juzga **una sola generación** mediante tres criterios: la política alcanza el objetivo, no modifica hechos que la dirección no controla y el comportamiento del sistema sigue siendo plausible.
 
+**Distinción metodológica:** usamos el harness original de evaluaciones de Buffalo. Ese harness conserva la configuración de agente del repositorio, pero **agrega una instrucción de modo evaluación** (`EVAL MODE: No User Present`) para que un agente pueda terminar sin que haya un usuario contestando preguntas. Esto no es idéntico a su comportamiento en una sesión interactiva de Stella; la diferencia debe quedar registrada al interpretar el resultado.
+
 La traza registra qué herramientas llamó realmente el agente. La existencia de `run_model`, `get_variable_data` o `get_feedback_information` debe verse en el archivo de resultado, no inferirse de su discurso. Si no llama a alguna, se registra ausencia, no se le concede crédito.
 
 ## Condiciones precisas

@@ -6,8 +6,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { groups, evaluate } from '../evals/categories/policyImplementation.js';
-import { runAgent } from '../agent/utilities/AgentEvalRunner.js';
+import { groups, evaluate } from '../../evals/categories/policyImplementation.js';
+import { runAgent } from '../../agent/utilities/AgentEvalRunner.js';
 
 function fail(message) {
   console.error(message);

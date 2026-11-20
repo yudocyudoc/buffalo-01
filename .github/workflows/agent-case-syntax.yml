@@ -1,19 +1,38 @@
-name: Agent case runner syntax (no LLM)
+name: Buffalo policy benchmark preflight (no LLM)
 on:
   pull_request:
     paths:
       - 'scripts/run-one-native-agent-case.mjs'
+      - 'scripts/preflight-native-policy-case.mjs'
       - '.github/workflows/agent-case-syntax.yml'
 permissions:
   contents: read
 jobs:
-  syntax:
+  preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout original fork
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check agent runner syntax without invoking any provider
-        run: node --check scripts/run-one-native-agent-case.mjs
+          cache: npm
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Full original npm installation
+        run: npm ci
+      - name: Ensure native evaluation simulator PySD
+        run: |
+          python -m pip install -r third-party/PySD-simulator/requirements.txt
+          python -m pip show pysd
+      - name: Syntax-check original agent runner and no-cost preflight
+        run: |
+          node --check scripts/run-one-native-agent-case.mjs
+          node --check scripts/preflight-native-policy-case.mjs
+      - name: Test one original policy scenario and its grader without LLM
+        run: node scripts/preflight-native-policy-case.mjs

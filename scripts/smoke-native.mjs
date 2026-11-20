@@ -50,6 +50,7 @@ async function checkAgentSession() {
             socket.send(JSON.stringify({
               type: 'initialize_session',
               sessionId: msg.sessionId,
+              authenticationKey: '', // Required by MessageProtocol schema, even with no server secret
               clientProduct: 'buffalo-01-smoke',
               clientVersion: '1.0',
               mode: 'sfd',

@@ -17,7 +17,7 @@ La traza registra qué herramientas llamó realmente el agente. La existencia de
 ## Condiciones precisas
 
 - Agente por defecto: `merlin` (puede cambiarse por `themis`, `socrates` o `athena_SFD`; no son métodos equivalentes y no deben agregarse puntuaciones entre sí).
-- Proveedor: `cloudflare`; el bootstrap externo reutiliza los adaptadores IGC y dirige agente + motores originales a Workers AI GLM-5.3, sin cambiar prompts, motores ni evaluación. Ver [integración completa](BUFFALO_CLOUDFLARE_COMPLETO.md).
+- Proveedor: `cloudflare`; el bootstrap externo reutiliza los adaptadores IGC y dirige agente + motores originales a Workers AI Inkling 2 Small (`@cf/thinkingmachines/inkling-2-small`), sin cambiar prompts, motores ni evaluación. Ver [integración completa](BUFFALO_CLOUDFLARE_COMPLETO.md).
 - Un solo escenario de desarrollo, índice `0` por defecto; no se ejecutan grupos completos ni material held-out.
 - Modelo/cliente de evaluación: SD-JSON → XMILE → PySD, en `AgentEvalRunner.js`. **No equivale a Stella** ni demuestra semántica de colas/eventos discretos o Loops That Matter real.
 - La política se evalúa con los graders originales, no un juicio LLM propio.
@@ -65,7 +65,7 @@ En Windows se recomienda WSL2/Linux con `python3` disponible, por el ejecutable 
 
 ## Estado registrado
 
-- Runner original de políticas disponible; transporte Cloudflare implementado en PR separado, pendiente de validación online.
+- Runner original de políticas disponible; transporte Cloudflare migrado a Inkling 2 Small, pendiente de validación online.
 - Código y evaluadores upstream modificados: **no**.
 - Ejecución con LLM y herramientas: **no realizada**.
 - Resultado empresarial: **ninguno**.

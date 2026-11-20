@@ -71,7 +71,7 @@ jobs:
           BUFFALO_AGENT: ${{ inputs.agent }}
           BUFFALO_CASE_INDEX: ${{ inputs.case_index }}
         run: node scripts/run-one-native-agent-case.mjs
-      - name: Preserve reproducible evidence (public repository: review disclosure)
+      - name: Preserve evidence in public repo for manual review
         if: always()
         uses: actions/upload-artifact@v4
         with:

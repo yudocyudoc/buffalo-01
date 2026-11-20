@@ -21,10 +21,10 @@ if (globalThis.__buffaloCloudflare?.provider !== provider) {
 const agentName = process.env.BUFFALO_AGENT || 'merlin';
 const supportedAgents = new Set(['merlin', 'themis', 'socrates', 'athena_SFD']);
 const index = Number(process.env.BUFFALO_CASE_INDEX ?? '0');
-const approval = process.env.BUFFALO_PAID_RUN === 'I_ACCEPT_API_COSTS';
+const approval = process.env.BUFFALO_PAID_RUN === 'I_ACCEPT_CLOUDFLARE_AI_COSTS';
 
 if (!approval) {
-  fail('Paid run disabled. Set BUFFALO_PAID_RUN=I_ACCEPT_API_COSTS to explicitly enable one real LLM agent run.');
+  fail('Paid run disabled. Set BUFFALO_PAID_RUN=I_ACCEPT_CLOUDFLARE_AI_COSTS to explicitly enable the Cloudflare agent run.');
 } else if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
   fail('Cloudflare Workers AI needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.');
 } else if (!supportedAgents.has(agentName)) {

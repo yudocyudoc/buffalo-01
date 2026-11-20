@@ -52,6 +52,7 @@ async function checkAgentSession() {
               sessionId: msg.sessionId,
               authenticationKey: '', // Required by MessageProtocol schema, even with no server secret
               clientProduct: 'buffalo-01-smoke',
+              clientId: 'buffalo-01-smoke-local', // required by SessionManager.initializeSession even if schema says optional
               clientVersion: '1.0',
               mode: 'sfd',
               model: {

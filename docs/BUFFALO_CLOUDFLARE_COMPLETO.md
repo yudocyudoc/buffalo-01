@@ -26,7 +26,7 @@ Merlin (AgentEvalRunner / AgentOrchestrator original)
        get_variable_data, grader nativo, PySD
 ```
 
-**No hay OpenRouter real ni Gemini.** El transporte se activa por precarga en proceso Node y registra dinámicamente `cloudflare` como proveedor de agentes; no se modifican `config.js`, `AgentOrchestrator.js`, `LLMWrapper.js`, los MD de agentes ni los evaluadores.
+Los motores no cuantitativos (Seldon, discusión y generación cualitativa) requieren otros esquemas; añadimos `other-engine-transport.mjs` para transportar su JSON Schema sin modificar los motores originales. **Este camino genérico solo está validado offline**, no se debe confundir con compatibilidad de ejecución demostrada para cada motor.\n\n**No hay OpenRouter real ni Gemini.** El transporte se activa por precarga en proceso Node y registra dinámicamente `cloudflare` como proveedor de agentes; no se modifican `config.js`, `AgentOrchestrator.js`, `LLMWrapper.js`, los MD de agentes ni los evaluadores.
 
 ## Diferencias frente a EV-01 y Q75
 

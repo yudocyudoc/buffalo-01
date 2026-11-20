@@ -10,9 +10,9 @@
 import config from '../../config.js';
 import { createHash } from 'node:crypto';
 import {
-  OR_SLUG, EV01_ADAPTER_VERSION, EV01_CAP, EV01_TIMEOUT_MS,
-  EV01_BUDGET_AUTH, requestToCloudflareEV01, responseToOpenRouter
+  OR_SLUG, EV01_ADAPTER_VERSION, EV01_TIMEOUT_MS, responseToOpenRouter
 } from './arena_b_ev01_cf_adapter.mjs';
+import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
 
 const PROVIDER_MODEL = '@cf/zai-org/glm-5.3';
 const offline = process.env.BUFFALO_CF_OFFLINE === '1';
@@ -85,9 +85,11 @@ globalThis.fetch = async (input, init = {}) => {
     if (method !== 'POST') throw Error('BUFFALO_CF_OPENROUTER_POST_ONLY');
     const requestText = await parseRequestBody(input, init);
     const sdk = JSON.parse(requestText);
-    const wire = requestToCloudflareEV01(sdk, { authorization: EV01_BUDGET_AUTH });
-    const rawWire = JSON.stringify(wire);
+    const adapted = adaptOriginalEngineRequest(sdk);
+    const rawWire = JSON.stringify(adapted.wire);
     const receipt = postReceipt('original-engine-sdk-to-workers-ai', engineUrl, rawWire);
+    receipt.engine_schema_category = adapted.category;
+    receipt.requested_max_completion_tokens = adapted.requestedMax;
     try {
       const response = await nativeFetch(engineUrl, {
         method: 'POST', headers: {

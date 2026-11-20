@@ -81,7 +81,7 @@ jobs:
           BUFFALO_AGENT: ${{ inputs.agent }}
           BUFFALO_CASE_INDEX: ${{ inputs.case_index }}
         run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/run-one-native-agent-case.mjs
-      - name: Save output evidence (repo public: inspect artifact before wider use)
+      - name: Save output evidence after manual public-repo review
         if: always()
         uses: actions/upload-artifact@v4
         with:

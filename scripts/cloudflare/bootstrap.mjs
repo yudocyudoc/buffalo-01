@@ -118,8 +118,16 @@ globalThis.fetch = async (input, init = {}) => {
     try {
       const response = await nativeFetch(input, init);
       receipt.http_status = response.status;
+      // Non-streaming original Buffalo manual loop. Clone without mutating what
+      // the original OpenAI-compatible SDK will parse for function tool calls.
+      try {
+        const body = await response.clone().json();
+        receipt.response_sha256 = sha(JSON.stringify(body));
+        receipt.usage = body?.usage ?? null;
+        receipt.finish_reason = body?.choices?.[0]?.finish_reason ?? null;
+        receipt.tool_calls_count = body?.choices?.[0]?.message?.tool_calls?.length ?? 0;
+      } catch { receipt.response_parse = 'unavailable'; }
       receipt.status = response.ok ? 'HTTP_SUCCESS' : 'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN';
-      // Do not consume the response stream; the original SDK must parse tool calls.
       return response;
     } catch (error) {
       receipt.status = 'FAILED_OR_CONSUMPTION_UNKNOWN';

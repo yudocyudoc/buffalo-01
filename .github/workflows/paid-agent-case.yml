@@ -70,6 +70,7 @@ jobs:
       - name: Validate migrated IGC adapter + runner syntax (no inference)
         run: |
           node --check scripts/cloudflare/bootstrap.mjs
+          node --check scripts/cloudflare/other-engine-transport.mjs
           node --check scripts/run-one-native-agent-case.mjs
           node --check scripts/cloudflare/offline-contract.mjs
       - name: Execute ONE original agent/policy case via Cloudflare

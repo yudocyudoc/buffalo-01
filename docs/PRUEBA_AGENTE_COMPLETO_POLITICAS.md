@@ -24,6 +24,21 @@ La traza registra qué herramientas llamó realmente el agente. La existencia de
 - **Consumo de API:** un solo caso puede incluir múltiples llamadas del agente y los motores. No se impone un límite financiero automático; antes de habilitarlo debe aceptarse ese costo. `merlin.md` permite hasta 50 iteraciones. No ejecutar accidentalmente en CI.
 - El runner escribe traza, modelo y evaluaciones localmente en `benchmark-runs/`, ignorado por Git. No subir archivos con prompts/datos sensibles sin revisión.
 
+## Ejecución manual con GitHub Actions (sin instalación local)
+
+Después de fusionar este PR a `main`, existe una ruta de ejecución del agente original desde **Actions → Buffalo native agent policy case (paid; manual only) → Run workflow**. El workflow **no** se dispara por push ni por pull request: es exclusivamente manual.
+
+1. Crear el secreto del repositorio **Settings → Secrets and variables → Actions → New repository secret**, con nombre `GEMINI_API_KEY`. No escribir la clave en un archivo ni en un mensaje.
+2. Elegir el agente original (`merlin` por defecto) y el índice `0` de un solo escenario de desarrollo.
+3. Seleccionar conscientemente `I_ACCEPT_API_COSTS` en el campo de consentimiento. Con `NO`, el job no se ejecuta.
+4. Consultar en la ejecución el resultado y descargar el artefacto `buffalo-native-agent-policy-evidence`, con modelo final, criterios y traza de herramientas.
+
+El workflow tiene **límite temporal de 25 minutos, pero NO un tope de costo en dólares**. Merlin permite numerosas iteraciones. No habilitarlo sin comprender el consumo posible y vigilar el gasto del proveedor. El secreto se pasa solo a los pasos que lo necesitan, no al `npm ci`.
+
+**Atención a la privacidad:** el repositorio es público. Los artefactos de Actions pueden ser visibles para quienes tengan acceso a las ejecuciones. Utilizar exclusivamente los escenarios sintéticos originales del benchmark y revisar el JSON antes de difundirlo; no incorporar documentos, claves ni datos personales al caso.
+
+Este flujo utiliza el harness de evaluación de Buffalo, que añade su instrucción **EVAL MODE** para trabajar sin una persona respondiendo preguntas. Conserva las herramientas y los evaluadores nativos, pero **no reproduce literalmente** una sesión guiada en Stella.
+
 ## Ejecución local (Linux/macOS)
 
 Con Buffalo y PySD previamente instalados, y después de que el smoke de infraestructura funcione:

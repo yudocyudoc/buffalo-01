@@ -14,7 +14,10 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-const provider = 'google';
+const provider = 'cloudflare';
+if (globalThis.__buffaloCloudflare?.provider !== provider) {
+  throw new Error('BUFFALO_CLOUDFLARE_BOOTSTRAP_REQUIRED: launch with node --import ./scripts/cloudflare/bootstrap.mjs');
+}
 const agentName = process.env.BUFFALO_AGENT || 'merlin';
 const supportedAgents = new Set(['merlin', 'themis', 'socrates', 'athena_SFD']);
 const index = Number(process.env.BUFFALO_CASE_INDEX ?? '0');
@@ -22,8 +25,8 @@ const approval = process.env.BUFFALO_PAID_RUN === 'I_ACCEPT_API_COSTS';
 
 if (!approval) {
   fail('Paid run disabled. Set BUFFALO_PAID_RUN=I_ACCEPT_API_COSTS to explicitly enable one real LLM agent run.');
-} else if (!process.env.GEMINI_API_KEY) {
-  fail('GEMINI_API_KEY is required for the original Google agent and its default Gemini engine tools.');
+} else if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
+  fail('Cloudflare Workers AI needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.');
 } else if (!supportedAgents.has(agentName)) {
   fail('Unrecognized SFD agent: ' + agentName);
 } else if (!Number.isInteger(index) || index < 0) {
@@ -48,18 +51,21 @@ if (!approval) {
     };
 
     console.log('Original Buffalo agent: ' + agentName);
-    console.log('Agent provider: ' + provider + ' (Gemini, configured by upstream)');
+    console.log('Agent provider: ' + provider + ' (Cloudflare Workers AI via original OpenAI-compatible agent loop)');
+    console.log('Tool transport: original Buffalo OpenRouter SDK -> IGC validated Workers AI REST JSON adapter');
+    console.log('Actual Workers AI model: ' + globalThis.__buffaloCloudflare.model);
     console.log('Evaluation source: evals/categories/policyImplementation.js');
     console.log('Single scenario ID: ' + caseId);
     console.log('Criteria: ' + siblings.map(t => t.expectations.criterion).join(', '));
     console.log('No custom prompt, no modified engine, no Stella client.');
+    console.log('Maximum Cloudflare POST budget: ' + globalThis.__buffaloCloudflare.maxPosts);
     const begin = Date.now();
     const record = {
       performedAt: new Date().toISOString(),
       agentName, provider, scenarioId: caseId,
       benchmarkGroup: 'policyImplementation',
       generationEngine: 'agent/utilities/AgentEvalRunner.js',
-      note: 'Original Buffalo benchmark. PySD eval harness simulates instead of Stella.',
+      note: 'Original Buffalo benchmark. PySD eval harness instead of Stella. Cloudflare original agent and original engine SDK via IGC transport.',
       commit: null,
       elapsedMs: null,
       toolLog: [],
@@ -110,6 +116,9 @@ if (!approval) {
       process.exitCode = 2;
     }
 
+    record.providerReceipts = globalThis.__buffaloCloudflare.serialize();
+    record.actualProviderModel = globalThis.__buffaloCloudflare.model;
+    record.providerPostCount = record.providerReceipts.length;
     const directory = resolve('benchmark-runs');
     await mkdir(directory, { recursive: true });
     const file = resolve(directory, 'buffalo-agent-' + agentName + '-case-' + index + '-' + Date.now() + '.json');
@@ -124,6 +133,7 @@ if (!approval) {
       recordFile: file
     }, null, 2));
     console.log('RESULTS ARE LOCAL AND IGNORABLE; inspect JSON before publishing.');
+    console.log('Cloudflare POST count: ' + record.providerPostCount);
     if (record.errors.length) console.error('Agent execution failed; do not count as a benchmark success.');
   }
 }

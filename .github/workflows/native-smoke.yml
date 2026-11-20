@@ -1,0 +1,39 @@
+name: Buffalo native infrastructure smoke (no LLM)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/smoke-native.mjs'
+      - '.github/workflows/native-smoke.yml'
+      - 'docs/EJECUCION_NATIVA_FASE_1.md'
+permissions:
+  contents: read
+jobs:
+  native-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install complete upstream npm project (postinstall included)
+        run: npm ci
+      - name: Explicitly ensure PySD installation
+        run: |
+          python -m pip install -r third-party/PySD-simulator/requirements.txt
+          python -m pip show pysd
+      - name: Syntax-check smoke
+        run: node --check scripts/smoke-native.mjs
+      - name: Run real backend, WebSocket handshake, and PySD
+        env:
+          BUFFALO_PYTHON: python
+        run: node scripts/smoke-native.mjs

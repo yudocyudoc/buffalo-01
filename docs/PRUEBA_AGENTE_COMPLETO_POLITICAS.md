@@ -37,9 +37,12 @@ En Windows PowerShell:
 ```powershell
 $env:GEMINI_API_KEY = "TU_CLAVE_AQUI"
 $env:BUFFALO_PAID_RUN = "I_ACCEPT_API_COSTS"
-$env:BUFFALO_PYTHON = "python"
+# El evaluador Buffalo invoca python3; verificar que este comando exista en PATH.
+python3 --version
 node scripts/run-one-native-agent-case.mjs
 ```
+
+**Para Windows, se recomienda ejecutar en WSL2/Linux con `python3` disponible: `AgentEvalRunner.js` instancia PySD sin override de ejecutable y el default de `PySDSimulator` es `python3`. En Windows nativo, `python` o `py` no sustituyen automáticamente ese comando.**
 
 **No escribir claves dentro del repositorio**. La configuración de Gemini se usa tanto para la conversación del agente como para el motor cuantitativo en la configuración por defecto.
 

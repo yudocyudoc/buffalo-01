@@ -57,14 +57,14 @@ config.agentToolModels.cloudflare = { standard: toolLane };
 const nativeFetch = globalThis.fetch;
 const receipts = [];
 const seen = new Set();
-function postReceipt(channel, url, body) {
+function postReceipt(channel, url, body, metadata = {}) {
   const hash = sha(body);
   if (receipts.length >= maxPosts) throw Error('BUFFALO_CF_POST_BUDGET_EXHAUSTED');
   if (seen.has(hash)) throw Error('BUFFALO_CF_DUPLICATE_POST_BLOCKED');
   seen.add(hash);
   const r = { post: receipts.length + 1, channel, model: PROVIDER_MODEL,
     request_sha256: hash, status: 'RESERVED_BEFORE_HTTP', http_status: null,
-    usage: null, source: offline ? 'offline-no-network' : url };
+    usage: null, source: offline ? 'offline-no-network' : url, ...metadata };
   receipts.push(r);
   if (offline) throw Error('BUFFALO_CF_OFFLINE_POST_BLOCKED');
   return r;
@@ -87,9 +87,10 @@ globalThis.fetch = async (input, init = {}) => {
     const sdk = JSON.parse(requestText);
     const adapted = adaptOriginalEngineRequest(sdk);
     const rawWire = JSON.stringify(adapted.wire);
-    const receipt = postReceipt('original-engine-sdk-to-workers-ai', engineUrl, rawWire);
-    receipt.engine_schema_category = adapted.category;
-    receipt.requested_max_completion_tokens = adapted.requestedMax;
+    const receipt = postReceipt('original-engine-sdk-to-workers-ai', engineUrl, rawWire, {
+      engine_schema_category: adapted.category,
+      requested_max_completion_tokens: adapted.requestedMax
+    });
     try {
       const response = await nativeFetch(engineUrl, {
         method: 'POST', headers: {

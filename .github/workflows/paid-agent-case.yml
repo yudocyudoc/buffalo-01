@@ -1,0 +1,81 @@
+name: Buffalo native agent policy case (paid; manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      consent:
+        description: "API de pago. Elige I_ACCEPT_API_COSTS únicamente si autorizas consumo de Gemini."
+        required: true
+        default: "NO"
+        type: choice
+        options:
+          - "NO"
+          - "I_ACCEPT_API_COSTS"
+      agent:
+        description: "Agente Buffalo original"
+        required: true
+        default: merlin
+        type: choice
+        options:
+          - merlin
+          - themis
+          - socrates
+          - athena_SFD
+      case_index:
+        description: "Indice de un único caso de desarrollo policyImplementation (0 por defecto)"
+        required: true
+        default: "0"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: buffalo-native-agent-paid-run
+  cancel-in-progress: false
+
+jobs:
+  native-agent-case:
+    if: ${{ inputs.consent == 'I_ACCEPT_API_COSTS' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Use Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Check credential exists before installing dependencies
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::Missing repository Actions secret GEMINI_API_KEY"
+            exit 1
+          fi
+      - name: Install original dependencies
+        run: npm ci
+      - name: Ensure original evaluation simulator
+        run: python -m pip install -r third-party/PySD-simulator/requirements.txt
+      - name: Run ONE agent and native policy grader (paid)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BUFFALO_PAID_RUN: ${{ inputs.consent }}
+          BUFFALO_AGENT: ${{ inputs.agent }}
+          BUFFALO_CASE_INDEX: ${{ inputs.case_index }}
+        run: node scripts/run-one-native-agent-case.mjs
+      - name: Preserve reproducible evidence (public repository: review disclosure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-native-agent-policy-evidence
+          path: benchmark-runs/buffalo-agent-*.json
+          if-no-files-found: warn
+          retention-days: 7

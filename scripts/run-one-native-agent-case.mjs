@@ -78,6 +78,17 @@ if (!approval) {
       record.commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     } catch { record.commit = 'unknown'; }
 
+    // Eval-only observation, no changes to the original AgentEvalRunner.
+    // The upstream runner only returns its full toolLog after successful completion.
+    // Keep name-only evidence of tool completions even when the agent stops early.
+    const observedToolCompletions = [];
+    const originalConsoleLog = console.log;
+    console.log = (...args) => {
+      const match = String(args[0] ?? '').match(/^cloudflare Manual: tool call completed: ([a-zA-Z0-9_]+)/);
+      if (match) observedToolCompletions.push(match[1]);
+      originalConsoleLog(...args);
+    };
+
     try {
       const run = await runAgent(
         baseline.prompt,
@@ -114,9 +125,46 @@ if (!approval) {
       record.elapsedMs = Date.now() - begin;
       record.errors.push(String(e?.stack || e));
       process.exitCode = 2;
+    } finally {
+      console.log = originalConsoleLog;
     }
 
     record.providerReceipts = globalThis.__buffaloCloudflare.serialize();
+    record.providerDiagnostics = globalThis.__buffaloCloudflare.diagnostics();
+    record.observedToolCompletions = observedToolCompletions;
+    record.evidence = {
+      ...record.evidence,
+      observedToolCompletions: observedToolCompletions.length,
+      observedToolNames: observedToolCompletions,
+      // These are model function-call requests, not necessarily successful tool executions.
+      modelRequestedToolCalls: record.providerReceipts.reduce(
+        (sum, r) => sum + (r.tool_calls_count || 0), 0
+      ),
+      cloudflareHttp200Responses: record.providerReceipts.filter(
+        r => r.http_status === 200
+      ).length
+    };
+    record.usageFromCloudflare = {
+      promptTokens: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.prompt_tokens || 0), 0),
+      completionTokens: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.completion_tokens || 0), 0),
+      cachedPromptTokens: record.providerReceipts.reduce(
+        (sum, r) => sum + (r.usage?.prompt_tokens_details?.cached_tokens || 0), 0
+      ),
+      neurons: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.neurons || 0), 0),
+      money: null,
+      note: 'Cloudflare response usage only; Buffalo OpenAI-fallback dollar logs are not valid Cloudflare prices.'
+    };
+    if (record.providerDiagnostics.exhausted) {
+      record.stopReason = 'CLOUDFLARE_POST_BUDGET_EXHAUSTED';
+      record.status = 'budget_exhausted';
+    } else if (record.errors.length) {
+      record.stopReason = 'AGENT_EXECUTION_ERROR';
+      record.status = 'execution_error';
+    } else {
+      record.stopReason = 'AGENT_COMPLETED';
+      record.status = 'completed';
+    }
+    record.gradingStatus = record.grades.length === 0 ? 'not_executed' : 'executed';
     record.actualProviderModel = globalThis.__buffaloCloudflare.model;
     record.providerPostCount = record.providerReceipts.length;
     const directory = resolve('benchmark-runs');
@@ -128,6 +176,10 @@ if (!approval) {
       agent: record.agentName,
       provider: record.provider,
       evidence: record.evidence,
+      stopReason: record.stopReason,
+      gradingStatus: record.gradingStatus,
+      providerDiagnostics: record.providerDiagnostics,
+      usageFromCloudflare: record.usageFromCloudflare,
       grades: record.grades,
       errors: record.errors,
       recordFile: file

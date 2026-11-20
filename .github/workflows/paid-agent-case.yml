@@ -4,13 +4,22 @@ on:
   workflow_dispatch:
     inputs:
       consent:
-        description: "Authorization: Cloudflare Workers AI, max 8 inference POSTs; charges may apply"
+        description: "Authorize Workers AI inference. The max_posts input controls the hard request cap; charges may apply."
         required: true
         default: "NO"
         type: choice
         options:
           - "NO"
           - "I_ACCEPT_CLOUDFLARE_AI_COSTS"
+      max_posts:
+        description: "MAXIMUM Workers AI inference POSTs (not a dollar limit; choose consciously)"
+        required: true
+        default: "8"
+        type: choice
+        options:
+          - "8"
+          - "16"
+          - "24"
       agent:
         description: "Original Buffalo agent"
         required: true
@@ -79,7 +88,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           BUFFALO_PAID_RUN: I_ACCEPT_CLOUDFLARE_AI_COSTS
-          BUFFALO_CF_MAX_POSTS: "8"
+          BUFFALO_CF_MAX_POSTS: ${{ inputs.max_posts }}
           BUFFALO_AGENT: ${{ inputs.agent }}
           BUFFALO_CASE_INDEX: ${{ inputs.case_index }}
         run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/run-one-native-agent-case.mjs

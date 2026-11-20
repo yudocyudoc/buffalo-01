@@ -90,4 +90,30 @@ assert.ok(globalThis.__buffaloCloudflare.receipts.every(r=>r.model===BUFFALO_CF_
   'Every route must record only the active Inkling 2 Small model');
 assert.ok(!globalThis.__buffaloCloudflare.engineTarget.includes('glm-5.3'),
   'Historical alias is not a real Cloudflare inference destination');
+// Fill the last offline slot, then deliberately attempt a fifth POST.
+const probe = label => fetch(
+  'https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
+  '/ai/v1/chat/completions', {
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({
+      model:BUFFALO_CF_MODEL,
+      messages:[{role:'user',content:label}]
+    })
+  }
+);
+assert.equal(globalThis.__buffaloCloudflare.maxPosts,4,
+  'Test is intentionally configured with a hard cap of four');
+await assert.rejects(() => probe('last available offline slot'),
+  /BUFFALO_CF_OFFLINE_POST_BLOCKED/);
+await assert.rejects(() => probe('one too many'),
+  /BUFFALO_CF_POST_BUDGET_EXHAUSTED/);
+const diagnostics = globalThis.__buffaloCloudflare.diagnostics();
+assert.deepEqual(
+  [diagnostics.maxPosts, diagnostics.reservedPosts, diagnostics.budgetBlockedAttempts, diagnostics.exhausted],
+  [4,4,1,true]
+);
+assert.equal(globalThis.__buffaloCloudflare.receipts.length,4,
+  'Blocked fifth request must not create a billable receipt');
+console.log('PASS: exhausted budget reports explicit guard reason with zero network requests');
 console.log('PASS: original agent, quantitative and other engine schemas each blocked before network (zero POST)');

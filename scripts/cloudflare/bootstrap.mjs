@@ -59,10 +59,19 @@ config.agentToolModels.cloudflare = { standard: toolLane };
 const nativeFetch = globalThis.fetch;
 const receipts = [];
 const seen = new Set();
+const blocked = { budget: 0, duplicate: 0 };
 function postReceipt(channel, url, body, metadata = {}) {
   const hash = sha(body);
-  if (receipts.length >= maxPosts) throw Error('BUFFALO_CF_POST_BUDGET_EXHAUSTED');
-  if (seen.has(hash)) throw Error('BUFFALO_CF_DUPLICATE_POST_BLOCKED');
+  if (receipts.length >= maxPosts) {
+    blocked.budget++;
+    // The OpenAI SDK may wrap a fetch-level guard error as "Connection error."
+    // Keep this structured diagnostic outside the SDK error path.
+    throw Error('BUFFALO_CF_POST_BUDGET_EXHAUSTED');
+  }
+  if (seen.has(hash)) {
+    blocked.duplicate++;
+    throw Error('BUFFALO_CF_DUPLICATE_POST_BLOCKED');
+  }
   seen.add(hash);
   const r = { post: receipts.length + 1, channel, model: PROVIDER_MODEL,
     request_sha256: hash, status: 'RESERVED_BEFORE_HTTP', http_status: null,
@@ -147,4 +156,10 @@ globalThis.__buffaloCloudflare = {
   engineTarget: engineUrl, agentTarget: nativeChat,
   adapter: EV01_ADAPTER_VERSION, maxPosts, offline, receipts,
   serialize: () => JSON.parse(JSON.stringify(receipts)),
+  diagnostics: () => ({
+    maxPosts, reservedPosts: receipts.length,
+    budgetBlockedAttempts: blocked.budget,
+    duplicateBlockedAttempts: blocked.duplicate,
+    exhausted: blocked.budget > 0
+  }),
 };

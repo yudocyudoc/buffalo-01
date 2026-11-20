@@ -1,0 +1,19 @@
+name: Agent case runner syntax (no LLM)
+on:
+  pull_request:
+    paths:
+      - 'scripts/run-one-native-agent-case.mjs'
+      - '.github/workflows/agent-case-syntax.yml'
+permissions:
+  contents: read
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check agent runner syntax without invoking any provider
+        run: node --check scripts/run-one-native-agent-case.mjs

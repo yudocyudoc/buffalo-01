@@ -1,0 +1,84 @@
+/**
+ * Zero-network assertions for the original Buffalo agent + engine Cloudflare bootstrap.
+ * Invoked with BUFFALO_CF_OFFLINE=1 and dummy account ID. No AI calls.
+ */
+import assert from 'node:assert/strict';
+import config from '../../config.js';
+import { ModelCapabilities, ModelType } from '../../utilities/LLMWrapper.js';
+import { OPENAI_COMPATIBLE_PROVIDERS, openAiCompatibleClientOptions } from '../../agent/utilities/nativeProviders.js';
+import { resolveToolLane } from '../../agent/utilities/intelligenceLevels.js';
+import { OR_SLUG, CF_MODEL, EV01_CAP, requestToCloudflareEV01, EV01_BUDGET_AUTH } from './arena_b_ev01_cf_adapter.mjs';
+import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
+
+assert.equal(process.env.BUFFALO_CF_OFFLINE,'1');
+assert.equal(globalThis.__buffaloCloudflare?.provider,'cloudflare');
+assert.equal(config.nativeAgentProviders.cloudflare.model,'@cf/zai-org/glm-5.3');
+assert.ok(config.agentProviders.includes('cloudflare'));
+assert.ok(OPENAI_COMPATIBLE_PROVIDERS.has('cloudflare'));
+assert.equal(new ModelCapabilities(OR_SLUG).kind,ModelType.OPEN_ROUTER);
+const client=openAiCompatibleClientOptions('cloudflare');
+assert.equal(client.baseURL,
+  'https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/ai/v1');
+assert.equal(client.apiKey,'OFFLINE_NO_NETWORK');
+const lane=resolveToolLane('cloudflare','standard');
+assert.deepEqual(
+  [lane.build.normal,lane.build.hard,lane.nonBuild.normal,lane.nonBuild.hard],
+  [OR_SLUG,OR_SLUG,OR_SLUG,OR_SLUG]);
+console.log('PASS: original Buffalo agent provider registry and all four tool lanes point to Cloudflare');
+
+const sample = {
+  model: OR_SLUG,
+  messages:[{role:'system',content:'System dynamics task'},{role:'user',content:'Model inventories'}],
+  response_format:{type:'json_schema',json_schema:{
+    name:'sd_model',schema:{type:'object',properties:{
+      variables:{type:'array'},relationships:{type:'array'}
+    }}}},
+  max_completion_tokens:EV01_CAP
+};
+const mapped=requestToCloudflareEV01(sample,{authorization:EV01_BUDGET_AUTH});
+assert.equal(mapped.max_completion_tokens,16000);
+assert.equal(mapped.reasoning_effort,'low');
+assert.equal(mapped.response_format.type,'json_schema');
+assert.equal(mapped.response_format.json_schema.type,'object');
+assert.equal(CF_MODEL,'@cf/zai-org/glm-5.3-flash'); // Proven adapter historical ID
+assert.equal(globalThis.__buffaloCloudflare.model,'@cf/zai-org/glm-5.3'); // Actual current target
+console.log('PASS: preserved IGC 16k JSON-schema adapter, explicit newer Cloudflare destination');
+
+await assert.rejects(
+  () => fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
+    '/ai/v1/chat/completions', {
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+        model:'@cf/zai-org/glm-5.3',
+        messages:[{role:'user',content:'simple arithmetic'}],
+        tools:[{type:'function',function:{name:'test_tool',parameters:{type:'object'}}}]
+      })
+    }),
+  /BUFFALO_CF_OFFLINE_POST_BLOCKED/
+);
+await assert.rejects(
+  () => fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(sample)
+  }),
+  /BUFFALO_CF_OFFLINE_POST_BLOCKED/
+);
+const other = {...sample,
+  response_format:{type:'json_schema',json_schema:{
+    name:'analysis',schema:{type:'object',properties:{analysis:{type:'string'}}}}}};
+assert.equal(adaptOriginalEngineRequest(other).category,
+  'other-original-engine-transport-not-live-validated');
+await assert.rejects(
+  () => fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(other)
+  }),
+  /BUFFALO_CF_OFFLINE_POST_BLOCKED/
+);
+assert.deepEqual(globalThis.__buffaloCloudflare.receipts.map(r=>r.channel),
+  ['original-agent-chat-tools','original-engine-sdk-to-workers-ai',
+   'original-engine-sdk-to-workers-ai']);
+assert.equal(globalThis.__buffaloCloudflare.receipts.length,3);
+assert.equal(globalThis.__buffaloCloudflare.receipts[1].engine_schema_category,
+  'original-quantitative-igc-adapter');
+assert.equal(globalThis.__buffaloCloudflare.receipts[2].engine_schema_category,
+  'other-original-engine-transport-not-live-validated');
+assert.equal(globalThis.__buffaloCloudflare.receipts.every(r=>r.source==='offline-no-network'),true);
+console.log('PASS: original agent, quantitative and other engine schemas each blocked before network (zero POST)');

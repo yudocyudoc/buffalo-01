@@ -1,0 +1,37 @@
+name: Buffalo Cloudflare transport contract (zero API)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloudflare/**'
+      - 'scripts/run-one-native-agent-case.mjs'
+      - '.github/workflows/paid-agent-case.yml'
+      - '.github/workflows/cloudflare-offline-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cloudflare-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install JS dependencies only for offline adapter contract
+        run: npm ci --ignore-scripts
+      - name: Check code syntax
+        run: |
+          node --check scripts/cloudflare/bootstrap.mjs
+          node --check scripts/cloudflare/other-engine-transport.mjs
+          node --check scripts/cloudflare/offline-contract.mjs
+          node --check scripts/run-one-native-agent-case.mjs
+      - name: Validate agent + engine routing OFFLINE (no credentials, no POST)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: "00000000000000000000000000000000"
+          BUFFALO_CF_OFFLINE: "1"
+          BUFFALO_CF_MAX_POSTS: "4"
+        run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/offline-contract.mjs

@@ -1,18 +1,18 @@
-name: Buffalo native agent policy case (paid; manual only)
+name: Buffalo original agent via Cloudflare Workers AI (paid; manual only)
 
 on:
   workflow_dispatch:
     inputs:
       consent:
-        description: "API de pago. Elige I_ACCEPT_API_COSTS únicamente si autorizas consumo de Gemini."
+        description: "Authorization: Cloudflare Workers AI, max 8 inference POSTs; charges may apply"
         required: true
         default: "NO"
         type: choice
         options:
           - "NO"
-          - "I_ACCEPT_API_COSTS"
+          - "I_ACCEPT_CLOUDFLARE_AI_COSTS"
       agent:
-        description: "Agente Buffalo original"
+        description: "Original Buffalo agent"
         required: true
         default: merlin
         type: choice
@@ -22,7 +22,7 @@ on:
           - socrates
           - athena_SFD
       case_index:
-        description: "Indice de un único caso de desarrollo policyImplementation (0 por defecto)"
+        description: "Index for ONE policyImplementation development case"
         required: true
         default: "0"
         type: string
@@ -31,51 +31,61 @@ permissions:
   contents: read
 
 concurrency:
-  group: buffalo-native-agent-paid-run
+  group: buffalo-cloudflare-native-agent-paid
   cancel-in-progress: false
 
 jobs:
-  native-agent-case:
-    if: ${{ inputs.consent == 'I_ACCEPT_API_COSTS' }}
+  native-agent-cloudflare:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.consent == 'I_ACCEPT_CLOUDFLARE_AI_COSTS' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout fork
+      - name: Checkout original Buffalo fork
         uses: actions/checkout@v4
-      - name: Use Node.js 22
+        with:
+          persist-credentials: false
+      - name: Use Node 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Use Python 3.11
+      - name: Use Python 3.11 for original PySD evaluation
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-      - name: Check credential exists before installing dependencies
+      - name: Verify Cloudflare credentials (no inference)
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "::error::Missing repository Actions secret GEMINI_API_KEY"
+          if ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-fA-F]{32}$ ]] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in this repository."
             exit 1
           fi
-      - name: Install original dependencies
+      - name: Install complete original project
         run: npm ci
-      - name: Ensure original evaluation simulator
+      - name: Install original PySD requirements
         run: python -m pip install -r third-party/PySD-simulator/requirements.txt
-      - name: Run ONE agent and native policy grader (paid)
+      - name: Validate migrated IGC adapter + runner syntax (no inference)
+        run: |
+          node --check scripts/cloudflare/bootstrap.mjs
+          node --check scripts/run-one-native-agent-case.mjs
+          node --check scripts/cloudflare/offline-contract.mjs
+      - name: Execute ONE original agent/policy case via Cloudflare
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          BUFFALO_PAID_RUN: ${{ inputs.consent }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          BUFFALO_PAID_RUN: I_ACCEPT_API_COSTS
+          BUFFALO_CF_MAX_POSTS: "8"
           BUFFALO_AGENT: ${{ inputs.agent }}
           BUFFALO_CASE_INDEX: ${{ inputs.case_index }}
-        run: node scripts/run-one-native-agent-case.mjs
-      - name: Preserve evidence in public repo for manual review
+        run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/run-one-native-agent-case.mjs
+      - name: Save output evidence (repo public: inspect artifact before wider use)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: buffalo-native-agent-policy-evidence
+          name: buffalo-cloudflare-agent-policy-evidence
           path: benchmark-runs/buffalo-agent-*.json
           if-no-files-found: warn
           retention-days: 7

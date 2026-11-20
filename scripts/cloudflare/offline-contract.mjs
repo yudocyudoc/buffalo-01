@@ -9,10 +9,15 @@ import { OPENAI_COMPATIBLE_PROVIDERS, openAiCompatibleClientOptions } from '../.
 import { resolveToolLane } from '../../agent/utilities/intelligenceLevels.js';
 import { OR_SLUG, CF_MODEL, EV01_CAP, requestToCloudflareEV01, EV01_BUDGET_AUTH } from './arena_b_ev01_cf_adapter.mjs';
 import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
+import {BUFFALO_CF_MODEL} from './active-model.mjs';
 
 assert.equal(process.env.BUFFALO_CF_OFFLINE,'1');
 assert.equal(globalThis.__buffaloCloudflare?.provider,'cloudflare');
-assert.equal(config.nativeAgentProviders.cloudflare.model,'@cf/zai-org/glm-5.3');
+assert.equal(BUFFALO_CF_MODEL,'@cf/thinkingmachines/inkling-2-small');
+assert.equal(config.nativeAgentProviders.cloudflare.model,BUFFALO_CF_MODEL);
+assert.equal(config.nativeAgentProviders.cloudflare.summaryModel,BUFFALO_CF_MODEL);
+assert.equal(globalThis.__buffaloCloudflare.engineTarget.endsWith('/run/'+BUFFALO_CF_MODEL),true);
+assert.equal(globalThis.__buffaloCloudflare.agentTarget.endsWith('/ai/v1/chat/completions'),true);
 assert.ok(config.agentProviders.includes('cloudflare'));
 assert.ok(OPENAI_COMPATIBLE_PROVIDERS.has('cloudflare'));
 assert.equal(new ModelCapabilities(OR_SLUG).kind,ModelType.OPEN_ROUTER);
@@ -41,14 +46,14 @@ assert.equal(mapped.reasoning_effort,'low');
 assert.equal(mapped.response_format.type,'json_schema');
 assert.equal(mapped.response_format.json_schema.type,'object');
 assert.equal(CF_MODEL,'@cf/zai-org/glm-5.3-flash'); // Proven adapter historical ID
-assert.equal(globalThis.__buffaloCloudflare.model,'@cf/zai-org/glm-5.3'); // Actual current target
+assert.equal(globalThis.__buffaloCloudflare.model,BUFFALO_CF_MODEL); // Actual current target
 console.log('PASS: preserved IGC 16k JSON-schema adapter, explicit newer Cloudflare destination');
 
 await assert.rejects(
   () => fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
     '/ai/v1/chat/completions', {
       method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
-        model:'@cf/zai-org/glm-5.3',
+        model:BUFFALO_CF_MODEL,
         messages:[{role:'user',content:'simple arithmetic'}],
         tools:[{type:'function',function:{name:'test_tool',parameters:{type:'object'}}}]
       })
@@ -81,4 +86,8 @@ assert.equal(globalThis.__buffaloCloudflare.receipts[1].engine_schema_category,
 assert.equal(globalThis.__buffaloCloudflare.receipts[2].engine_schema_category,
   'other-original-engine-transport-not-live-validated');
 assert.equal(globalThis.__buffaloCloudflare.receipts.every(r=>r.source==='offline-no-network'),true);
+assert.ok(globalThis.__buffaloCloudflare.receipts.every(r=>r.model===BUFFALO_CF_MODEL),
+  'Every route must record only the active Inkling 2 Small model');
+assert.ok(!globalThis.__buffaloCloudflare.engineTarget.includes('glm-5.3'),
+  'Historical alias is not a real Cloudflare inference destination');
 console.log('PASS: original agent, quantitative and other engine schemas each blocked before network (zero POST)');

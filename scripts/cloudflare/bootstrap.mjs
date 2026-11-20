@@ -13,8 +13,9 @@ import {
   OR_SLUG, EV01_ADAPTER_VERSION, EV01_TIMEOUT_MS, responseToOpenRouter
 } from './arena_b_ev01_cf_adapter.mjs';
 import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
+import {BUFFALO_CF_MODEL, BUFFALO_CF_MODEL_NAME} from './active-model.mjs';
 
-const PROVIDER_MODEL = '@cf/zai-org/glm-5.3';
+const PROVIDER_MODEL = BUFFALO_CF_MODEL;
 const offline = process.env.BUFFALO_CF_OFFLINE === '1';
 const account = process.env.CLOUDFLARE_ACCOUNT_ID || '';
 const token = process.env.CLOUDFLARE_API_TOKEN || '';
@@ -41,7 +42,7 @@ process.env.CLOUDFLARE_API_KEY = offline ? 'OFFLINE_NO_NETWORK' : token;
 process.env.OPEN_ROUTER_API_KEY = 'VIRTUAL_CLOUDFLARE_ONLY';
 
 config.nativeAgentProviders.cloudflare = {
-  displayName: 'Cloudflare Workers AI (GLM-5.3)',
+  displayName: 'Cloudflare Workers AI (' + BUFFALO_CF_MODEL_NAME + ')',
   model: PROVIDER_MODEL,
   summaryModel: PROVIDER_MODEL,
   baseURL: apiBase + '/v1',
@@ -52,7 +53,8 @@ const toolLane = {
 };
 config.agentToolModels.cloudflare = { standard: toolLane };
 // Engine aliases intentionally remain those of the proven IGC transport.
-// The real Workers AI destination is the newer GLM-5.3 model.
+// Effective Cloudflare target is Inkling 2 Small; the virtual SDK alias retains
+// its historical IGC name, but is NEVER the model sent to Workers AI.
 
 const nativeFetch = globalThis.fetch;
 const receipts = [];
@@ -142,6 +144,7 @@ globalThis.fetch = async (input, init = {}) => {
 
 globalThis.__buffaloCloudflare = {
   provider: 'cloudflare', model: PROVIDER_MODEL, engineAlias: OR_SLUG,
+  engineTarget: engineUrl, agentTarget: nativeChat,
   adapter: EV01_ADAPTER_VERSION, maxPosts, offline, receipts,
   serialize: () => JSON.parse(JSON.stringify(receipts)),
 };

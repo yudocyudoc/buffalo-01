@@ -25,6 +25,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Check code syntax
         run: |
+          node --check scripts/cloudflare/active-model.mjs
           node --check scripts/cloudflare/bootstrap.mjs
           node --check scripts/cloudflare/other-engine-transport.mjs
           node --check scripts/cloudflare/offline-contract.mjs

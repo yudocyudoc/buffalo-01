@@ -107,16 +107,29 @@ let log = '';
 for (const stream of [child.stdout, child.stderr]) {
   stream.on('data', chunk => { log = (log + String(chunk)).slice(-12000); });
 }
+// Each boundary reports independently; a handshake failure must not hide
+// whether the native PySD path works in the same paid-minute CI installation.
+const failures = [];
+async function check(name, action) {
+  try {
+    await action();
+    console.log('PASS: ' + name);
+  } catch (error) {
+    failures.push({ name, message: String(error) });
+    console.error('FAIL: ' + name, error);
+  }
+}
 try {
-  await waitForServer(child);
-  console.log('PASS: native HTTP /status');
-  await checkAgentSession();
-  await checkNativePySD();
-  console.log('PASS: infrastructure smoke; no LLM calls and no agent-modeling claim');
-} catch (e) {
-  console.error('FAIL:', e);
-  console.error('Server log tail:\n' + log);
-  process.exitCode = 1;
+  await check('native HTTP /status', () => waitForServer(child));
+  await check('native WebSocket agent registration', checkAgentSession);
+  await check('native SD-JSON/XMILE/PySD', checkNativePySD);
+  if (failures.length) {
+    console.error('Failed boundaries:', JSON.stringify(failures, null, 2));
+    console.error('Server log tail:\n' + log);
+    process.exitCode = 1;
+  } else {
+    console.log('PASS: infrastructure smoke; no LLM calls and no agent-modeling claim');
+  }
 } finally {
   child.kill('SIGTERM');
 }

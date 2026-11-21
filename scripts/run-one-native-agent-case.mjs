@@ -112,7 +112,10 @@ if (!approval) {
         toolFailures: record.toolLog.filter(x => x.isError === true).length
       };
       const response = { model: run.lastModel, toolLog: record.toolLog, supportingInfo: { explanation: run.explanation } };
-      const interruption = interruptedTransport(globalThis.__buffaloCloudflare.diagnostics());
+      const interruption = interruptedTransport(
+        globalThis.__buffaloCloudflare.diagnostics(),
+        globalThis.__buffaloCloudflare.receipts
+      );
       if (interruption) {
         // The original AgentEvalRunner can return after an agent-level error or
         // an incomplete model turn. Never misgrade an unfinished policy.
@@ -170,17 +173,33 @@ if (!approval) {
         r => r.channel === 'original-agent-chat-tools'
       ).map(r => r.finish_reason)
     };
+    // Unknown Cloudflare usage is not zero. A failed 499 may still incur a
+    // charge: carry null for unmeasured totals and show the local reservation
+    // in diagnostics separately. Do not mistake a held quota for billed neurons.
+    const completeUsage = record.providerReceipts.every(r =>
+      typeof r.usage?.prompt_tokens === 'number' &&
+      typeof r.usage?.completion_tokens === 'number' &&
+      typeof r.usage?.neurons === 'number'
+    );
     record.usageFromCloudflare = {
-      promptTokens: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.prompt_tokens || 0), 0),
-      completionTokens: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.completion_tokens || 0), 0),
-      cachedPromptTokens: record.providerReceipts.reduce(
-        (sum, r) => sum + (r.usage?.prompt_tokens_details?.cached_tokens || 0), 0
-      ),
-      neurons: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.neurons || 0), 0),
+      promptTokens: completeUsage ? record.providerReceipts.reduce((sum, r) => sum + r.usage.prompt_tokens, 0) : null,
+      completionTokens: completeUsage ? record.providerReceipts.reduce((sum, r) => sum + r.usage.completion_tokens, 0) : null,
+      cachedPromptTokens: completeUsage ? record.providerReceipts.reduce(
+        (sum, r) => sum + (r.usage.prompt_tokens_details?.cached_tokens || 0), 0
+      ) : null,
+      neurons: completeUsage ? record.providerReceipts.reduce((sum, r) => sum + r.usage.neurons, 0) : null,
       money: null,
-      note: 'Cloudflare response usage only; Buffalo OpenAI-fallback dollar logs are not valid Cloudflare prices.'
+      incompleteUsage: !completeUsage,
+      note: 'Cloudflare response usage only; null means unknown, not zero. Reservations are NOT billed usage.'
     };
-    const interrupted = interruptedTransport(record.providerDiagnostics);
+    record.providerHttpFailures = record.providerReceipts.filter(r =>
+      Number.isInteger(r.http_status) && r.http_status >= 400
+    ).map(r => ({
+      channel: r.channel, model: r.model, httpStatus: r.http_status,
+      providerErrorCode: r.provider_error_code ?? null,
+      requestElapsedMs: r.request_elapsed_ms ?? null
+    }));
+    const interrupted = interruptedTransport(record.providerDiagnostics, record.providerReceipts);
     if (interrupted) {
       record.stopReason = interrupted.stopReason;
       record.status = interrupted.status;
@@ -209,6 +228,7 @@ if (!approval) {
       gradingStatus: record.gradingStatus,
       providerDiagnostics: record.providerDiagnostics,
       usageFromCloudflare: record.usageFromCloudflare,
+      providerHttpFailures: record.providerHttpFailures,
       experimentParameters: record.experimentParameters,
       grades: record.grades,
       errors: record.errors,

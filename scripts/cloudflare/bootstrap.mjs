@@ -15,7 +15,10 @@ import {
 import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
 import {BUFFALO_CF_MODEL, BUFFALO_CF_MODEL_NAME} from './active-model.mjs';
 import {createNeuronBudget, AGENT_MAX_COMPLETION_TOKENS, DEFAULT_MAX_NEURONS} from './neuron-budget.mjs';
-import {configureModelWire, inspectChatCompletion, truncatedClientResponse} from './completion-policy.mjs';
+import {
+  configureModelWire, inspectChatCompletion, validateAgentCompletion,
+  invalidClientResponse, truncatedClientResponse
+} from './completion-policy.mjs';
 
 const PROVIDER_MODEL = BUFFALO_CF_MODEL;
 const offline = process.env.BUFFALO_CF_OFFLINE === '1';
@@ -63,13 +66,20 @@ config.agentToolModels.cloudflare = { standard: toolLane };
 const nativeFetch = globalThis.fetch;
 const receipts = [];
 const seen = new Set();
-const blocked = { budget: 0, duplicate: 0, neuronPreflight: 0, truncated: 0, afterTruncation: 0 };
+const blocked = {
+  budget: 0, duplicate: 0, neuronPreflight: 0,
+  truncated: 0, afterTruncation: 0, invalid: 0, afterInvalid: 0
+};
 function postReceipt(channel, url, body, wireRequest, metadata = {}) {
   // A truncated agent response is terminal for this benchmark invocation.
   // Do not let the original SDK retry and silently charge more neurons.
   if (blocked.truncated > 0) {
     blocked.afterTruncation++;
     throw Error('BUFFALO_CF_HALTED_AFTER_TRUNCATION');
+  }
+  if (blocked.invalid > 0) {
+    blocked.afterInvalid++;
+    throw Error('BUFFALO_CF_HALTED_AFTER_INVALID_RESPONSE');
   }
   const hash = sha(body);
   if (receipts.length >= maxPosts) {
@@ -188,7 +198,9 @@ globalThis.fetch = async (input, init = {}) => {
         // potentially sensitive response body or original request contents.
         if (!response.ok)
           receipt.provider_error_code = body?.errors?.[0]?.code ?? null;
-        completion = inspectChatCompletion(body);
+        completion = response.ok
+          ? validateAgentCompletion(body, wire)
+          : inspectChatCompletion(body);
         receipt.finish_reason = completion.finishReason;
         receipt.tool_calls_count = completion.toolCallsCount;
       } catch { receipt.response_parse = 'unavailable'; }
@@ -199,6 +211,13 @@ globalThis.fetch = async (input, init = {}) => {
         receipt.client_http_status = 422; // Local error; Cloudflare's HTTP status remains 200.
         // Prevent the original Buffalo loop from falsely emitting success.
         return truncatedClientResponse();
+      }
+      if (response.ok && completion?.invalidReason) {
+        blocked.invalid++;
+        receipt.status = 'PROVIDER_INVALID_RESPONSE';
+        receipt.protocol_error_code = completion.invalidReason;
+        receipt.client_http_status = 422; // Local fail-closed, not Cloudflare HTTP.
+        return invalidClientResponse(completion.invalidReason);
       }
       receipt.status = response.ok ? 'HTTP_SUCCESS' : 'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN';
       return response;
@@ -224,6 +243,8 @@ globalThis.__buffaloCloudflare = {
     exhausted: blocked.budget > 0,
     truncatedResponses: blocked.truncated,
     blockedAfterTruncationAttempts: blocked.afterTruncation,
+    invalidResponses: blocked.invalid,
+    blockedAfterInvalidAttempts: blocked.afterInvalid,
     neuronPreflightBlockedAttempts: blocked.neuronPreflight,
     neuronBudget: neuronBudget.diagnostics()
   }),

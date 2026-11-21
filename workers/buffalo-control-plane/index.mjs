@@ -2,6 +2,8 @@
 import {D1TaskStore} from './store.mjs';
 import {GitHubOffline} from './github.mjs';
 import {ControlPlaneService} from './service.mjs';
+import {D1FullHandoffStore} from './full-handoff-store.mjs';
+import {handoffReceipt} from '../../scripts/full-integration/handoff-contract.mjs';
 async function authorized(request,secret){
  if(typeof secret!=='string'||secret.length<32)return false;
  const bearer=request.headers.get('authorization')??'';
@@ -27,6 +29,21 @@ export async function handle(request,env,deps={}){
  try{
   if(path==='/v1/diagnostics/github-preflight'&&method==='GET')
    return await respond(svc.diagnoseGithub());
+  // Stage 2: declarations only. No dispatch/reconcile routes and no provider calls.
+  if(path==='/v1/full/handoffs'&&method==='POST'){
+   const body=await request.text();
+   if(body.length>4096)return send({error:'BODY_TOO_LARGE'},413);
+   const fullStore=deps.fullHandoffStore??new D1FullHandoffStore(env.DB);
+   const result=await fullStore.create(JSON.parse(body));
+   return send({created:result.created,...handoffReceipt(result.row)},
+    result.created?201:200);
+  }
+  const handoffMatch=path.match(/^\/v1\/full\/handoffs\/([a-fA-F0-9-]{36})$/);
+  if(handoffMatch&&method==='GET'){
+   const fullStore=deps.fullHandoffStore??new D1FullHandoffStore(env.DB);
+   const saved=await fullStore.read(handoffMatch[1]);
+   return saved?send(handoffReceipt(saved)):send({error:'NOT_FOUND'},404);
+  }
   if(path==='/v1/tasks'&&method==='POST'){
    const body=await request.text();
    if(body.length>4096)return send({error:'BODY_TOO_LARGE'},413);
@@ -45,6 +62,8 @@ export async function handle(request,env,deps={}){
      String(error?.message).startsWith('CONTROL_PLANE_EXTRA'))
    return send({error:'INVALID_INPUT'},400);
   if(String(error?.message).includes('TASK_ID_CONFLICT'))return send({error:'TASK_ID_CONFLICT'},409);
+  if(String(error?.message).startsWith('FULL_HANDOFF_INVALID_'))return send({error:'INVALID_HANDOFF'},400);
+  if(String(error?.message)==='FULL_HANDOFF_ID_CONFLICT')return send({error:'HANDOFF_ID_CONFLICT'},409);
   return send({error:'CONTROL_PLANE_OPERATION_FAILED'},502);
  }
 }

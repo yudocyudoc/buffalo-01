@@ -37,6 +37,8 @@ jobs:
           node --check scripts/cloudflare/neuron-budget-offline.mjs
           node --check scripts/cloudflare/bootstrap-neuron-guard-offline.mjs
           node --check scripts/cloudflare/bootstrap.mjs
+          node --check scripts/cloudflare/gemma4-stream-ttfb-probe.mjs
+          node --check scripts/cloudflare/gemma4-stream-ttfb-offline.mjs
           node --check scripts/cloudflare/completion-policy.mjs
           node --check scripts/cloudflare/completion-policy-offline.mjs
           node --check scripts/cloudflare/mock-origin-preload.mjs
@@ -45,6 +47,8 @@ jobs:
           node --check scripts/cloudflare/offline-contract.mjs
           node --check scripts/run-one-native-agent-case.mjs
           node --check scripts/compare-cloudflare-runs.mjs
+      - name: Verify TTFB probe requires manual paid opt-in (zero network)
+        run: node scripts/cloudflare/gemma4-stream-ttfb-offline.mjs
       - name: Test model prices, requests and conservative local neuron guard
         env:
           BUFFALO_CF_MODEL_ID: ${{ matrix.model }}

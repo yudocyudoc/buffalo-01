@@ -15,6 +15,7 @@ import {
 import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
 import {BUFFALO_CF_MODEL, BUFFALO_CF_MODEL_NAME} from './active-model.mjs';
 import {createNeuronBudget, AGENT_MAX_COMPLETION_TOKENS, DEFAULT_MAX_NEURONS} from './neuron-budget.mjs';
+import {configureModelWire, inspectChatCompletion, truncatedClientResponse} from './completion-policy.mjs';
 
 const PROVIDER_MODEL = BUFFALO_CF_MODEL;
 const offline = process.env.BUFFALO_CF_OFFLINE === '1';
@@ -56,14 +57,20 @@ const toolLane = {
 };
 config.agentToolModels.cloudflare = { standard: toolLane };
 // Engine aliases intentionally remain those of the proven IGC transport.
-// Effective Cloudflare target is Inkling 2 Small; the virtual SDK alias retains
-// its historical IGC name, but is NEVER the model sent to Workers AI.
+// The selected Cloudflare target is Gemma or Inkling. The virtual historical
+// IGC SDK alias is never the effective Workers AI destination.
 
 const nativeFetch = globalThis.fetch;
 const receipts = [];
 const seen = new Set();
-const blocked = { budget: 0, duplicate: 0, neuronPreflight: 0 };
+const blocked = { budget: 0, duplicate: 0, neuronPreflight: 0, truncated: 0, afterTruncation: 0 };
 function postReceipt(channel, url, body, wireRequest, metadata = {}) {
+  // A truncated agent response is terminal for this benchmark invocation.
+  // Do not let the original SDK retry and silently charge more neurons.
+  if (blocked.truncated > 0) {
+    blocked.afterTruncation++;
+    throw Error('BUFFALO_CF_HALTED_AFTER_TRUNCATION');
+  }
   const hash = sha(body);
   if (receipts.length >= maxPosts) {
     blocked.budget++;
@@ -112,9 +119,10 @@ globalThis.fetch = async (input, init = {}) => {
     const requestText = await parseRequestBody(input, init);
     const sdk = JSON.parse(requestText);
     const adapted = adaptOriginalEngineRequest(sdk);
-    const rawWire = JSON.stringify(adapted.wire);
+    const wire = configureModelWire(PROVIDER_MODEL, adapted.wire);
+    const rawWire = JSON.stringify(wire);
     const receipt = postReceipt('original-engine-sdk-to-workers-ai', engineUrl, rawWire,
-      adapted.wire, {
+      wire, {
         engine_schema_category: adapted.category,
         requested_max_completion_tokens: adapted.requestedMax
       });
@@ -155,21 +163,33 @@ globalThis.fetch = async (input, init = {}) => {
     request.max_completion_tokens = Math.min(
       requestedCap ?? AGENT_MAX_COMPLETION_TOKENS, AGENT_MAX_COMPLETION_TOKENS
     );
-    const wireText = JSON.stringify(request);
-    const receipt = postReceipt('original-agent-chat-tools', nativeChat, wireText, request);
+    const wire = configureModelWire(PROVIDER_MODEL, request);
+    const wireText = JSON.stringify(wire);
+    const receipt = postReceipt('original-agent-chat-tools', nativeChat, wireText, wire, {
+      thinking_disabled: wire.chat_template_kwargs?.enable_thinking === false
+    });
     try {
       const response = await nativeFetch(input, {...init, body: wireText});
       receipt.http_status = response.status;
-      // Non-streaming original Buffalo manual loop. Clone without mutating what
-      // the original OpenAI-compatible SDK will parse for function tool calls.
+      // Clone preserves provider bytes for the SDK on accepted responses.
+      // Record usage even when Cloudflare returned HTTP 200 for a truncated turn.
+      let completion = null;
       try {
         const body = await response.clone().json();
         receipt.response_sha256 = sha(JSON.stringify(body));
         receipt.usage = body?.usage ?? null;
-        receipt.finish_reason = body?.choices?.[0]?.finish_reason ?? null;
-        receipt.tool_calls_count = body?.choices?.[0]?.message?.tool_calls?.length ?? 0;
+        completion = inspectChatCompletion(body);
+        receipt.finish_reason = completion.finishReason;
+        receipt.tool_calls_count = completion.toolCallsCount;
       } catch { receipt.response_parse = 'unavailable'; }
       settleReceipt(receipt, receipt.usage);
+      if (response.ok && completion?.truncated) {
+        blocked.truncated++;
+        receipt.status = 'OUTPUT_TRUNCATED';
+        receipt.client_http_status = 422; // Local error; Cloudflare's HTTP status remains 200.
+        // Prevent the original Buffalo loop from falsely emitting success.
+        return truncatedClientResponse();
+      }
       receipt.status = response.ok ? 'HTTP_SUCCESS' : 'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN';
       return response;
     } catch (error) {
@@ -191,6 +211,8 @@ globalThis.__buffaloCloudflare = {
     budgetBlockedAttempts: blocked.budget,
     duplicateBlockedAttempts: blocked.duplicate,
     exhausted: blocked.budget > 0,
+    truncatedResponses: blocked.truncated,
+    blockedAfterTruncationAttempts: blocked.afterTruncation,
     neuronPreflightBlockedAttempts: blocked.neuronPreflight,
     neuronBudget: neuronBudget.diagnostics()
   }),

@@ -27,6 +27,7 @@ jobs:
           node --check workers/buffalo-control-plane/github.mjs
           node --check workers/buffalo-control-plane/store.mjs
           node --check workers/buffalo-control-plane/service.mjs
+          node --check workers/buffalo-control-plane/binding-lab.mjs
           node --check scripts/control-plane/offline-echo.mjs
           node --test scripts/control-plane/contract.test.mjs workers/buffalo-control-plane/control-plane.test.mjs
       - name: Verify SQL migration and atomic state claims (SQLite only)

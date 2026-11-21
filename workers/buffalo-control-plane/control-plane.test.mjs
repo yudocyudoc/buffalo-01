@@ -1,3 +1,4 @@
+import {deflateRawSync} from 'node:zlib';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -197,4 +198,23 @@ test('D1 store accepts strictly normalized internal task and rejects unnormalize
  assert.equal(result.created,true);
  assert.equal(result.task.state,'READY');
  await assert.rejects(()=>store.create(input),/INTERNAL_TASK_NOT_NORMALIZED/);
+});
+
+test('GitHub ZIP DEFLATE format verifies payload and rejects tampering',()=>{
+ const name='buffalo-offline-result.json',payload=Buffer.from(JSON.stringify(result)),filename=Buffer.from(name);
+ const packed=deflateRawSync(payload),crc=crc32(payload);
+ const local=Buffer.alloc(30),central=Buffer.alloc(46),end=Buffer.alloc(22);
+ local.writeUInt32LE(0x04034b50,0);local.writeUInt16LE(8,8);local.writeUInt32LE(crc,14);
+ local.writeUInt32LE(packed.length,18);local.writeUInt32LE(payload.length,22);local.writeUInt16LE(filename.length,26);
+ central.writeUInt32LE(0x02014b50,0);central.writeUInt16LE(8,10);central.writeUInt32LE(crc,16);
+ central.writeUInt32LE(packed.length,20);central.writeUInt32LE(payload.length,24);central.writeUInt16LE(filename.length,28);
+ const centralOffset=30+filename.length+packed.length;
+ end.writeUInt32LE(0x06054b50,0);end.writeUInt16LE(1,8);end.writeUInt16LE(1,10);
+ end.writeUInt32LE(central.length+filename.length,12);end.writeUInt32LE(centralOffset,16);
+ const archive=Buffer.concat([local,filename,packed,central,filename,end]);
+ const asArrayBuffer=x=>x.buffer.slice(x.byteOffset,x.byteOffset+x.byteLength);
+ const content=extractSingleStoredZip(asArrayBuffer(archive),'buffalo-offline-result.json');
+ assert.deepEqual(Buffer.from(content),payload);
+ const corrupted=Buffer.from(archive);corrupted[30+filename.length+1]^=0x01;
+ assert.throws(()=>extractSingleStoredZip(asArrayBuffer(corrupted),'buffalo-offline-result.json'));
 });

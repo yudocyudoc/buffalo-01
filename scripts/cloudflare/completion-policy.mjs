@@ -57,9 +57,18 @@ export function truncatedClientResponse() {
  * Runner-only gate: do not call the ORIGINAL graders if transport has evidence
  * of any interruption. A policy must actually complete before it can be graded.
  */
-export function interruptedTransport(diagnostics) {
+export function interruptedTransport(diagnostics, receipts = []) {
   if ((diagnostics?.truncatedResponses ?? 0) > 0)
     return {status:'output_truncated',stopReason:'CLOUDFLARE_OUTPUT_TRUNCATED'};
+  // The last Gemma attempt returned a real 499 from Cloudflare, but the runner
+  // previously relabeled it only as USAGE_UNAVAILABLE. HTTP failure is the
+  // primary incident; missing metering is an additional cost uncertainty.
+  const failedHttp = receipts.find(r =>
+    Number.isInteger(r?.http_status) && r.http_status >= 400
+  );
+  if (failedHttp)
+    return {status:'provider_http_error',
+      stopReason:'CLOUDFLARE_PROVIDER_HTTP_'+failedHttp.http_status};
   if ((diagnostics?.budgetBlockedAttempts ?? 0) > 0)
     return {status:'budget_exhausted',stopReason:'CLOUDFLARE_POST_BUDGET_EXHAUSTED'};
   if ((diagnostics?.neuronPreflightBlockedAttempts ?? 0) > 0)

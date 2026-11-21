@@ -61,7 +61,7 @@ jobs:
           BUFFALO_CF_MAX_POSTS: '4'
           BUFFALO_CF_MAX_NEURONS: '4000'
         run: |
-          for finish in length stop tool_calls http499; do
+          for finish in length stop tool_calls http499 tool_calls_empty empty_stop bad_arguments missing_required unknown_tool; do
             BUFFALO_MOCK_FINISH="$finish" node --import ./scripts/cloudflare/mock-origin-preload.mjs --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/completion-transport-mock-offline.mjs
           done
       - name: Validate selected agent + engine routing OFFLINE (no credentials, no POST)

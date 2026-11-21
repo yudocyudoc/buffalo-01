@@ -442,3 +442,17 @@ test('binding lab has no exposed HTTP test route and ignores unrelated cron',asy
  await module.default.scheduled({cron:'0 * * * *'},{}); // Must not touch DB.
  assert.equal(typeof module.runBindingLab,'function');
 });
+
+test('binding lab one-shot endpoint refuses unprotected or malformed requests without touching DB',async()=>{
+ const {default:handler}=await import('./binding-lab.mjs');
+ const base='https://lab.invalid/v1/lab/run-once';
+ for(const req of [
+  new Request(base,{method:'GET'}),
+  new Request(base,{method:'POST',headers:{'content-type':'application/json'},body:'{"action":"RUN_BINDING_LAB_V1"}'}),
+  new Request(base,{method:'POST',headers:{'cf-access-jwt-assertion':'test','content-type':'application/json'},body:'{"action":"WRONG"}'}),
+  new Request(base,{method:'POST',headers:{'cf-access-jwt-assertion':'test','content-type':'text/plain'},body:'{"action":"RUN_BINDING_LAB_V1"}'}),
+  new Request('https://lab.invalid/v1/tasks',{method:'POST',headers:{'cf-access-jwt-assertion':'test'}})
+ ]){
+  const response=await handler.fetch(req,{});assert.notEqual(response.status,200);
+ }
+});

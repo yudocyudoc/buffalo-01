@@ -29,11 +29,29 @@ export class GitHubOffline{
   if(!response.ok)throw Error('GITHUB_HTTP_'+response.status);
   return parseJson(response);
  }
+ /** Convert external errors to a bounded category without sending provider content to the client. */
+ static classifyPreflight(error){
+  const message=typeof error?.message==='string'?error.message:'';
+  const http=/^GITHUB_HTTP_([1-5][0-9]{2})$/.exec(message);
+  if(http)return 'HTTP_'+http[1];
+  if(message==='GITHUB_INVALID_JSON')return 'INVALID_JSON';
+  if(message==='GITHUB_PATH_DENIED')return 'PATH_DENIED';
+  if(error?.name==='AbortError')return 'FETCH_ABORT';
+  if(error instanceof TypeError)return 'NETWORK_TYPE_ERROR';
+  return 'UNKNOWN';
+ }
+ async preflightGet(endpoint,stage){
+  try{return await this.get(endpoint)}
+  catch(error){throw Error('GITHUB_PREFLIGHT_'+stage+'_'+GitHubOffline.classifyPreflight(error))}
+ }
  async prepare(){
-  const [workflow,commit]=await Promise.all([
-   this.get('/actions/workflows/'+OFFLINE_WORKFLOW),this.get('/commits/main')]);
-  if(workflow.path!==PATH||!Number.isSafeInteger(workflow.id))throw Error('GITHUB_WORKFLOW_NOT_ALLOWLISTED');
-  if(typeof commit.sha!=='string'||!SHA.test(commit.sha))throw Error('GITHUB_BAD_MAIN_SHA');
+  // Read-only preflight. Sequential calls identify which GET failed.
+  const workflow=await this.preflightGet('/actions/workflows/'+OFFLINE_WORKFLOW,'WORKFLOW');
+  if(workflow?.path!==PATH||!Number.isSafeInteger(workflow?.id))
+    throw Error('GITHUB_PREFLIGHT_WORKFLOW_IDENTITY_INVALID');
+  const commit=await this.preflightGet('/commits/main','MAIN');
+  if(typeof commit?.sha!=='string'||!SHA.test(commit.sha))
+    throw Error('GITHUB_PREFLIGHT_MAIN_SHA_INVALID');
   return {workflow_id:workflow.id,head_sha:commit.sha.toLowerCase()};
  }
  async dispatch(payload){

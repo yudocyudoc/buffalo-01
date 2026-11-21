@@ -3,6 +3,17 @@ import {acceptOfflineTask,assertTaskId,makeDispatchInputs} from '../../scripts/c
 function status(task){return task?{task_id:task.task_id,kind:task.kind,state:task.state,
  input_sha256:task.input_sha256,github_run_id:task.github_run_id??null,
  result_sha256:task.result_sha256??null,github_artifact_id:task.github_artifact_id??null}:null}
+// Whitelist-only response classification; never expose upstream exception text.
+function preflightReason(error){
+ const message=typeof error?.message==='string'?error.message:'';
+ if(/^GITHUB_PREFLIGHT_(WORKFLOW|MAIN)_(HTTP_[1-5][0-9]{2}|INVALID_JSON|PATH_DENIED|FETCH_ABORT|NETWORK_TYPE_ERROR|IDENTITY_INVALID|SHA_INVALID|UNKNOWN)$/.test(message))
+  return message;
+ if(/^GITHUB_(WORKFLOW_NOT_ALLOWLISTED|BAD_MAIN_SHA|INVALID_JSON)$/.test(message))
+  return 'GITHUB_PREFLIGHT_'+message.slice(7);
+ const status=/^GITHUB_HTTP_([1-5][0-9]{2})$/.exec(message);
+ if(status)return 'GITHUB_PREFLIGHT_HTTP_'+status[1];
+ return 'GITHUB_PREFLIGHT_UNKNOWN';
+}
 export class ControlPlaneService{
  constructor(store,github,clock=()=>new Date().toISOString()){this.store=store;this.github=github;this.clock=clock}
  async create(input){
@@ -12,6 +23,16 @@ export class ControlPlaneService{
  async inspect(id){
   const task=await this.store.read(assertTaskId(id));
   return {code:task?200:404,body:task?status(task):{error:'NOT_FOUND'}}
+ }
+ /** GET-only diagnostic: no state changes, no dispatch, no model calls. */
+ async diagnoseGithub(){
+  try{
+   await this.github.prepare();
+   return {code:200,body:{preflight:'OK',read_only:true,dispatch_attempted:false}};
+  }catch(error){
+   return {code:502,body:{preflight:'FAILED',reason_code:preflightReason(error),
+    read_only:true,dispatch_attempted:false}};
+  }
  }
  async dispatch(id){
   const taskId=assertTaskId(id),task=await this.store.read(taskId);
@@ -23,11 +44,7 @@ export class ControlPlaneService{
   catch (error) {
    // Return only a bounded protocol code; NEVER expose GitHub response bodies,
    // headers, account details, tokens or stack traces.
-   const message=String(error?.message??'');
-   const status=/^GITHUB_HTTP_(401|403|404|429|500|502|503)$/.exec(message);
-   const reason=status?'GITHUB_PREFLIGHT_HTTP_'+status[1]:
-    /^GITHUB_(WORKFLOW_NOT_ALLOWLISTED|BAD_MAIN_SHA|INVALID_JSON)$/.test(message)
-     ?'GITHUB_PREFLIGHT_'+message.slice(7):'GITHUB_PREFLIGHT_UNKNOWN';
+   const reason=preflightReason(error);
    return {code:502,body:{error:'GITHUB_PREFLIGHT_FAILED',reason_code:reason,
      task_id:taskId,state:'READY',dispatch_attempted:false}};
   }

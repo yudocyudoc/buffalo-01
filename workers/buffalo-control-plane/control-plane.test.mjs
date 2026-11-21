@@ -239,3 +239,42 @@ test('preflight failure stays READY, is classified, and never dispatches',async(
   assert.equal(JSON.stringify(response).includes('PRIVATE_API_REPLY_WITH_TOKEN'),false);
  }
 });
+
+test('read-only preflight isolates GitHub stage and never mutates D1',async()=>{
+ const token='T'.repeat(48),env={DB:{},GITHUB_FINE_GRAINED_TOKEN:'mock-only',CONTROL_API_TOKEN:token};
+ const {store,gh}=fx();
+ await store.create({...input,workflow:OFFLINE_WORKFLOW,state:'READY',paid:false});
+ gh.prepare=async()=>{throw Error('GITHUB_PREFLIGHT_WORKFLOW_HTTP_422')};
+ const request=()=>new Request('https://worker.test/v1/diagnostics/github-preflight',{method:'GET',headers:{Authorization:'Bearer '+token}});
+ const denied=await handle(new Request('https://worker.test/v1/diagnostics/github-preflight'),env,{store,github:gh});
+ assert.equal(denied.status,401);
+ const first=await handle(request(),env,{store,github:gh});
+ assert.equal(first.status,502);
+ assert.deepEqual(await first.json(),{preflight:'FAILED',
+  reason_code:'GITHUB_PREFLIGHT_WORKFLOW_HTTP_422',read_only:true,dispatch_attempted:false});
+ assert.equal((await store.read(UUID)).state,'READY');
+ assert.deepEqual(store.events,['TASK_ADMITTED']);
+ gh.prepare=async()=>{throw TypeError('Do not expose a secret: TOKEN_VALUE')};
+ const unknown=await handle(request(),env,{store,github:gh});
+ assert.equal((await unknown.json()).reason_code,'GITHUB_PREFLIGHT_UNKNOWN');
+ gh.prepare=async()=>({workflow_id:22,head_sha:HEAD});
+ const ok=await handle(request(),env,{store,github:gh});
+ assert.deepEqual(await ok.json(),{preflight:'OK',read_only:true,dispatch_attempted:false});
+ assert.equal((await store.read(UUID)).state,'READY');
+});
+test('GitHub preflight distinguishes workflow fetch, main fetch and type errors',async()=>{
+ const token='mock';
+ const gh=new GitHubOffline(token,async(url)=>{
+  if(url.endsWith('/actions/workflows/buffalo-control-plane-offline.yml'))return new Response('',{status:418});
+  return Response.json({sha:HEAD});
+ });
+ await assert.rejects(()=>gh.prepare(),/GITHUB_PREFLIGHT_WORKFLOW_HTTP_418/);
+ const gh2=new GitHubOffline(token,async(url)=>{
+  if(url.endsWith('/actions/workflows/buffalo-control-plane-offline.yml'))
+   return Response.json({path:'.github/workflows/buffalo-control-plane-offline.yml',id:22});
+  return new Response('',{status:422});
+ });
+ await assert.rejects(()=>gh2.prepare(),/GITHUB_PREFLIGHT_MAIN_HTTP_422/);
+ const gh3=new GitHubOffline(token,async()=>{throw new TypeError('private network response');});
+ await assert.rejects(()=>gh3.prepare(),/GITHUB_PREFLIGHT_WORKFLOW_NETWORK_TYPE_ERROR/);
+});

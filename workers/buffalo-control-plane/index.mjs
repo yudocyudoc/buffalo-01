@@ -25,6 +25,8 @@ export async function handle(request,env,deps={}){
  const github=deps.github??new GitHubOffline(env.GITHUB_FINE_GRAINED_TOKEN);
  const svc=new ControlPlaneService(store,github,deps.clock);
  try{
+  if(path==='/v1/diagnostics/github-preflight'&&method==='GET')
+   return await respond(svc.diagnoseGithub());
   if(path==='/v1/tasks'&&method==='POST'){
    const body=await request.text();
    if(body.length>4096)return send({error:'BODY_TOO_LARGE'},413);

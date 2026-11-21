@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import {
   configureModelWire, inspectChatCompletion, truncatedClientResponse,
-  interruptedTransport, GEMMA_MODEL, TRUNCATED_RESPONSE_CODE
+  interruptedTransport, validateAgentCompletion, invalidClientResponse,
+  INVALID_RESPONSE_CODE, GEMMA_MODEL, TRUNCATED_RESPONSE_CODE
 } from './completion-policy.mjs';
 import {BUFFALO_CF_MODEL} from './active-model.mjs';
 import {OR_SLUG} from './arena_b_ev01_cf_adapter.mjs';
@@ -76,6 +77,61 @@ assert.equal(
   interruptedTransport({},[{http_status:200,status:'OUTPUT_TRUNCATED'}]),null,
   'Only diagnostics confirm a local truncated result; actual HTTP is 200'
 );
+// Test shapes grounded in actual original OpenAI-compatible tool wire. Do NOT
+// invoke any actual tool or infer any model output in these zero-network tests.
+const toolRequest={tools:[{type:'function',function:{
+  name:'read_model_section',
+  parameters:{type:'object',properties:{
+    section:{type:'string',enum:['specs','variables','relationships','modules']}
+  },required:['section']}
+}}]};
+const assistant=(finishReason,content,toolCalls)=>({choices:[{
+  finish_reason:finishReason,message:{role:'assistant',content,tool_calls:toolCalls}
+}]});
+const validCall=(args='{"section":"specs"}')=>({
+  id:'call_1',type:'function',function:{name:'read_model_section',arguments:args}
+});
+function expectInvalid(response,reason){
+  const result=validateAgentCompletion(response,toolRequest);
+  assert.equal(result.invalidReason,reason);
+  assert.equal(result.truncated,false);
+}
+assert.equal(validateAgentCompletion(assistant('tool_calls','',[validCall()]),toolRequest).invalidReason,null);
+assert.equal(validateAgentCompletion(assistant('stop','Model complete',[]),toolRequest).invalidReason,null);
+expectInvalid(assistant('tool_calls','',[]),'EMPTY_TOOL_CALLS');
+expectInvalid(assistant('tool_calls',null,undefined),'EMPTY_TOOL_CALLS');
+expectInvalid(assistant('stop','   ',[]),'EMPTY_ASSISTANT_STOP');
+expectInvalid(assistant('stop',null,[]),'EMPTY_ASSISTANT_STOP');
+expectInvalid(assistant('stop','a',[validCall()]),'STOP_WITH_TOOL_CALLS');
+expectInvalid(assistant('content_filter','',[]),'UNSUPPORTED_FINISH_REASON');
+expectInvalid({choices:[]},'MISSING_ASSISTANT_MESSAGE');
+expectInvalid(assistant('tool_calls','',[validCall('{bad json')]),'ARGUMENTS_INVALID_JSON');
+expectInvalid(assistant('tool_calls','',[validCall('[]')]),'ARGUMENTS_NOT_OBJECT');
+expectInvalid(assistant('tool_calls','',[validCall('null')]),'ARGUMENTS_NOT_OBJECT');
+expectInvalid(assistant('tool_calls','',[validCall('{}')]),'ARGUMENTS_MISSING_REQUIRED_FIELD');
+expectInvalid(assistant('tool_calls','',[{...validCall(),function:{
+  name:'unknown_tool',arguments:'{}'}}]),'UNDECLARED_TOOL_NAME');
+expectInvalid(assistant('tool_calls','',[validCall(),validCall()]),'DUPLICATE_TOOL_CALL_ID');
+expectInvalid(assistant('tool_calls','',[{...validCall(),id:''}]),'MALFORMED_TOOL_CALL');
+expectInvalid(assistant('tool_calls','',[{...validCall(),function:{
+  name:'read_model_section',arguments:{section:'specs'}}}]),'ARGUMENTS_NOT_JSON_STRING');
+const withReasoning=assistant('tool_calls','',[validCall()]);
+withReasoning.choices[0].message.reasoning='synthetic thought metadata';
+assert.equal(validateAgentCompletion(withReasoning,toolRequest).invalidReason,null);
+assert.equal(withReasoning.choices[0].message.reasoning,'synthetic thought metadata',
+  'Adapter inspection must not strip metadata from accepted provider payload');
+assert.equal(validateAgentCompletion(
+  assistant('length','partial',[]),toolRequest).invalidReason,null);
+const localError=invalidClientResponse('ARGUMENTS_INVALID_JSON');
+assert.equal(localError.status,422);
+assert.equal((await localError.json()).error.code,INVALID_RESPONSE_CODE);
+assert.deepEqual(interruptedTransport({invalidResponses:1}),{
+  status:'provider_invalid_response',
+  stopReason:'CLOUDFLARE_PROVIDER_INVALID_RESPONSE'
+});
+console.log('PASS: malformed tool outputs, empty completion and JSON arguments are rejected before original Merlin');
+console.log('PASS: accepted tool/thinking payload stays untouched; invalid provider output has a local 422 without network');
+
 console.log('PASS: model-specific Gemma no-thinking for both routes; Inkling unchanged');
 console.log('PASS: length never counts as completion, no tool/cap override to Buffalo');
 console.log('PASS: truncated outputs and resource stop flags bypass original graders (offline)');

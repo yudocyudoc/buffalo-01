@@ -18,7 +18,19 @@ export class ControlPlaneService{
   if(!task)return {code:404,body:{error:'NOT_FOUND'}};
   if(task.state!=='READY')return {code:409,body:{error:'NOT_READY',state:task.state}};
   // Reject absent workflow on main BEFORE claiming or sending anything.
-  const pin=await this.github.prepare();
+  let pin;
+  try { pin=await this.github.prepare(); }
+  catch (error) {
+   // Return only a bounded protocol code; NEVER expose GitHub response bodies,
+   // headers, account details, tokens or stack traces.
+   const message=String(error?.message??'');
+   const status=/^GITHUB_HTTP_(401|403|404|429|500|502|503)$/.exec(message);
+   const reason=status?'GITHUB_PREFLIGHT_HTTP_'+status[1]:
+    /^GITHUB_(WORKFLOW_NOT_ALLOWLISTED|BAD_MAIN_SHA|INVALID_JSON)$/.test(message)
+     ?'GITHUB_PREFLIGHT_'+message.slice(7):'GITHUB_PREFLIGHT_UNKNOWN';
+   return {code:502,body:{error:'GITHUB_PREFLIGHT_FAILED',reason_code:reason,
+     task_id:taskId,state:'READY',dispatch_attempted:false}};
+  }
   if(!await this.store.claim(taskId,pin.head_sha,pin.workflow_id,this.clock()))
    return {code:409,body:{error:'ALREADY_CLAIMED'}};
   const claimed={...task,state:'DISPATCHING',paid:false,workflow:'buffalo-control-plane-offline.yml'};

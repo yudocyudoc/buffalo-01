@@ -98,6 +98,8 @@ function expectInvalid(response,reason){
 }
 assert.equal(validateAgentCompletion(assistant('tool_calls','',[validCall()]),toolRequest).invalidReason,null);
 assert.equal(validateAgentCompletion(assistant('stop','Model complete',[]),toolRequest).invalidReason,null);
+assert.equal(validateAgentCompletion(assistant('stop','Model complete',null),toolRequest).invalidReason,null,
+  'tool_calls:null is valid for stop in OpenAI-compatible responses');
 expectInvalid(assistant('tool_calls','',[]),'EMPTY_TOOL_CALLS');
 expectInvalid(assistant('tool_calls',null,undefined),'EMPTY_TOOL_CALLS');
 expectInvalid(assistant('stop','   ',[]),'EMPTY_ASSISTANT_STOP');

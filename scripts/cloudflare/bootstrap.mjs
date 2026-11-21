@@ -212,12 +212,13 @@ globalThis.fetch = async (input, init = {}) => {
         // Prevent the original Buffalo loop from falsely emitting success.
         return truncatedClientResponse();
       }
-      if (response.ok && completion?.invalidReason) {
+      if (response.ok && (!completion || completion.invalidReason)) {
+        const reason = completion?.invalidReason ?? 'RESPONSE_JSON_UNAVAILABLE';
         blocked.invalid++;
         receipt.status = 'PROVIDER_INVALID_RESPONSE';
-        receipt.protocol_error_code = completion.invalidReason;
+        receipt.protocol_error_code = reason;
         receipt.client_http_status = 422; // Local fail-closed, not Cloudflare HTTP.
-        return invalidClientResponse(completion.invalidReason);
+        return invalidClientResponse(reason);
       }
       receipt.status = response.ok ? 'HTTP_SUCCESS' : 'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN';
       return response;

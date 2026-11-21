@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { groups, evaluate } from '../evals/categories/policyImplementation.js';
 import { runAgent } from '../agent/utilities/AgentEvalRunner.js';
+import { interruptedTransport, GEMMA_MODEL } from './cloudflare/completion-policy.mjs';
 
 function fail(message) {
   console.error(message);
@@ -111,7 +112,13 @@ if (!approval) {
         toolFailures: record.toolLog.filter(x => x.isError === true).length
       };
       const response = { model: run.lastModel, toolLog: record.toolLog, supportingInfo: { explanation: run.explanation } };
-      for (const test of siblings) {
+      const interruption = interruptedTransport(globalThis.__buffaloCloudflare.diagnostics());
+      if (interruption) {
+        // The original AgentEvalRunner can return after an agent-level error or
+        // an incomplete model turn. Never misgrade an unfinished policy.
+        record.evaluationSkippedDueTo = interruption.stopReason;
+        process.exitCode = 2;
+      } else for (const test of siblings) {
         try {
           const failures = await evaluate(response, test.expectations);
           record.grades.push({
@@ -140,7 +147,9 @@ if (!approval) {
       maxPosts: globalThis.__buffaloCloudflare.maxPosts,
       maxNeurons: globalThis.__buffaloCloudflare.maxNeurons,
       agentOutputCap: 4096,
-      note: 'Same original benchmark and tools; per-run neuron admission is model-priced and approximate'
+      thinkingMode: globalThis.__buffaloCloudflare.model === GEMMA_MODEL
+        ? 'disabled-via-chat_template_kwargs' : 'unchanged-provider-default',
+      note: 'Same original benchmark and tools; truncated model turns are not graded'
     };
     record.observedToolCompletions = observedToolCompletions;
     record.evidence = {
@@ -153,7 +162,13 @@ if (!approval) {
       ),
       cloudflareHttp200Responses: record.providerReceipts.filter(
         r => r.http_status === 200
-      ).length
+      ).length,
+      truncatedProviderResponses: record.providerReceipts.filter(
+        r => r.status === 'OUTPUT_TRUNCATED'
+      ).length,
+      finishReasons: record.providerReceipts.filter(
+        r => r.channel === 'original-agent-chat-tools'
+      ).map(r => r.finish_reason)
     };
     record.usageFromCloudflare = {
       promptTokens: record.providerReceipts.reduce((sum, r) => sum + (r.usage?.prompt_tokens || 0), 0),
@@ -165,18 +180,15 @@ if (!approval) {
       money: null,
       note: 'Cloudflare response usage only; Buffalo OpenAI-fallback dollar logs are not valid Cloudflare prices.'
     };
-    if (record.providerDiagnostics.exhausted) {
-      record.stopReason = 'CLOUDFLARE_POST_BUDGET_EXHAUSTED';
-      record.status = 'budget_exhausted';
-    } else if (record.providerDiagnostics.neuronPreflightBlockedAttempts > 0) {
-      record.stopReason = 'CLOUDFLARE_ESTIMATED_NEURON_PREFLIGHT_LIMIT';
-      record.status = 'neuron_preflight_blocked';
-    } else if (record.providerDiagnostics.neuronBudget?.unmetered) {
-      record.stopReason = 'CLOUDFLARE_USAGE_UNAVAILABLE_FAIL_CLOSED';
-      record.status = 'unmetered_fail_closed';
+    const interrupted = interruptedTransport(record.providerDiagnostics);
+    if (interrupted) {
+      record.stopReason = interrupted.stopReason;
+      record.status = interrupted.status;
+      process.exitCode = 2; // CI must not label a truncated model turn as success.
     } else if (record.errors.length) {
       record.stopReason = 'AGENT_EXECUTION_ERROR';
       record.status = 'execution_error';
+      process.exitCode = 2;
     } else {
       record.stopReason = 'AGENT_COMPLETED';
       record.status = 'completed';

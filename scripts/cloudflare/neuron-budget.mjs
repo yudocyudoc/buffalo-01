@@ -20,6 +20,8 @@ function finiteNonnegative(n) {
   return typeof n === 'number' && Number.isFinite(n) && n >= 0;
 }
 function nonnegativeNumber(n) {
+  // null/missing usage is unknown, not a free inference.
+  if (n === null || n === undefined || n === '') return null;
   const val = Number(n);
   return Number.isFinite(val) && val >= 0 ? val : null;
 }

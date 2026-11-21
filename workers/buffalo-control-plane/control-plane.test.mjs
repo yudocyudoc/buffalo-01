@@ -432,3 +432,13 @@ test('dispatch does not claim SUBMITTED if persisted state transition was reject
  assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
  assert.equal((await svc.dispatch(UUID)).code,409);
 });
+
+test('binding lab has no exposed HTTP test route and ignores unrelated cron',async()=>{
+ const module=await import('./binding-lab.mjs');
+ const unauthenticated=await module.default.fetch(new Request('https://private-lab.invalid/run'));
+ assert.equal(unauthenticated.status,404);
+ const denied=await module.default.fetch(new Request('https://private-lab.invalid/test',{method:'POST'}));
+ assert.equal(denied.status,404);
+ await module.default.scheduled({cron:'0 * * * *'},{}); // Must not touch DB.
+ assert.equal(typeof module.runBindingLab,'function');
+});

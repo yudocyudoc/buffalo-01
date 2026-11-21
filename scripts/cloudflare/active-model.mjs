@@ -1,12 +1,34 @@
 /**
- * Live Workers AI model for Buffalo agent turns AND original engine tools.
+ * Effective Workers AI target for the original Buffalo agent AND engine tools.
  *
- * Keep one effective model across both routes. The historical IGC adapter's
- * OR_SLUG ("cloudflare/glm-5.3-flash") is ONLY a virtual local SDK routing
- * alias and MUST NOT be sent to Cloudflare as the effective model.
+ * The IGC adapter's historical 'cloudflare/glm-5.3-flash' is a virtual
+ * OpenRouter SDK routing alias, not a Cloudflare inference target. Do not
+ * change or send it to Workers AI.
  *
- * Cloudflare introduced Inkling 2 Small on 2026-11-12.
+ * Published unit rates in USD per million tokens, 2026-11-20:
  * https://developers.cloudflare.com/workers-ai/models/inkling-2-small/
+ * https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/
+ * These are for estimating a PER-RUN neuron budget, not a billing statement.
  */
-export const BUFFALO_CF_MODEL = '@cf/thinkingmachines/inkling-2-small';
-export const BUFFALO_CF_MODEL_NAME = 'Inkling 2 Small';
+export const BUFFALO_CF_MODEL_CATALOG = Object.freeze({
+  '@cf/thinkingmachines/inkling-2-small': Object.freeze({
+    displayName: 'Inkling 2 Small',
+    inputUsdPerMillion: 0.30,
+    outputUsdPerMillion: 1.00,
+    cachedInputUsdPerMillion: 0.10,
+  }),
+  '@cf/google/gemma-4-26b-a4b-it': Object.freeze({
+    displayName: 'Gemma 4 26B A4B',
+    inputUsdPerMillion: 0.10,
+    outputUsdPerMillion: 0.30,
+    // Gemma's published model page has no separate cached-input rate.
+    cachedInputUsdPerMillion: null,
+  }),
+});
+const defaultModel = '@cf/thinkingmachines/inkling-2-small';
+const requestedModel = process.env.BUFFALO_CF_MODEL_ID || defaultModel;
+if (!Object.hasOwn(BUFFALO_CF_MODEL_CATALOG, requestedModel))
+  throw Error('BUFFALO_CF_UNSUPPORTED_MODEL: select a model from active-model.mjs');
+
+export const BUFFALO_CF_MODEL = requestedModel;
+export const BUFFALO_CF_MODEL_NAME = BUFFALO_CF_MODEL_CATALOG[requestedModel].displayName;

@@ -5,19 +5,28 @@
  */
 import assert from 'node:assert/strict';
 import {BUFFALO_CF_MODEL} from './active-model.mjs';
-import {GEMMA_MODEL,TRUNCATED_RESPONSE_CODE,interruptedTransport} from './completion-policy.mjs';
+import {GEMMA_MODEL,TRUNCATED_RESPONSE_CODE,INVALID_RESPONSE_CODE,
+  interruptedTransport} from './completion-policy.mjs';
 
 const state=globalThis.__buffaloCloudflare;
 const mock=globalThis.__buffaloMockCloudflareOrigin;
 assert.equal(state.offline,false,'Stub tests exercise the live response path');
 assert.equal(mock.calls.length,0);
 const outcome=process.env.BUFFALO_MOCK_FINISH;
+const invalidOutcomes={
+  tool_calls_empty:'EMPTY_TOOL_CALLS',
+  empty_stop:'EMPTY_ASSISTANT_STOP',
+  bad_arguments:'ARGUMENTS_INVALID_JSON',
+  missing_required:'ARGUMENTS_MISSING_REQUIRED_FIELD',
+  unknown_tool:'UNDECLARED_TOOL_NAME',
+  invalid_body:'RESPONSE_JSON_UNAVAILABLE'
+};
 const url=state.agentTarget;
 const payload={model:BUFFALO_CF_MODEL,
   messages:[{role:'system',content:'Agent task'},
     {role:'user',content:'Inspect and fix clinic'}],
   tools:[{type:'function',function:{name:'read_model_section',
-    parameters:{type:'object',properties:{section:{type:'string'}}}}}]
+    parameters:{type:'object',properties:{section:{type:'string'}},required:['section']}}}]
 };
 const response=await fetch(url,{method:'POST',
   headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
@@ -49,6 +58,9 @@ if (outcome==='http499') {
   );
   assert.equal(mock.calls.length,1);
   console.log('PASS: HTTP499 code6001 classified as upstream failure; usage remains unknown');
+} else if (outcome==='invalid_body') {
+  assert.equal(receipt.usage,null);
+  assert.equal(state.diagnostics().neuronBudget.unmetered,true);
 } else {
   assert.equal(receipt.usage.neurons,45);
   assert.equal(state.diagnostics().neuronBudget.usedOrHeldNeurons,45);
@@ -73,6 +85,33 @@ if (outcome==='length') {
   assert.equal(mock.calls.length,1,'Never send a second HTTP request after truncation');
   assert.equal(state.receipts.length,1);
   console.log('PASS: HTTP 200 length converted to local 422, no false completion or retry');
+} else if (invalidOutcomes[outcome]) {
+  assert.equal(response.status,422);
+  assert.equal((await response.json()).error.code,INVALID_RESPONSE_CODE);
+  assert.equal(receipt.status,'PROVIDER_INVALID_RESPONSE');
+  assert.equal(receipt.protocol_error_code,invalidOutcomes[outcome]);
+  assert.equal(receipt.client_http_status,422);
+  assert.equal(receipt.http_status,200);
+  assert.equal(state.diagnostics().invalidResponses,1);
+  if (outcome==='invalid_body') {
+    assert.equal(state.diagnostics().neuronBudget.unmetered,true);
+    assert.equal(receipt.neuronMetering.basis,'unknown-charged-reservation-held-fail-closed');
+  } else {
+    assert.equal(state.diagnostics().neuronBudget.unmetered,false);
+    assert.equal(receipt.neuronMetering.neurons,45);
+  }
+  assert.deepEqual(interruptedTransport(state.diagnostics(),state.receipts),{
+    status:'provider_invalid_response',
+    stopReason:'CLOUDFLARE_PROVIDER_INVALID_RESPONSE'
+  });
+  await assert.rejects(
+    fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({...payload,messages:[...payload.messages,{role:'user',content:'Retry'}]})}),
+    /BUFFALO_CF_HALTED_AFTER_INVALID_RESPONSE/
+  );
+  assert.equal(mock.calls.length,1,'No network retry after invalid provider output');
+  assert.equal(state.receipts.length,1);
+  console.log('PASS: HTTP200 invalid provider output rejected: '+invalidOutcomes[outcome]);
 } else if (outcome!=='http499') {
   assert.equal(response.status,200);
   const body=await response.json();

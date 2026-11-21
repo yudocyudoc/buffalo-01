@@ -32,7 +32,8 @@ if (BUFFALO_CF_MODEL===GEMMA_MODEL) {
   assert.equal(request.chat_template_kwargs,undefined);
 }
 const receipt=state.receipts[0];
-assert.equal(receipt.http_status,200,'Must preserve actual Cloudflare HTTP 200');
+assert.equal(receipt.http_status,outcome==='http499'?499:200,
+  'Must preserve original Cloudflare HTTP status, including failed 499');
 assert.ok(receipt.request_elapsed_ms >= 0);
 if (outcome==='http499') {
   assert.equal(response.status,499);

@@ -8,6 +8,8 @@ function preflightReason(error){
  const message=typeof error?.message==='string'?error.message:'';
  if(/^GITHUB_PREFLIGHT_(WORKFLOW|MAIN)_(HTTP_[1-5][0-9]{2}|INVALID_JSON|PATH_DENIED|FETCH_ABORT|NETWORK_TYPE_ERROR|IDENTITY_INVALID|SHA_INVALID|UNKNOWN)$/.test(message))
   return message;
+ if(/^GITHUB_(WORKFLOW_NOT_ALLOWLISTED|BAD_MAIN_SHA|INVALID_JSON)$/.test(message))
+  return 'GITHUB_PREFLIGHT_'+message.slice(7);
  const status=/^GITHUB_HTTP_([1-5][0-9]{2})$/.exec(message);
  if(status)return 'GITHUB_PREFLIGHT_HTTP_'+status[1];
  return 'GITHUB_PREFLIGHT_UNKNOWN';

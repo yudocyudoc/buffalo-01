@@ -278,3 +278,29 @@ test('GitHub preflight distinguishes workflow fetch, main fetch and type errors'
  const gh3=new GitHubOffline(token,async()=>{throw new TypeError('private network response');});
  await assert.rejects(()=>gh3.prepare(),/GITHUB_PREFLIGHT_WORKFLOW_NETWORK_TYPE_ERROR/);
 });
+
+test('native fetch wrapper keeps invocation context; original assignment fails',async()=>{
+ const original=globalThis.fetch;
+ const requests=[];
+ function strictWorkerFetch(url){
+  if(this instanceof GitHubOffline)throw TypeError('Illegal invocation: incorrect this reference');
+  requests.push(url);
+  if(url.endsWith('/actions/workflows/buffalo-control-plane-offline.yml'))
+   return Promise.resolve(Response.json({path:'.github/workflows/buffalo-control-plane-offline.yml',id:22}));
+  if(url.endsWith('/commits/main'))return Promise.resolve(Response.json({sha:HEAD}));
+  throw Error('UNEXPECTED_TEST_PATH');
+ }
+ try{
+  globalThis.fetch=strictWorkerFetch;
+  // This is exactly the old construction: the native function becomes a method
+  // with GitHubOffline as this. The synthetic brand guard rejects it.
+  const bad=new GitHubOffline('mock-token',strictWorkerFetch);
+  await assert.rejects(()=>bad.prepare(),/NETWORK_TYPE_ERROR/);
+  const working=new GitHubOffline('mock-token');
+  assert.notEqual(working.transport,strictWorkerFetch);
+  assert.deepEqual(await working.prepare(),{workflow_id:22,head_sha:HEAD});
+  assert.equal(requests.length,2);
+ }finally{
+  globalThis.fetch=original;
+ }
+});

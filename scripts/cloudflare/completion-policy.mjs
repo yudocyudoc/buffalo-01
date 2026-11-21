@@ -10,6 +10,7 @@
  */
 export const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 export const TRUNCATED_RESPONSE_CODE = 'BUFFALO_CF_OUTPUT_TRUNCATED';
+export const INVALID_RESPONSE_CODE = 'BUFFALO_CF_PROVIDER_INVALID_RESPONSE';
 
 export function configureModelWire(modelId, request) {
   if (!request || typeof request !== 'object' || Array.isArray(request))
@@ -38,6 +39,80 @@ export function inspectChatCompletion(payload) {
   };
 }
 
+/**
+ * Validate non-stream Chat Completions BEFORE the original Buffalo manual loop
+ * is allowed to see them. Only a structurally complete turn may be forwarded.
+ *
+ * This is a narrow safety gate, NOT a general JSON Schema validator.
+ * Original handlers still own full semantic validation of nested arguments.
+ * No tool result, prompt, or argument payload is saved in provider receipts.
+ */
+export function validateAgentCompletion(payload, wireRequest) {
+  const basic = inspectChatCompletion(payload);
+  const failure = reason => ({...basic, invalidReason: reason});
+  if (basic.truncated) return {...basic, invalidReason: null};
+  const choice = payload?.choices?.[0];
+  const msg = choice?.message;
+  if (!msg || msg.role !== 'assistant') return failure('MISSING_ASSISTANT_MESSAGE');
+  if (!['stop', 'tool_calls'].includes(basic.finishReason))
+    return failure('UNSUPPORTED_FINISH_REASON');
+
+  const calls = msg.tool_calls;
+  if (calls !== undefined && !Array.isArray(calls))
+    return failure('TOOL_CALLS_NOT_ARRAY');
+  const actualCalls = calls ?? [];
+  if (basic.finishReason === 'tool_calls' && actualCalls.length === 0)
+    return failure('EMPTY_TOOL_CALLS');
+  if (basic.finishReason === 'stop' && actualCalls.length !== 0)
+    return failure('STOP_WITH_TOOL_CALLS');
+
+  if (actualCalls.length === 0) {
+    if (typeof msg.content !== 'string' || !msg.content.trim())
+      return failure('EMPTY_ASSISTANT_STOP');
+    return {...basic, invalidReason:null};
+  }
+
+  const declaredTools = new Map((wireRequest?.tools ?? [])
+    .filter(tool => tool?.type === 'function' &&
+      typeof tool.function?.name === 'string')
+    .map(tool => [tool.function.name, tool.function.parameters ?? {}]));
+  const seenIds = new Set();
+  for (const call of actualCalls) {
+    if (!call || call.type !== 'function' ||
+      typeof call.id !== 'string' || !call.id.trim() ||
+      typeof call.function?.name !== 'string' || !call.function.name.trim())
+      return failure('MALFORMED_TOOL_CALL');
+    if (seenIds.has(call.id)) return failure('DUPLICATE_TOOL_CALL_ID');
+    seenIds.add(call.id);
+    if (!declaredTools.has(call.function.name))
+      return failure('UNDECLARED_TOOL_NAME');
+    if (typeof call.function.arguments !== 'string')
+      return failure('ARGUMENTS_NOT_JSON_STRING');
+    let args;
+    try { args = JSON.parse(call.function.arguments); }
+    catch { return failure('ARGUMENTS_INVALID_JSON'); }
+    if (!args || typeof args !== 'object' || Array.isArray(args))
+      return failure('ARGUMENTS_NOT_OBJECT');
+    const schema = declaredTools.get(call.function.name);
+    // Validate required TOP-LEVEL names before the original agent can silently
+    // substitute {}. Nested JSON-Schema constraints remain handler-owned.
+    if (Array.isArray(schema?.required) &&
+      schema.required.some(key => !Object.hasOwn(args,key)))
+      return failure('ARGUMENTS_MISSING_REQUIRED_FIELD');
+  }
+  return {...basic, invalidReason:null};
+}
+
+export function invalidClientResponse(reason) {
+  return new Response(JSON.stringify({
+    error: {
+      message: INVALID_RESPONSE_CODE + ': invalid provider assistant turn (' + reason + ')',
+      type: 'invalid_response_error',
+      code: INVALID_RESPONSE_CODE
+    }
+  }), {status:422,headers:{'content-type':'application/json'}});
+}
+
 /** A provider-200 truncated output is translated to a local client error.
  * No partial assistant content or incomplete tool calls are ever forwarded
  * to Buffalo's original manual loop.
@@ -58,6 +133,9 @@ export function truncatedClientResponse() {
  * of any interruption. A policy must actually complete before it can be graded.
  */
 export function interruptedTransport(diagnostics, receipts = []) {
+  if ((diagnostics?.invalidResponses ?? 0) > 0)
+    return {status:'provider_invalid_response',
+      stopReason:'CLOUDFLARE_PROVIDER_INVALID_RESPONSE'};
   if ((diagnostics?.truncatedResponses ?? 0) > 0)
     return {status:'output_truncated',stopReason:'CLOUDFLARE_OUTPUT_TRUNCATED'};
   // The last Gemma attempt returned a real 499 from Cloudflare, but the runner

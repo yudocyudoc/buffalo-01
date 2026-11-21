@@ -58,7 +58,8 @@ export function validateAgentCompletion(payload, wireRequest) {
     return failure('UNSUPPORTED_FINISH_REASON');
 
   const calls = msg.tool_calls;
-  if (calls !== undefined && !Array.isArray(calls))
+  // Chat Completions may legitimately encode absent tool calls as null.
+  if (calls != null && !Array.isArray(calls))
     return failure('TOOL_CALLS_NOT_ARRAY');
   const actualCalls = calls ?? [];
   if (basic.finishReason === 'tool_calls' && actualCalls.length === 0)

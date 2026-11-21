@@ -13,6 +13,7 @@ import {tmpdir} from 'node:os';
 import {BuiltInToolProvider} from '../../agent/tools/BuiltInToolProvider.js';
 import {isToolActive} from '../../agent/tools/toolAvailability.js';
 import {hydrateMessagesForOpenAi} from '../../agent/utilities/ToolResultFormatter.js';
+import {inspectChatCompletion} from './completion-policy.mjs';
 import {groups} from '../../evals/categories/policyImplementation.js';
 
 const scenarioId='dialysisClinic';
@@ -119,6 +120,21 @@ const withReasoning=structuredClone(toolExchange);
 withReasoning[1].reasoning_content='synthetic-reasoning-metadata';
 assert.deepEqual(hydrateMessagesForOpenAi(withReasoning,{}),withReasoning,
   'Formatter should preserve reasoning if it is present; another layer drops it');
+// A non-stream response shape reported in Cloudflare/ai#561. The current
+// transport only checks finish_reason=length. This INVALID state could reach
+// processOpenAiManualResponse, which sees zero tools and declares success.
+const misparsed=inspectChatCompletion({choices:[{
+  finish_reason:'tool_calls',
+  message:{role:'assistant',content:'',tool_calls:[]}
+}]});
+assert.deepEqual(misparsed,{
+  finishReason:'tool_calls',toolCallsCount:0,truncated:false
+});
+const malformedArgument='not-json-arguments';
+// This reproduces the current AgentOrchestrator fallback without running tools.
+let parsedArguments={};
+try{parsedArguments=JSON.parse(malformedArgument)}catch{/* current code keeps {} */}
+assert.deepEqual(parsedArguments,{});
 
 const metrics={
  scenarioId,agent:'merlin',mode:'sfd',
@@ -137,3 +153,5 @@ console.log('AUDIT_GEMMA4_TOOL_SCHEMA_JSON_BEGIN');
 console.log(JSON.stringify(metrics,null,2));
 console.log('AUDIT_GEMMA4_TOOL_SCHEMA_JSON_END');
 console.log('PASS: real Merlin builtin Zod schemas and OpenAI tool-turn formatter audited, no network');
+console.log('AUDIT_FINDING: finish_reason=tool_calls with zero tool_calls is NOT flagged by current completion-policy.mjs (Cloudflare/ai#561 risk)');
+console.log('AUDIT_FINDING: malformed tool JSON is silently replaced with {} by original manual handler (static matching behavior)');

@@ -65,6 +65,17 @@ assert.equal(interruptedTransport({neuronPreflightBlockedAttempts:1}).status,
   'neuron_preflight_blocked');
 assert.equal(interruptedTransport({neuronBudget:{unmetered:true}}).status,
   'unmetered_fail_closed');
+assert.deepEqual(
+  interruptedTransport({neuronBudget:{unmetered:true}}, [
+    {http_status:499,provider_error_code:6001}
+  ]),
+  {status:'provider_http_error',stopReason:'CLOUDFLARE_PROVIDER_HTTP_499'},
+  'Real Cloudflare 499 must be primary incident; unknown metering is secondary'
+);
+assert.equal(
+  interruptedTransport({},[{http_status:200,status:'OUTPUT_TRUNCATED'}]),null,
+  'Only diagnostics confirm a local truncated result; actual HTTP is 200'
+);
 console.log('PASS: model-specific Gemma no-thinking for both routes; Inkling unchanged');
 console.log('PASS: length never counts as completion, no tool/cap override to Buffalo');
 console.log('PASS: truncated outputs and resource stop flags bypass original graders (offline)');

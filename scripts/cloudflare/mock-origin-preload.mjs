@@ -17,8 +17,14 @@ globalThis.fetch=async (input,init={})=>{
   const wire=JSON.parse(body);
   calls.push({url:target,wire});
   const outcome=process.env.BUFFALO_MOCK_FINISH || 'length';
-  if (!['length','stop','tool_calls'].includes(outcome))
+  if (!['length','stop','tool_calls','http499'].includes(outcome))
     throw Error('OFFLINE_MOCK_UNKNOWN_OUTCOME');
+  if (outcome==='http499') {
+    return new Response(JSON.stringify({
+      errors:[{message:'AiError: Client Closed Request (offline mock)',code:6001}],
+      success:false,result:{},messages:[]
+    }),{status:499,headers:{'content-type':'application/json'}});
+  }
   const toolCalls=outcome==='tool_calls'?[{
     id:'call_mock1',type:'function',
     function:{name:'read_model_section',arguments:'{"section":"stocks"}'}

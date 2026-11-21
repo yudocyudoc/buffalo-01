@@ -17,7 +17,8 @@ globalThis.fetch=async (input,init={})=>{
   const wire=JSON.parse(body);
   calls.push({url:target,wire});
   const outcome=process.env.BUFFALO_MOCK_FINISH || 'length';
-  if (!['length','stop','tool_calls','http499'].includes(outcome))
+  if (!['length','stop','tool_calls','http499','tool_calls_empty',
+    'empty_stop','bad_arguments','missing_required','unknown_tool'].includes(outcome))
     throw Error('OFFLINE_MOCK_UNKNOWN_OUTCOME');
   if (outcome==='http499') {
     return new Response(JSON.stringify({
@@ -25,16 +26,23 @@ globalThis.fetch=async (input,init={})=>{
       success:false,result:{},messages:[]
     }),{status:499,headers:{'content-type':'application/json'}});
   }
-  const toolCalls=outcome==='tool_calls'?[{
+  const toolCalls=['tool_calls','bad_arguments','missing_required','unknown_tool'].includes(outcome)?[{
     id:'call_mock1',type:'function',
-    function:{name:'read_model_section',arguments:'{"section":"stocks"}'}
+    function:{
+      name:outcome==='unknown_tool'?'not_registered':'read_model_section',
+      arguments:outcome==='bad_arguments'?'INVALID-JSON':
+        outcome==='missing_required'?'{}':'{"section":"specs"}'
+    }
   }]:[];
+  const finish=['tool_calls_empty','bad_arguments','missing_required','unknown_tool'].includes(outcome)
+    ?'tool_calls':outcome==='empty_stop'?'stop':outcome;
   const response={
     id:'chatcmpl-offline-deterministic',object:'chat.completion',
     model:wire.model,
-    choices:[{index:0,finish_reason:outcome,message:{
+    choices:[{index:0,finish_reason:finish,message:{
       role:'assistant',
-      content:outcome==='length'?'incomplete output':'completed output',
+      content:['tool_calls_empty','empty_stop'].includes(outcome)?'':
+        outcome==='length'?'incomplete output':'completed output',
       ...(toolCalls.length?{tool_calls:toolCalls}:{})
     }}],
     usage:{prompt_tokens:120,completion_tokens:outcome==='length'?4096:24,neurons:45}

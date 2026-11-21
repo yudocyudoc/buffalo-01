@@ -1,0 +1,33 @@
+name: Buffalo Worker/D1/GitHub offline contracts (no API)
+on:
+  pull_request:
+    paths:
+      - 'workers/buffalo-control-plane/**'
+      - 'scripts/control-plane/**'
+      - 'migrations/control-plane/**'
+      - '.github/workflows/buffalo-control-plane-*.yml'
+      - 'docs/BUFFALO_CONTROL_PLANE_FASE_1_2026-11-21.md'
+permissions:
+  contents: read
+jobs:
+  control-plane-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax and offline Node tests
+        run: |
+          node --check workers/buffalo-control-plane/index.mjs
+          node --check workers/buffalo-control-plane/github.mjs
+          node --check workers/buffalo-control-plane/store.mjs
+          node --check workers/buffalo-control-plane/service.mjs
+          node --check scripts/control-plane/offline-echo.mjs
+          node --test scripts/control-plane/contract.test.mjs workers/buffalo-control-plane/control-plane.test.mjs
+      - name: Verify SQL migration and atomic state claims (SQLite only)
+        run: python scripts/control-plane/test-sql-offline.py

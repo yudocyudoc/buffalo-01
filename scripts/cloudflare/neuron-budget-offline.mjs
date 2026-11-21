@@ -25,7 +25,13 @@ assert.equal(
   meteredNeurons(gemma, {prompt_tokens: 1000, completion_tokens: 200}).basis,
   'estimated-from-provider-tokens-and-published-model-prices'
 );
-assert.equal(meteredNeurons(gemma, {}) , null);
+assert.equal(meteredNeurons(gemma, {}), null);
+assert.equal(meteredNeurons(gemma, {neurons:null}), null,
+  'Null neurons must not be mistaken for free inference');
+assert.equal(
+  meteredNeurons(gemma, {neurons:null,prompt_tokens:1000,completion_tokens:100}).basis,
+  'estimated-from-provider-tokens-and-published-model-prices'
+);
 console.log('PASS: Cloudflare per-model pricing, cached Inkling inputs and direct neuron usage');
 
 for (const model of [inkling, gemma]) {

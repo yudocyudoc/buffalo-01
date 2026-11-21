@@ -1,4 +1,4 @@
-name: Buffalo Cloudflare transport contract (zero API)
+name: Buffalo Cloudflare two-model budget contracts (zero API)
 
 on:
   pull_request:
@@ -7,6 +7,7 @@ on:
       - 'scripts/run-one-native-agent-case.mjs'
       - '.github/workflows/paid-agent-case.yml'
       - '.github/workflows/cloudflare-offline-contract.yml'
+      - 'scripts/compare-cloudflare-runs.mjs'
 
 permissions:
   contents: read
@@ -15,6 +16,12 @@ jobs:
   cloudflare-offline:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - '@cf/thinkingmachines/inkling-2-small'
+          - '@cf/google/gemma-4-26b-a4b-it'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,16 +30,34 @@ jobs:
           cache: npm
       - name: Install JS dependencies only for offline adapter contract
         run: npm ci --ignore-scripts
-      - name: Check code syntax
+      - name: Check source syntax and compare runner
         run: |
           node --check scripts/cloudflare/active-model.mjs
+          node --check scripts/cloudflare/neuron-budget.mjs
+          node --check scripts/cloudflare/neuron-budget-offline.mjs
+          node --check scripts/cloudflare/bootstrap-neuron-guard-offline.mjs
           node --check scripts/cloudflare/bootstrap.mjs
           node --check scripts/cloudflare/other-engine-transport.mjs
           node --check scripts/cloudflare/offline-contract.mjs
           node --check scripts/run-one-native-agent-case.mjs
-      - name: Validate agent + engine routing OFFLINE (no credentials, no POST)
+          node --check scripts/compare-cloudflare-runs.mjs
+      - name: Test model prices, requests and conservative local neuron guard
         env:
-          CLOUDFLARE_ACCOUNT_ID: "00000000000000000000000000000000"
-          BUFFALO_CF_OFFLINE: "1"
-          BUFFALO_CF_MAX_POSTS: "4"
+          BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
+        run: node scripts/cloudflare/neuron-budget-offline.mjs
+      - name: Validate selected agent + engine routing OFFLINE (no credentials, no POST)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: '00000000000000000000000000000000'
+          BUFFALO_CF_OFFLINE: '1'
+          BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
+          BUFFALO_CF_MAX_POSTS: '4'
+          BUFFALO_CF_MAX_NEURONS: '10000'
         run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/offline-contract.mjs
+      - name: Assert oversized original-engine request is blocked by neuron quota before network
+        env:
+          CLOUDFLARE_ACCOUNT_ID: '00000000000000000000000000000000'
+          BUFFALO_CF_OFFLINE: '1'
+          BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
+          BUFFALO_CF_MAX_POSTS: '10'
+          BUFFALO_CF_MAX_NEURONS: '200'
+        run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/bootstrap-neuron-guard-offline.mjs

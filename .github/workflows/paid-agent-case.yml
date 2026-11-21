@@ -11,6 +11,23 @@ on:
         options:
           - "NO"
           - "I_ACCEPT_CLOUDFLARE_AI_COSTS"
+      model:
+        description: "Workers AI model for BOTH original agent and engine tools"
+        required: true
+        default: "@cf/thinkingmachines/inkling-2-small"
+        type: choice
+        options:
+          - "@cf/thinkingmachines/inkling-2-small"
+          - "@cf/google/gemma-4-26b-a4b-it"
+      max_neurons:
+        description: "Local estimated neuron allowance (NOT an account-wide or hard billing cap)"
+        required: true
+        default: "4000"
+        type: choice
+        options:
+          - "2000"
+          - "4000"
+          - "6000"
       max_posts:
         description: "MAXIMUM Workers AI inference POSTs (not a dollar limit; choose consciously)"
         required: true
@@ -79,6 +96,8 @@ jobs:
       - name: Validate migrated IGC adapter + runner syntax (no inference)
         run: |
           node --check scripts/cloudflare/active-model.mjs
+          node --check scripts/cloudflare/neuron-budget.mjs
+          node --check scripts/cloudflare/neuron-budget-offline.mjs
           node --check scripts/cloudflare/bootstrap.mjs
           node --check scripts/cloudflare/other-engine-transport.mjs
           node --check scripts/run-one-native-agent-case.mjs
@@ -88,6 +107,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           BUFFALO_PAID_RUN: I_ACCEPT_CLOUDFLARE_AI_COSTS
+          BUFFALO_CF_MODEL_ID: ${{ inputs.model }}
+          BUFFALO_CF_MAX_NEURONS: ${{ inputs.max_neurons }}
           BUFFALO_CF_MAX_POSTS: ${{ inputs.max_posts }}
           BUFFALO_AGENT: ${{ inputs.agent }}
           BUFFALO_CASE_INDEX: ${{ inputs.case_index }}

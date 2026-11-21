@@ -13,7 +13,8 @@ import {BUFFALO_CF_MODEL} from './active-model.mjs';
 
 assert.equal(process.env.BUFFALO_CF_OFFLINE,'1');
 assert.equal(globalThis.__buffaloCloudflare?.provider,'cloudflare');
-assert.equal(BUFFALO_CF_MODEL,'@cf/thinkingmachines/inkling-2-small');
+assert.equal(BUFFALO_CF_MODEL,
+  process.env.BUFFALO_CF_MODEL_ID || '@cf/thinkingmachines/inkling-2-small');
 assert.equal(config.nativeAgentProviders.cloudflare.model,BUFFALO_CF_MODEL);
 assert.equal(config.nativeAgentProviders.cloudflare.summaryModel,BUFFALO_CF_MODEL);
 assert.equal(globalThis.__buffaloCloudflare.engineTarget.endsWith('/run/'+BUFFALO_CF_MODEL),true);
@@ -47,7 +48,7 @@ assert.equal(mapped.response_format.type,'json_schema');
 assert.equal(mapped.response_format.json_schema.type,'object');
 assert.equal(CF_MODEL,'@cf/zai-org/glm-5.3-flash'); // Proven adapter historical ID
 assert.equal(globalThis.__buffaloCloudflare.model,BUFFALO_CF_MODEL); // Actual current target
-console.log('PASS: preserved IGC 16k JSON-schema adapter, explicit newer Cloudflare destination');
+console.log('PASS: preserved IGC 16k JSON-schema adapter; effective model = '+BUFFALO_CF_MODEL);
 
 await assert.rejects(
   () => fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
@@ -87,9 +88,13 @@ assert.equal(globalThis.__buffaloCloudflare.receipts[2].engine_schema_category,
   'other-original-engine-transport-not-live-validated');
 assert.equal(globalThis.__buffaloCloudflare.receipts.every(r=>r.source==='offline-no-network'),true);
 assert.ok(globalThis.__buffaloCloudflare.receipts.every(r=>r.model===BUFFALO_CF_MODEL),
-  'Every route must record only the active Inkling 2 Small model');
+  'Every route must record only the selected Cloudflare model');
 assert.ok(!globalThis.__buffaloCloudflare.engineTarget.includes('glm-5.3'),
   'Historical alias is not a real Cloudflare inference destination');
+assert.equal(globalThis.__buffaloCloudflare.maxNeurons,10000);
+assert.equal(globalThis.__buffaloCloudflare.diagnostics().neuronBudget.maxNeurons,10000);
+assert.ok(globalThis.__buffaloCloudflare.receipts.every(r => r.neuronReservation?.reservedNeurons > 0));
+assert.equal(globalThis.__buffaloCloudflare.diagnostics().neuronPreflightBlockedAttempts,0);
 // Fill the last offline slot, then deliberately attempt a fifth POST.
 const probe = label => fetch(
   'https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+

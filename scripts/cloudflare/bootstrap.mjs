@@ -14,12 +14,15 @@ import {
 } from './arena_b_ev01_cf_adapter.mjs';
 import {adaptOriginalEngineRequest} from './other-engine-transport.mjs';
 import {BUFFALO_CF_MODEL, BUFFALO_CF_MODEL_NAME} from './active-model.mjs';
+import {createNeuronBudget, AGENT_MAX_COMPLETION_TOKENS, DEFAULT_MAX_NEURONS} from './neuron-budget.mjs';
 
 const PROVIDER_MODEL = BUFFALO_CF_MODEL;
 const offline = process.env.BUFFALO_CF_OFFLINE === '1';
 const account = process.env.CLOUDFLARE_ACCOUNT_ID || '';
 const token = process.env.CLOUDFLARE_API_TOKEN || '';
 const maxPosts = Number(process.env.BUFFALO_CF_MAX_POSTS || '12');
+const maxNeurons = Number(process.env.BUFFALO_CF_MAX_NEURONS || String(DEFAULT_MAX_NEURONS));
+const neuronBudget = createNeuronBudget(PROVIDER_MODEL, maxNeurons);
 const sha = text => 'sha256:' + createHash('sha256').update(text).digest('hex');
 const origin = 'https://api.cloudflare.com';
 const apiBase = origin + '/client/v4/accounts/' + account + '/ai';
@@ -59,8 +62,8 @@ config.agentToolModels.cloudflare = { standard: toolLane };
 const nativeFetch = globalThis.fetch;
 const receipts = [];
 const seen = new Set();
-const blocked = { budget: 0, duplicate: 0 };
-function postReceipt(channel, url, body, metadata = {}) {
+const blocked = { budget: 0, duplicate: 0, neuronPreflight: 0 };
+function postReceipt(channel, url, body, wireRequest, metadata = {}) {
   const hash = sha(body);
   if (receipts.length >= maxPosts) {
     blocked.budget++;
@@ -72,13 +75,25 @@ function postReceipt(channel, url, body, metadata = {}) {
     blocked.duplicate++;
     throw Error('BUFFALO_CF_DUPLICATE_POST_BLOCKED');
   }
+  let neuronReservation;
+  try {
+    neuronReservation = neuronBudget.reserve(wireRequest);
+  } catch (error) {
+    if (error?.message === 'BUFFALO_CF_NEURON_PREFLIGHT_BUDGET_BLOCKED') blocked.neuronPreflight++;
+    throw error;
+  }
   seen.add(hash);
   const r = { post: receipts.length + 1, channel, model: PROVIDER_MODEL,
     request_sha256: hash, status: 'RESERVED_BEFORE_HTTP', http_status: null,
-    usage: null, source: offline ? 'offline-no-network' : url, ...metadata };
+    usage: null, source: offline ? 'offline-no-network' : url,
+    neuronReservation, ...metadata };
   receipts.push(r);
   if (offline) throw Error('BUFFALO_CF_OFFLINE_POST_BLOCKED');
   return r;
+}
+function settleReceipt(receipt, usage) {
+  if (receipt.neuronMetering) return;
+  receipt.neuronMetering = neuronBudget.finish(receipt.neuronReservation, usage);
 }
 async function parseRequestBody(input, init) {
   const body = init?.body ?? (input instanceof Request ? await input.clone().text() : null);
@@ -98,10 +113,11 @@ globalThis.fetch = async (input, init = {}) => {
     const sdk = JSON.parse(requestText);
     const adapted = adaptOriginalEngineRequest(sdk);
     const rawWire = JSON.stringify(adapted.wire);
-    const receipt = postReceipt('original-engine-sdk-to-workers-ai', engineUrl, rawWire, {
-      engine_schema_category: adapted.category,
-      requested_max_completion_tokens: adapted.requestedMax
-    });
+    const receipt = postReceipt('original-engine-sdk-to-workers-ai', engineUrl, rawWire,
+      adapted.wire, {
+        engine_schema_category: adapted.category,
+        requested_max_completion_tokens: adapted.requestedMax
+      });
     try {
       const response = await nativeFetch(engineUrl, {
         method: 'POST', headers: {
@@ -111,11 +127,13 @@ globalThis.fetch = async (input, init = {}) => {
       receipt.http_status = response.status;
       const raw = await response.json();
       receipt.usage = raw?.result?.usage ?? raw?.usage ?? null;
+      settleReceipt(receipt, receipt.usage);
       if (!response.ok) throw Error('BUFFALO_CF_ENGINE_HTTP_' + response.status);
       const envelope = responseToOpenRouter(raw, sha(requestText));
       receipt.status = 'COMPLETE';
       return new Response(JSON.stringify(envelope), {status:200, headers:responseHeaders()});
     } catch (error) {
+      settleReceipt(receipt, null);
       receipt.status = 'FAILED_OR_CONSUMPTION_UNKNOWN';
       throw error;
     }
@@ -128,9 +146,19 @@ globalThis.fetch = async (input, init = {}) => {
     const request = JSON.parse(text);
     if (request.model !== PROVIDER_MODEL || !Array.isArray(request.messages))
       throw Error('BUFFALO_CF_NATIVE_REQUEST_MISMATCH');
-    const receipt = postReceipt('original-agent-chat-tools', nativeChat, text);
+    // Same output cap for both arms; upstream Buffalo prompt and tool list remain
+    // untouched. This permits a finite pre-request neuron reservation.
+    const requestedCap = request.max_completion_tokens;
+    if (requestedCap !== undefined &&
+        (!Number.isInteger(requestedCap) || requestedCap < 1))
+      throw Error('BUFFALO_CF_INVALID_AGENT_OUTPUT_CAP');
+    request.max_completion_tokens = Math.min(
+      requestedCap ?? AGENT_MAX_COMPLETION_TOKENS, AGENT_MAX_COMPLETION_TOKENS
+    );
+    const wireText = JSON.stringify(request);
+    const receipt = postReceipt('original-agent-chat-tools', nativeChat, wireText, request);
     try {
-      const response = await nativeFetch(input, init);
+      const response = await nativeFetch(input, {...init, body: wireText});
       receipt.http_status = response.status;
       // Non-streaming original Buffalo manual loop. Clone without mutating what
       // the original OpenAI-compatible SDK will parse for function tool calls.
@@ -141,9 +169,11 @@ globalThis.fetch = async (input, init = {}) => {
         receipt.finish_reason = body?.choices?.[0]?.finish_reason ?? null;
         receipt.tool_calls_count = body?.choices?.[0]?.message?.tool_calls?.length ?? 0;
       } catch { receipt.response_parse = 'unavailable'; }
+      settleReceipt(receipt, receipt.usage);
       receipt.status = response.ok ? 'HTTP_SUCCESS' : 'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN';
       return response;
     } catch (error) {
+      settleReceipt(receipt, null);
       receipt.status = 'FAILED_OR_CONSUMPTION_UNKNOWN';
       throw error;
     }
@@ -154,12 +184,14 @@ globalThis.fetch = async (input, init = {}) => {
 globalThis.__buffaloCloudflare = {
   provider: 'cloudflare', model: PROVIDER_MODEL, engineAlias: OR_SLUG,
   engineTarget: engineUrl, agentTarget: nativeChat,
-  adapter: EV01_ADAPTER_VERSION, maxPosts, offline, receipts,
+  adapter: EV01_ADAPTER_VERSION, maxPosts, maxNeurons, offline, receipts,
   serialize: () => JSON.parse(JSON.stringify(receipts)),
   diagnostics: () => ({
     maxPosts, reservedPosts: receipts.length,
     budgetBlockedAttempts: blocked.budget,
     duplicateBlockedAttempts: blocked.duplicate,
-    exhausted: blocked.budget > 0
+    exhausted: blocked.budget > 0,
+    neuronPreflightBlockedAttempts: blocked.neuronPreflight,
+    neuronBudget: neuronBudget.diagnostics()
   }),
 };

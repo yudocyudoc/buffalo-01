@@ -59,6 +59,8 @@ if (!approval) {
     console.log('Criteria: ' + siblings.map(t => t.expectations.criterion).join(', '));
     console.log('No custom prompt, no modified engine, no Stella client.');
     console.log('Maximum Cloudflare POST budget: ' + globalThis.__buffaloCloudflare.maxPosts);
+    console.log('Local preflight neuron allowance: ' + globalThis.__buffaloCloudflare.maxNeurons
+      + ' (estimate, not a guaranteed billing cap)');
     const begin = Date.now();
     const record = {
       performedAt: new Date().toISOString(),
@@ -131,6 +133,15 @@ if (!approval) {
 
     record.providerReceipts = globalThis.__buffaloCloudflare.serialize();
     record.providerDiagnostics = globalThis.__buffaloCloudflare.diagnostics();
+    record.experimentParameters = {
+      model: globalThis.__buffaloCloudflare.model,
+      agent: agentName,
+      caseIndex: index,
+      maxPosts: globalThis.__buffaloCloudflare.maxPosts,
+      maxNeurons: globalThis.__buffaloCloudflare.maxNeurons,
+      agentOutputCap: 4096,
+      note: 'Same original benchmark and tools; per-run neuron admission is model-priced and approximate'
+    };
     record.observedToolCompletions = observedToolCompletions;
     record.evidence = {
       ...record.evidence,
@@ -157,6 +168,12 @@ if (!approval) {
     if (record.providerDiagnostics.exhausted) {
       record.stopReason = 'CLOUDFLARE_POST_BUDGET_EXHAUSTED';
       record.status = 'budget_exhausted';
+    } else if (record.providerDiagnostics.neuronPreflightBlockedAttempts > 0) {
+      record.stopReason = 'CLOUDFLARE_ESTIMATED_NEURON_PREFLIGHT_LIMIT';
+      record.status = 'neuron_preflight_blocked';
+    } else if (record.providerDiagnostics.neuronBudget?.unmetered) {
+      record.stopReason = 'CLOUDFLARE_USAGE_UNAVAILABLE_FAIL_CLOSED';
+      record.status = 'unmetered_fail_closed';
     } else if (record.errors.length) {
       record.stopReason = 'AGENT_EXECUTION_ERROR';
       record.status = 'execution_error';
@@ -180,6 +197,7 @@ if (!approval) {
       gradingStatus: record.gradingStatus,
       providerDiagnostics: record.providerDiagnostics,
       usageFromCloudflare: record.usageFromCloudflare,
+      experimentParameters: record.experimentParameters,
       grades: record.grades,
       errors: record.errors,
       recordFile: file

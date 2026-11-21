@@ -135,7 +135,7 @@ export function verifyOfflineResult(task,run,result){
   result.workflow!==OFFLINE_WORKFLOW||
   Object.keys(result.evidence??{}).sort().join(',')!=='kind,payload_sha256'||
   result.evidence.kind!=='NO_PROVIDER_NO_SIMULATION'||
-  result.evidence.payload_sha256!=='eacc1fc5feb407c232566c49fae3f3d0694b5b672ac3e468c4921779bd6df60e')
+  result.evidence.payload_sha256!=='f906349fffd099463ac34960772d8cc40a3f6f82c821873da82cadb66f74533e')
   throw Error('GITHUB_RESULT_MISMATCH');
  return result;
 }

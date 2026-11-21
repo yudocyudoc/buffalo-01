@@ -18,7 +18,8 @@ const invalidOutcomes={
   empty_stop:'EMPTY_ASSISTANT_STOP',
   bad_arguments:'ARGUMENTS_INVALID_JSON',
   missing_required:'ARGUMENTS_MISSING_REQUIRED_FIELD',
-  unknown_tool:'UNDECLARED_TOOL_NAME'
+  unknown_tool:'UNDECLARED_TOOL_NAME',
+  invalid_body:'RESPONSE_JSON_UNAVAILABLE'
 };
 const url=state.agentTarget;
 const payload={model:BUFFALO_CF_MODEL,
@@ -57,6 +58,9 @@ if (outcome==='http499') {
   );
   assert.equal(mock.calls.length,1);
   console.log('PASS: HTTP499 code6001 classified as upstream failure; usage remains unknown');
+} else if (outcome==='invalid_body') {
+  assert.equal(receipt.usage,null);
+  assert.equal(state.diagnostics().neuronBudget.unmetered,true);
 } else {
   assert.equal(receipt.usage.neurons,45);
   assert.equal(state.diagnostics().neuronBudget.usedOrHeldNeurons,45);
@@ -89,8 +93,13 @@ if (outcome==='length') {
   assert.equal(receipt.client_http_status,422);
   assert.equal(receipt.http_status,200);
   assert.equal(state.diagnostics().invalidResponses,1);
-  assert.equal(state.diagnostics().neuronBudget.unmetered,false);
-  assert.equal(receipt.neuronMetering.neurons,45);
+  if (outcome==='invalid_body') {
+    assert.equal(state.diagnostics().neuronBudget.unmetered,true);
+    assert.equal(receipt.neuronMetering.basis,'unknown-charged-reservation-held-fail-closed');
+  } else {
+    assert.equal(state.diagnostics().neuronBudget.unmetered,false);
+    assert.equal(receipt.neuronMetering.neurons,45);
+  }
   assert.deepEqual(interruptedTransport(state.diagnostics(),state.receipts),{
     status:'provider_invalid_response',
     stopReason:'CLOUDFLARE_PROVIDER_INVALID_RESPONSE'

@@ -108,9 +108,32 @@ export async function runBindingLab(db){
 }
 
 export default {
- async fetch(){return new Response('Not Found',{status:404})},
- async scheduled(controller,env){
-  if(controller?.cron!=='* * * * *')return;
-  await runBindingLab(env.DB);
- }
+ async fetch(request,env){
+  // The dedicated Worker MUST be protected by Cloudflare Access at the edge.
+  // No route except the literal, audited one-shot POST; no arbitrary input.
+  const url=new URL(request.url);
+  if(url.pathname!=='/v1/lab/run-once'||request.method!=='POST')
+   return new Response('Not Found',{status:404});
+  if(!request.headers.get('Cf-Access-Jwt-Assertion'))
+   return Response.json({error:'ACCESS_ASSERTION_REQUIRED'},{status:403});
+  if(request.headers.get('content-type')?.split(';')[0].trim()!=='application/json')
+   return Response.json({error:'INVALID_CONTENT_TYPE'},{status:415});
+  if(Number(request.headers.get('content-length')??0)>256)
+   return Response.json({error:'BODY_TOO_LARGE'},{status:413});
+  let body;
+  try{body=await request.text()}catch{return Response.json({error:'BAD_BODY'},{status:400})}
+  if(body.length>256||body!=='{"action":"RUN_BINDING_LAB_V1"}')
+   return Response.json({error:'INVALID_INPUT'},{status:400});
+  try{
+   const result=await runBindingLab(env.DB);
+   return Response.json(result.already_started?
+    {status:'ALREADY_STARTED',run_again:false}:
+    {status:'PASS',scenarios:result.scenarios,run_again:false},
+    {status:result.already_started?409:200,headers:{'cache-control':'no-store'}});
+  }catch{
+   return Response.json({status:'FAILED',reason:'READ_D1_RECEIPT',run_again:false},
+    {status:500,headers:{'cache-control':'no-store'}});
+  }
+ },
+ async scheduled(){ /* Cron is permanently disabled: manual Access-only invocation. */ }
 };

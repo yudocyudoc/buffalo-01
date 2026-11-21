@@ -1,0 +1,25 @@
+name: Buffalo control-plane contract (offline)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/control-plane/**'
+      - 'migrations/control-plane/**'
+      - '.github/workflows/buffalo-control-plane-*.yml'
+      - 'docs/BUFFALO_CONTROL_PLANE_FASE_0_2026-11-21.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check scripts/control-plane/contract.mjs
+      - run: node --check scripts/control-plane/offline-echo.mjs
+      - run: node --test scripts/control-plane/contract.test.mjs

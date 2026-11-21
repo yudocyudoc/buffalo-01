@@ -126,6 +126,7 @@ globalThis.fetch = async (input, init = {}) => {
         engine_schema_category: adapted.category,
         requested_max_completion_tokens: adapted.requestedMax
       });
+    const requestStartMs = Date.now();
     try {
       const response = await nativeFetch(engineUrl, {
         method: 'POST', headers: {
@@ -133,7 +134,9 @@ globalThis.fetch = async (input, init = {}) => {
         }, body: rawWire, signal: AbortSignal.timeout(EV01_TIMEOUT_MS)
       });
       receipt.http_status = response.status;
+      receipt.request_elapsed_ms = Date.now() - requestStartMs;
       const raw = await response.json();
+      receipt.provider_error_code = raw?.errors?.[0]?.code ?? null;
       receipt.usage = raw?.result?.usage ?? raw?.usage ?? null;
       settleReceipt(receipt, receipt.usage);
       if (!response.ok) throw Error('BUFFALO_CF_ENGINE_HTTP_' + response.status);
@@ -141,6 +144,7 @@ globalThis.fetch = async (input, init = {}) => {
       receipt.status = 'COMPLETE';
       return new Response(JSON.stringify(envelope), {status:200, headers:responseHeaders()});
     } catch (error) {
+      receipt.request_elapsed_ms ??= Date.now() - requestStartMs;
       settleReceipt(receipt, null);
       receipt.status = 'FAILED_OR_CONSUMPTION_UNKNOWN';
       throw error;
@@ -168,9 +172,11 @@ globalThis.fetch = async (input, init = {}) => {
     const receipt = postReceipt('original-agent-chat-tools', nativeChat, wireText, wire, {
       thinking_disabled: wire.chat_template_kwargs?.enable_thinking === false
     });
+    const requestStartMs = Date.now();
     try {
       const response = await nativeFetch(input, {...init, body: wireText});
       receipt.http_status = response.status;
+      receipt.request_elapsed_ms = Date.now() - requestStartMs;
       // Clone preserves provider bytes for the SDK on accepted responses.
       // Record usage even when Cloudflare returned HTTP 200 for a truncated turn.
       let completion = null;
@@ -178,6 +184,10 @@ globalThis.fetch = async (input, init = {}) => {
         const body = await response.clone().json();
         receipt.response_sha256 = sha(JSON.stringify(body));
         receipt.usage = body?.usage ?? null;
+        // Persist only a machine-readable Cloudflare error code, never the
+        // potentially sensitive response body or original request contents.
+        if (!response.ok)
+          receipt.provider_error_code = body?.errors?.[0]?.code ?? null;
         completion = inspectChatCompletion(body);
         receipt.finish_reason = completion.finishReason;
         receipt.tool_calls_count = completion.toolCallsCount;
@@ -193,6 +203,7 @@ globalThis.fetch = async (input, init = {}) => {
       receipt.status = response.ok ? 'HTTP_SUCCESS' : 'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN';
       return response;
     } catch (error) {
+      receipt.request_elapsed_ms ??= Date.now() - requestStartMs;
       settleReceipt(receipt, null);
       receipt.status = 'FAILED_OR_CONSUMPTION_UNKNOWN';
       throw error;

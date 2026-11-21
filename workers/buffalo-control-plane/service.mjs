@@ -57,7 +57,11 @@ export class ControlPlaneService{
    await this.store.transition(taskId,'DISPATCHING','DISPATCH_UNKNOWN','DISPATCH_OUTCOME_UNKNOWN');
    return {code:202,body:{task_id:taskId,state:'DISPATCH_UNKNOWN',retry_allowed:false}};
   }
-  await this.store.transition(taskId,'DISPATCHING','SUBMITTED','GITHUB_DISPATCH_ACCEPTED');
+  const recorded=await this.store.transition(taskId,'DISPATCHING','SUBMITTED','GITHUB_DISPATCH_ACCEPTED');
+  const current=await this.store.read(taskId);
+  if(!recorded)
+   return {code:409,body:{error:'DISPATCH_STATE_CHANGED',state:current?.state??'UNKNOWN',
+    task_id:taskId,retry_allowed:false}};
   return {code:202,body:{task_id:taskId,state:'SUBMITTED',run_id:null}}
  }
  async reconcile(id){
@@ -96,9 +100,18 @@ export class ControlPlaneService{
    }
    // Run success is insufficient: verify artifact ZIP digest and inner JSON.
    const verified=await this.github.getVerifiedResult(task,run);
-   await this.store.transition(taskId,task.state,'SUCCEEDED','VERIFIED_OFFLINE_ARTIFACT',{
+   const committed=await this.store.transition(taskId,task.state,'SUCCEEDED','VERIFIED_OFFLINE_ARTIFACT',{
     run_id:run.id,artifact_id:verified.artifact_id,result_sha256:verified.result_sha256});
-   return {code:200,body:{...(await this.inspect(taskId)).body,reconciled:true,verified:true}}
+   const current=await this.store.read(taskId);
+   const persisted=current?.state==='SUCCEEDED'&&current.github_run_id===run.id&&
+    current.github_artifact_id===verified.artifact_id&&
+    current.result_sha256===verified.result_sha256;
+   // No success receipt unless D1 contains the exact identity-bound evidence.
+   // Concurrent reconciliations may have committed the same evidence already.
+   if(!persisted)return {code:409,body:{error:'RECONCILIATION_STATE_CHANGED',
+    state:current?.state??'UNKNOWN',reconciled:false,verified:false}};
+   return {code:200,body:{...status(current),reconciled:true,verified:true,
+    already_committed:!committed}}
   }catch{
    // Malformed, missing or unverifiable evidence must never mark SUCCESS.
    if(task.state==='DISPATCH_UNKNOWN')

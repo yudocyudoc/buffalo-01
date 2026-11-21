@@ -1,3 +1,4 @@
+import {inflateRawSync} from 'node:zlib';
 /** GitHub API: one allowlisted offline workflow; verify run and stored ZIP evidence. */
 import {assertSha256,assertTaskId,OFFLINE_KIND,OFFLINE_WORKFLOW} from '../../scripts/control-plane/contract.mjs';
 export const REPO='yudocyudoc/buffalo-01';
@@ -86,7 +87,7 @@ export class GitHubOffline{
   const bytes=await this.get('/actions/artifacts/'+a.id+'/zip',{raw:true});
   const rawHash=await sha256(bytes);
   if(a.digest!=='sha256:'+rawHash)throw Error('GITHUB_ARTIFACT_DIGEST_MISMATCH');
-  const body=extractSingleStoredZip(bytes,'buffalo-offline-result.json');
+  const body=extractSingleMemberZip(bytes,'buffalo-offline-result.json');
   const resultSha=await sha256(body);
   const result=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(body));
   verifyOfflineResult(task,run,result);
@@ -95,8 +96,8 @@ export class GitHubOffline{
 }
 const readName=(b,start,n)=>new TextDecoder('utf-8',{fatal:true}).decode(b.subarray(start,start+n));
 function crc32(b){let c=0xffffffff;for(const x of b){c^=x;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}return (c^0xffffffff)>>>0}
-/** Only ONE stored (uncompressed) ZIP member is allowed, with valid central index and CRC32. */
-export function extractSingleStoredZip(buffer,expectedName){
+/** One ZIP member only; supports GitHub's stored or DEFLATE method. Validate central index and CRC32. */
+export function extractSingleMemberZip(buffer,expectedName){
  const b=new Uint8Array(buffer),v=new DataView(buffer);
  if(b.length<98||b.length>65536)throw Error('ZIP_SIZE_INVALID');
  let eocd=-1;
@@ -111,18 +112,19 @@ export function extractSingleStoredZip(buffer,expectedName){
  const flag=v.getUint16(p+8,true),method=v.getUint16(p+10,true);
  const checksum=v.getUint32(p+16,true),compressed=v.getUint32(p+20,true),uncompressed=v.getUint32(p+24,true);
  const nameLen=v.getUint16(p+28,true),extra=v.getUint16(p+30,true),comment=v.getUint16(p+32,true);
- if(flag&1||method!==0||compressed!==uncompressed||uncompressed>16384||
+ if(flag&1||![0,8].includes(method)||uncompressed>16384||compressed>65536||
   p+46+nameLen+extra+comment!==eocd||readName(b,p+46,nameLen)!==expectedName)
   throw Error('ZIP_MEMBER_INVALID');
  const local=v.getUint32(p+42,true);
  if(local+30>b.length||v.getUint32(local,true)!==0x04034b50||
-  v.getUint16(local+8,true)!==0||(v.getUint16(local+6,true)&1))
+  v.getUint16(local+8,true)!==method||(v.getUint16(local+6,true)&1))
   throw Error('ZIP_LOCAL_INVALID');
  const localName=v.getUint16(local+26,true),localExtra=v.getUint16(local+28,true);
  const start=local+30+localName+localExtra;
  if(readName(b,local+30,localName)!==expectedName||start+compressed>p)throw Error('ZIP_LOCAL_MEMBER_INVALID');
- const content=b.subarray(start,start+compressed);
- if(crc32(content)!==checksum)throw Error('ZIP_CRC_INVALID');
+ const wire=b.subarray(start,start+compressed);
+ const content=method===0?wire:new Uint8Array(inflateRawSync(wire,{maxOutputLength:16384}));
+ if(content.length!==uncompressed||crc32(content)!==checksum)throw Error('ZIP_CRC_INVALID');
  return content;
 }
 export function verifyOfflineResult(task,run,result){
@@ -139,3 +141,6 @@ export function verifyOfflineResult(task,run,result){
   throw Error('GITHUB_RESULT_MISMATCH');
  return result;
 }
+
+/** Deprecated test alias, both ZIP storage methods validated. */
+export const extractSingleStoredZip=extractSingleMemberZip;

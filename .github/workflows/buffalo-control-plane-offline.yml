@@ -1,0 +1,43 @@
+name: Buffalo control-plane offline echo (no AI)
+
+run-name: Buffalo offline echo ${{ inputs.task_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: 'UUID issued by the control plane; no model/prompt/command inputs'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: buffalo-offline-${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  offline-echo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate offline contract (no dependencies, no network requests)
+        run: node --test scripts/control-plane/contract.test.mjs
+      - name: Produce an offline evidence artifact
+        env:
+          BUFFALO_TASK_ID: ${{ inputs.task_id }}
+          BUFFALO_RESULT_PATH: ${{ runner.temp }}/buffalo-offline-result.json
+        run: node scripts/control-plane/offline-echo.mjs
+      - name: Upload offline result
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-offline-${{ inputs.task_id }}
+          path: ${{ runner.temp }}/buffalo-offline-result.json
+          retention-days: 7

@@ -5,7 +5,9 @@ export class D1TaskStore{
  constructor(db){if(!db?.prepare||!db?.batch)throw Error('D1_BINDING_REQUIRED');this.db=db}
  async read(id){return this.db.prepare('SELECT * FROM buffalo_tasks WHERE task_id = ?').bind(assertTaskId(id)).first()}
  async create(value){
-  const task=acceptOfflineTask(value);
+  const task=acceptOfflineTask({task_id:value.task_id,kind:value.kind,input_sha256:value.input_sha256});
+  if(value.workflow!=='buffalo-control-plane-offline.yml'||value.state!=='READY'||value.paid!==false)
+   throw Error('CONTROL_PLANE_INTERNAL_TASK_NOT_NORMALIZED');
   const insert=this.db.prepare(`INSERT INTO buffalo_tasks (task_id,kind,input_sha256,state)
    VALUES (?,?,?,'READY') ON CONFLICT(task_id) DO NOTHING`).bind(task.task_id,task.kind,task.input_sha256);
   const event=this.db.prepare(`INSERT INTO buffalo_task_events (task_id,actor,old_state,new_state,reason_code)

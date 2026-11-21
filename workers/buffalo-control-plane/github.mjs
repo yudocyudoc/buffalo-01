@@ -9,7 +9,13 @@ const sha256=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256
  .map(x=>x.toString(16).padStart(2,'0')).join('');
 const parseJson=async res=>{try{return await res.json()}catch{throw Error('GITHUB_INVALID_JSON')}};
 export class GitHubOffline{
- constructor(token,transport=fetch){if(!token||typeof token!=='string')throw Error('GITHUB_TOKEN_NOT_CONFIGURED');this.token=token;this.transport=transport}
+ constructor(token,transport=(url,init)=>fetch(url,init)){
+  if(!token||typeof token!=='string')throw Error('GITHUB_TOKEN_NOT_CONFIGURED');
+  this.token=token;
+  // Workers native fetch must be invoked in its original scope. Do not assign fetch directly
+  // to a class field and invoke via this.transport: Cloudflare may throw TypeError: Illegal invocation.
+  this.transport=transport;
+ }
  async get(path,options={}){
   if(!path.startsWith('/')||path.includes('..')||path.includes('://'))throw Error('GITHUB_PATH_DENIED');
   const response=await this.transport(API+path,{method:options.method??'GET',

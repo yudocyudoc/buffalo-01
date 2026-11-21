@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {OFFLINE_KIND,OFFLINE_WORKFLOW} from '../../scripts/control-plane/contract.mjs';
 import {ControlPlaneService} from './service.mjs';
+import {D1TaskStore} from './store.mjs';
+import {acceptOfflineTask} from '../../scripts/control-plane/contract.mjs';
 import {handle} from './index.mjs';
 import {GitHubOffline,extractSingleStoredZip,verifyOfflineResult} from './github.mjs';
 const UUID='123e4567-e89b-42d3-a456-426614174000',HASH='b'.repeat(64),HEAD='a'.repeat(40);
@@ -175,4 +177,24 @@ test('prior and rerun workflow cannot impersonate current run',()=>{
   dispatch_started_at:'2026-11-21T20:00:00Z',github_run_id:null};
  assert.throws(()=>gh.checkRun(task,{...run,created_at:'2026-11-20T20:00:00Z'}),/RUN_ORIGIN_NOT_PROVEN/);
  assert.throws(()=>gh.checkRun(task,{...run,run_attempt:2}),/RUN_ORIGIN_NOT_PROVEN/);
+});
+
+test('D1 store accepts strictly normalized internal task and rejects unnormalized one',async()=>{
+ let rows=null;
+ const db={
+   prepare(sql){return {bind(...args){
+     if(sql.startsWith('SELECT * FROM buffalo_tasks'))return {first:async()=>rows};
+     return {args,sql};
+   }}},
+   async batch(stmts){
+     assert.equal(stmts.length,2);
+     rows={task_id:UUID,kind:OFFLINE_KIND,input_sha256:HASH,state:'READY'};
+     return [{meta:{changes:1}},{meta:{changes:1}}];
+   }
+ };
+ const store=new D1TaskStore(db);
+ const result=await store.create(acceptOfflineTask(input));
+ assert.equal(result.created,true);
+ assert.equal(result.task.state,'READY');
+ await assert.rejects(()=>store.create(input),/INTERNAL_TASK_NOT_NORMALIZED/);
 });

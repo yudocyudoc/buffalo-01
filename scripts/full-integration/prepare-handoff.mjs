@@ -3,6 +3,8 @@
  * Loading groups does not call evaluate(), runAgent(), PySD or a provider.
  */
 import {createHash} from 'node:crypto';
+import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {inspectOriginalSources} from './original-gate.mjs';
 import {HANDOFF_KIND,HANDOFF_SCHEMA,normalizeHandoff,digestHandoff} from './handoff-contract.mjs';
 
@@ -71,6 +73,6 @@ async function main(){
  const candidate=await buildHandoff({...params,groups,sourceManifest});
  console.log(JSON.stringify(candidate));
 }
-if(import.meta.url===new URL('file://'+process.argv[1]).href){
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{await main()}catch(e){console.error(String(e?.message||'FULL_HANDOFF_PREPARE_FAILED'));process.exitCode=1}
 }

@@ -38,6 +38,7 @@ jobs:
           node --check scripts/cloudflare/bootstrap-neuron-guard-offline.mjs
           node --check scripts/cloudflare/bootstrap.mjs
           node --check scripts/cloudflare/completion-policy.mjs
+          node --check scripts/cloudflare/audit-gemma4-merlin-schemas-offline.mjs
           node --check scripts/cloudflare/completion-policy-offline.mjs
           node --check scripts/cloudflare/mock-origin-preload.mjs
           node --check scripts/cloudflare/completion-transport-mock-offline.mjs
@@ -45,6 +46,8 @@ jobs:
           node --check scripts/cloudflare/offline-contract.mjs
           node --check scripts/run-one-native-agent-case.mjs
           node --check scripts/compare-cloudflare-runs.mjs
+      - name: Audit ORIGINAL Merlin builtin Zod schemas (zero network and inference)
+        run: node scripts/cloudflare/audit-gemma4-merlin-schemas-offline.mjs
       - name: Test model prices, requests and conservative local neuron guard
         env:
           BUFFALO_CF_MODEL_ID: ${{ matrix.model }}

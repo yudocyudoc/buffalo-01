@@ -35,6 +35,7 @@ jobs:
           node --check scripts/cloudflare/active-model.mjs
           node --check scripts/cloudflare/neuron-budget.mjs
           node --check scripts/cloudflare/neuron-budget-offline.mjs
+          node --check scripts/cloudflare/bootstrap-neuron-guard-offline.mjs
           node --check scripts/cloudflare/bootstrap.mjs
           node --check scripts/cloudflare/other-engine-transport.mjs
           node --check scripts/cloudflare/offline-contract.mjs
@@ -52,3 +53,11 @@ jobs:
           BUFFALO_CF_MAX_POSTS: '4'
           BUFFALO_CF_MAX_NEURONS: '10000'
         run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/offline-contract.mjs
+      - name: Assert oversized original-engine request is blocked by neuron quota before network
+        env:
+          CLOUDFLARE_ACCOUNT_ID: '00000000000000000000000000000000'
+          BUFFALO_CF_OFFLINE: '1'
+          BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
+          BUFFALO_CF_MAX_POSTS: '10'
+          BUFFALO_CF_MAX_NEURONS: '200'
+        run: node --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/bootstrap-neuron-guard-offline.mjs

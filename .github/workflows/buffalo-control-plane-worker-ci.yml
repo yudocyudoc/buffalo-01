@@ -4,6 +4,14 @@ on:
     paths:
       - 'workers/buffalo-control-plane/**'
       - 'scripts/control-plane/**'
+      - 'scripts/full-integration/**'
+      - 'agent/AgentOrchestrator.js'
+      - 'agent/utilities/AgentEvalRunner.js'
+      - 'agent/config/*.md'
+      - 'evals/categories/policyImplementation.js'
+      - 'evals/utilities/simulator/PySDSimulator.js'
+      - 'scripts/run-one-native-agent-case.mjs'
+      - '.github/workflows/paid-agent-case.yml'
       - 'migrations/control-plane/**'
       - '.github/workflows/buffalo-control-plane-*.yml'
       - 'docs/BUFFALO_CONTROL_PLANE_FASE_1_2026-11-21.md'
@@ -29,6 +37,9 @@ jobs:
           node --check workers/buffalo-control-plane/service.mjs
           node --check workers/buffalo-control-plane/binding-lab.mjs
           node --check scripts/control-plane/offline-echo.mjs
+          node --check scripts/full-integration/original-gate.mjs
+          node scripts/full-integration/original-gate.mjs --check
+          node --test scripts/full-integration/original-gate.test.mjs
           node --test scripts/control-plane/contract.test.mjs workers/buffalo-control-plane/control-plane.test.mjs
       - name: Verify SQL migration and atomic state claims (SQLite only)
         run: python scripts/control-plane/test-sql-offline.py

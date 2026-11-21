@@ -116,7 +116,7 @@ test('authenticated handoff POST/GET is isolated from original dispatch and reje
  const env={DB:{},GITHUB_FINE_GRAINED_TOKEN:'MOCK_NOT_USED',CONTROL_API_TOKEN:token};
  const create=(body,headers=auth)=>handle(new Request('https://worker.invalid/v1/full/handoffs',{
   method:'POST',headers,body:JSON.stringify(body)
- }),env,{fullHandoffStore:store});
+ }),env,{fullHandoffStore:store,store:{}});
  assert.equal((await create(normalized,{})).status,401);
  const admitted=await create(normalized);
  assert.equal(admitted.status,201);
@@ -128,12 +128,12 @@ test('authenticated handoff POST/GET is isolated from original dispatch and reje
  assert.equal(created.github_run_id,null);
  assert.equal((await create(normalized)).status,200);
  assert.equal(store.events.length,1);
- const read=await handle(new Request('https://worker.invalid/v1/full/handoffs/'+ID,{headers:auth}),env,{fullHandoffStore:store});
+ const read=await handle(new Request('https://worker.invalid/v1/full/handoffs/'+ID,{headers:auth}),env,{fullHandoffStore:store,store:{}});
  assert.equal((await read.json()).manifest_sha256,await digestHandoff(normalized));
  assert.equal((await create({...normalized,prompt_sha256:'f'.repeat(64)})).status,409);
- const denyPaid=await handle(new Request('https://worker.invalid/v1/full/handoffs/'+ID+'/dispatch',{method:'POST',headers:auth}),env,{fullHandoffStore:store});
+ const denyPaid=await handle(new Request('https://worker.invalid/v1/full/handoffs/'+ID+'/dispatch',{method:'POST',headers:auth}),env,{fullHandoffStore:store,store:{}});
  assert.equal(denyPaid.status,404);
  const wrongV1=await handle(new Request('https://worker.invalid/v1/tasks',{method:'POST',headers:auth,
-  body:JSON.stringify(normalized)}),env,{fullHandoffStore:store});
+  body:JSON.stringify(normalized)}),env,{fullHandoffStore:store,store:{}});
  assert.equal(wrongV1.status,400);
 });

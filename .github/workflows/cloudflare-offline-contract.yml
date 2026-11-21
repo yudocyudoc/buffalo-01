@@ -37,6 +37,10 @@ jobs:
           node --check scripts/cloudflare/neuron-budget-offline.mjs
           node --check scripts/cloudflare/bootstrap-neuron-guard-offline.mjs
           node --check scripts/cloudflare/bootstrap.mjs
+          node --check scripts/cloudflare/completion-policy.mjs
+          node --check scripts/cloudflare/completion-policy-offline.mjs
+          node --check scripts/cloudflare/mock-origin-preload.mjs
+          node --check scripts/cloudflare/completion-transport-mock-offline.mjs
           node --check scripts/cloudflare/other-engine-transport.mjs
           node --check scripts/cloudflare/offline-contract.mjs
           node --check scripts/run-one-native-agent-case.mjs
@@ -45,6 +49,21 @@ jobs:
         env:
           BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
         run: node scripts/cloudflare/neuron-budget-offline.mjs
+      - name: Validate Gemma thinking disabled and truncated-result grading policy (zero API)
+        env:
+          BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
+        run: node scripts/cloudflare/completion-policy-offline.mjs
+      - name: Mock HTTP response handling (zero network, no API token)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: '00000000000000000000000000000000'
+          CLOUDFLARE_API_TOKEN: 'TEST_ONLY_NEVER_VALID'
+          BUFFALO_CF_MODEL_ID: ${{ matrix.model }}
+          BUFFALO_CF_MAX_POSTS: '4'
+          BUFFALO_CF_MAX_NEURONS: '4000'
+        run: |
+          for finish in length stop tool_calls; do
+            BUFFALO_MOCK_FINISH="$finish" node --import ./scripts/cloudflare/mock-origin-preload.mjs --import ./scripts/cloudflare/bootstrap.mjs scripts/cloudflare/completion-transport-mock-offline.mjs
+          done
       - name: Validate selected agent + engine routing OFFLINE (no credentials, no POST)
         env:
           CLOUDFLARE_ACCOUNT_ID: '00000000000000000000000000000000'

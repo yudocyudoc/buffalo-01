@@ -304,3 +304,131 @@ test('native fetch wrapper keeps invocation context; original assignment fails',
   globalThis.fetch=original;
  }
 });
+
+
+// Negative gates: prove boundary behavior rather than relying on happy-path CI.
+test('two simultaneous dispatch calls claim once and send exactly one GitHub POST',async()=>{
+ const {svc,gh,store}=fx();
+ await svc.create(input);
+ const responses=await Promise.all([svc.dispatch(UUID),svc.dispatch(UUID)]);
+ assert.deepEqual(responses.map(r=>r.code).sort(),[202,409]);
+ assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
+ assert.equal(store.events.filter(x=>x==='DISPATCH_CLAIMED').length,1);
+ assert.equal((await store.read(UUID)).state,'SUBMITTED');
+ // A retry after claim cannot send another POST.
+ assert.equal((await svc.dispatch(UUID)).code,409);
+ assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
+});
+
+test('lost GitHub POST acknowledgement is never retried; matching run may reconcile',async()=>{
+ const {svc,gh,store}=fx();await svc.create(input);
+ gh.throwDispatch=true;
+ const first=await svc.dispatch(UUID);
+ assert.deepEqual(first.body,{task_id:UUID,state:'DISPATCH_UNKNOWN',retry_allowed:false});
+ assert.equal((await store.read(UUID)).state,'DISPATCH_UNKNOWN');
+ assert.deepEqual(store.events,['TASK_ADMITTED','DISPATCH_CLAIMED','DISPATCH_OUTCOME_UNKNOWN']);
+ assert.equal((await svc.dispatch(UUID)).code,409);
+ assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
+ gh.runs=[run];
+ const reconciled=await svc.reconcile(UUID);
+ assert.equal(reconciled.body.state,'SUCCEEDED');
+ assert.equal(reconciled.body.verified,true);
+ assert.deepEqual(store.events.slice(-2),['GITHUB_RUN_LINKED','VERIFIED_OFFLINE_ARTIFACT']);
+ assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
+ // Terminal reconciliation is idempotent and does not perform another GitHub lookup.
+ const lastCount=gh.calls.length,eventCount=store.events.length;
+ const repeat=await svc.reconcile(UUID);
+ assert.equal(repeat.body.state,'SUCCEEDED');
+ assert.equal(repeat.body.reconciled,false);
+ assert.equal(gh.calls.length,lastCount);
+ assert.equal(store.events.length,eventCount);
+});
+
+test('two matches cannot be silently chosen, and reconciliation never redispatches',async()=>{
+ const {svc,gh,store}=fx();await svc.create(input);await svc.dispatch(UUID);
+ gh.runs=[run,{...run,id:101}];
+ const first=await svc.reconcile(UUID);
+ assert.deepEqual(first.body,{error:'MULTIPLE_RUN_MATCHES',state:'DISPATCH_UNKNOWN'});
+ assert.equal((await store.read(UUID)).state,'DISPATCH_UNKNOWN');
+ assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
+ assert.equal((await svc.dispatch(UUID)).code,409);
+ assert.equal((await svc.reconcile(UUID)).body.error,'MULTIPLE_RUN_MATCHES');
+ assert.equal(store.events.includes('VERIFIED_OFFLINE_ARTIFACT'),false);
+});
+
+test('valid GitHub ZIP digest cannot rescue an artifact containing the wrong task ID',async()=>{
+ const wrong={...result,task_id:'11111111-1111-4111-8111-111111111111'};
+ const zip=zipStored('buffalo-offline-result.json',JSON.stringify(wrong));
+ const digest=createHash('sha256').update(zip).digest('hex');
+ const transport=async(url,opts)=>{
+  const path=new URL(url).pathname;
+  if(path.endsWith('/actions/workflows/'+OFFLINE_WORKFLOW)&&opts.method==='GET')
+   return Response.json({id:22,path:'.github/workflows/'+OFFLINE_WORKFLOW});
+  if(path.endsWith('/commits/main'))return Response.json({sha:HEAD});
+  if(path.endsWith('/dispatches')&&opts.method==='POST')return new Response(null,{status:204});
+  if(path.endsWith('/runs')&&opts.method==='GET')return Response.json({workflow_runs:[run]});
+  if(path.endsWith('/runs/100'))return Response.json(run);
+  if(path.endsWith('/runs/100/artifacts'))
+   return Response.json({total_count:1,artifacts:[{id:300,name:'buffalo-offline-'+UUID,
+    expired:false,size_in_bytes:zip.length,digest:'sha256:'+digest}]});
+  if(path.endsWith('/artifacts/300/zip'))return new Response(zip);
+  return Response.json({message:'unmocked path'},{status:404});
+ };
+ const store=new MemoryStore();
+ const svc=new ControlPlaneService(store,new GitHubOffline('mock-only',transport),
+  ()=> '2026-11-21T20:00:00Z');
+ await svc.create(input);
+ assert.equal((await svc.dispatch(UUID)).body.state,'SUBMITTED');
+ const rejected=await svc.reconcile(UUID);
+ assert.equal(rejected.code,409);
+ assert.equal(rejected.body.error,'EVIDENCE_UNVERIFIED');
+ const saved=await store.read(UUID);
+ assert.equal(saved.state,'DISPATCH_UNKNOWN');
+ assert.equal(saved.github_artifact_id,null);
+ assert.equal(saved.result_sha256,null);
+ assert.equal(store.events.includes('VERIFIED_OFFLINE_ARTIFACT'),false);
+});
+
+test('reconcile cannot advertise verified without exact evidence committed in D1',async()=>{
+ const {svc,gh,store}=fx();await svc.create(input);await svc.dispatch(UUID);
+ gh.runs=[run];
+ const transition=store.transition.bind(store);
+ store.transition=async (...args)=>args[2]==='SUCCEEDED'?false:transition(...args);
+ const outcome=await svc.reconcile(UUID);
+ assert.equal(outcome.code,409);
+ assert.deepEqual(outcome.body,{error:'RECONCILIATION_STATE_CHANGED',
+  state:'SUBMITTED',reconciled:false,verified:false});
+ assert.equal((await store.read(UUID)).state,'SUBMITTED');
+ assert.equal(store.events.includes('VERIFIED_OFFLINE_ARTIFACT'),false);
+});
+
+test('reconcile acknowledges concurrent identical commit but not different evidence',async()=>{
+ const {svc,gh,store}=fx();await svc.create(input);await svc.dispatch(UUID);
+ gh.runs=[run];
+ const transition=store.transition.bind(store);
+ // Simulate another reconciler committing the exact same evidence first.
+ store.transition=async (...args)=>{
+  if(args[2]==='SUCCEEDED'){await transition(...args);return false}
+  return transition(...args);
+ };
+ const r=await svc.reconcile(UUID);
+ assert.equal(r.code,200);
+ assert.equal(r.body.state,'SUCCEEDED');
+ assert.equal(r.body.verified,true);
+ assert.equal(r.body.already_committed,true);
+ assert.equal(store.events.filter(e=>e==='VERIFIED_OFFLINE_ARTIFACT').length,1);
+ assert.equal((await svc.dispatch(UUID)).code,409);
+});
+
+test('dispatch does not claim SUBMITTED if persisted state transition was rejected',async()=>{
+ const {svc,gh,store}=fx();await svc.create(input);
+ const transition=store.transition.bind(store);
+ store.transition=async (...args)=>args[2]==='SUBMITTED'?false:transition(...args);
+ const response=await svc.dispatch(UUID);
+ assert.equal(response.code,409);
+ assert.deepEqual(response.body,{error:'DISPATCH_STATE_CHANGED',
+  state:'DISPATCHING',task_id:UUID,retry_allowed:false});
+ assert.equal((await store.read(UUID)).state,'DISPATCHING');
+ assert.equal(gh.calls.filter(x=>Array.isArray(x)&&x[0]==='dispatch').length,1);
+ assert.equal((await svc.dispatch(UUID)).code,409);
+});

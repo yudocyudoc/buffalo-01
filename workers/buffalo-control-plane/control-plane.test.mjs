@@ -218,3 +218,24 @@ test('GitHub ZIP DEFLATE format verifies payload and rejects tampering',()=>{
  const corrupted=Buffer.from(archive);corrupted[30+filename.length+1]^=0x01;
  assert.throws(()=>extractSingleStoredZip(asArrayBuffer(corrupted),'buffalo-offline-result.json'));
 });
+
+test('preflight failure stays READY, is classified, and never dispatches',async()=>{
+ for(const [message,reason] of [
+  ['GITHUB_HTTP_403','GITHUB_PREFLIGHT_HTTP_403'],
+  ['GITHUB_HTTP_404','GITHUB_PREFLIGHT_HTTP_404'],
+  ['GITHUB_WORKFLOW_NOT_ALLOWLISTED','GITHUB_PREFLIGHT_WORKFLOW_NOT_ALLOWLISTED'],
+  ['PRIVATE_API_REPLY_WITH_TOKEN','GITHUB_PREFLIGHT_UNKNOWN']
+ ]){
+  const {store,gh,svc}=fx();
+  await svc.create(input);
+  gh.prepare=async()=>{throw Error(message)};
+  const response=await svc.dispatch(UUID);
+  assert.equal(response.code,502);
+  assert.deepEqual(response.body,{error:'GITHUB_PREFLIGHT_FAILED',
+   reason_code:reason,task_id:UUID,state:'READY',dispatch_attempted:false});
+  assert.equal((await store.read(UUID)).state,'READY');
+  assert.deepEqual(store.events,['TASK_ADMITTED']);
+  assert.equal(gh.calls.length,0);
+  assert.equal(JSON.stringify(response).includes('PRIVATE_API_REPLY_WITH_TOKEN'),false);
+ }
+});

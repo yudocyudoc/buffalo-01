@@ -29,6 +29,8 @@ jobs:
           node-version: '22'
       - name: Validate offline contract
         run: node --test scripts/control-plane/contract.test.mjs
+      - name: Verify original Buffalo source (no inference, no provider calls)
+        run: node scripts/full-integration/original-gate.mjs --check
       - name: Produce offline result
         env:
           BUFFALO_TASK_ID: ${{ inputs.task_id }}

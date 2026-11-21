@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import {BUFFALO_CF_MODEL} from './active-model.mjs';
-import {GEMMA_MODEL,TRUNCATED_RESPONSE_CODE} from './completion-policy.mjs';
+import {GEMMA_MODEL,TRUNCATED_RESPONSE_CODE,interruptedTransport} from './completion-policy.mjs';
 
 const state=globalThis.__buffaloCloudflare;
 const mock=globalThis.__buffaloMockCloudflareOrigin;
@@ -33,9 +33,26 @@ if (BUFFALO_CF_MODEL===GEMMA_MODEL) {
 }
 const receipt=state.receipts[0];
 assert.equal(receipt.http_status,200,'Must preserve actual Cloudflare HTTP 200');
-assert.equal(receipt.usage.neurons,45);
-assert.equal(state.diagnostics().neuronBudget.usedOrHeldNeurons,45);
-assert.equal(state.diagnostics().neuronBudget.unmetered,false);
+assert.ok(receipt.request_elapsed_ms >= 0);
+if (outcome==='http499') {
+  assert.equal(response.status,499);
+  assert.equal(receipt.http_status,499);
+  assert.equal(receipt.provider_error_code,6001);
+  assert.equal(receipt.usage,null);
+  assert.equal(receipt.status,'HTTP_FAILURE_OR_CONSUMPTION_UNKNOWN');
+  assert.equal(receipt.neuronMetering.basis,'unknown-charged-reservation-held-fail-closed');
+  assert.equal(state.diagnostics().neuronBudget.unmetered,true);
+  assert.deepEqual(
+    interruptedTransport(state.diagnostics(),state.receipts),
+    {status:'provider_http_error',stopReason:'CLOUDFLARE_PROVIDER_HTTP_499'}
+  );
+  assert.equal(mock.calls.length,1);
+  console.log('PASS: HTTP499 code6001 classified as upstream failure; usage remains unknown');
+} else {
+  assert.equal(receipt.usage.neurons,45);
+  assert.equal(state.diagnostics().neuronBudget.usedOrHeldNeurons,45);
+  assert.equal(state.diagnostics().neuronBudget.unmetered,false);
+}
 
 if (outcome==='length') {
   assert.equal(response.status,422,'Truncated provider output must be a client error');
@@ -55,7 +72,7 @@ if (outcome==='length') {
   assert.equal(mock.calls.length,1,'Never send a second HTTP request after truncation');
   assert.equal(state.receipts.length,1);
   console.log('PASS: HTTP 200 length converted to local 422, no false completion or retry');
-} else {
+} else if (outcome!=='http499') {
   assert.equal(response.status,200);
   const body=await response.json();
   assert.equal(body.choices[0].finish_reason,outcome);

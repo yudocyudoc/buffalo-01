@@ -19,7 +19,9 @@ test('original session_created → initialize_session → session_ready accepts 
  const allowed=g.fromClient(stringify(init()));
  assert.equal(allowed.allowed,true);
  assert.equal(JSON.parse(allowed.body).authenticationKey,ORIGIN_AUTH);
+ assert.equal(JSON.parse(allowed.body).clientId,'buffalo-offline-handshake-client');
  assert.equal(init().authenticationKey,undefined);
+ assert.equal(init().clientId,undefined);
  const ready=g.fromBuffalo(stringify({type:'session_ready',sessionId:'buffalo-abc'}));
  assert.equal(ready.allowed,true);
  assert.equal(g.snapshot().state,'READY_HANDSHAKE_ONLY');

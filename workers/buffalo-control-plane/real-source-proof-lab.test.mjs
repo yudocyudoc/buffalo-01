@@ -31,7 +31,7 @@ test('public GitHub transport refuses POST, unexpected endpoint and external net
   /SOURCE_REAL_LAB_GITHUB_URL_OR_METHOD_DENIED/);
 });
 test('one-shot D1 fence rejects repeated requests before any GitHub reads',async()=>{
- const db={prepare(sql){
+ const db={batch:async()=>[],prepare(sql){
   assert.match(sql,/INSERT INTO buffalo_full_source_lab_receipts/);
   return {bind(id){
    assert.equal(id,LAB_ID);

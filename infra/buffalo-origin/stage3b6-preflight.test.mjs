@@ -24,6 +24,7 @@ const evidence=()=>({
   proof:'INDEPENDENT_REGISTRY_PULL_AND_INSPECT'
  },
  source_attestation:{
+  handoff_id:'6bce82ee-d179-4a2e-9317-f7f4708c5be2',
   proof_status:'SOURCE_ATTESTED',commit_sha:sha,proof_commit_sha:sha,
   agent:'merlin',mode:'sfd',manifest_sha256:manifest,
   proof_manifest_sha256:manifest,initial_model_sha256:model,
@@ -73,6 +74,7 @@ test('no registry digest or only old CI local image is never enough',()=>{
 });
 test('prior handoff attestation cannot be applied to new Container commit',()=>{
  for(const a of [
+  {handoff_id:'00000000-0000-0000-0000-000000000000'},
   {proof_commit_sha:'6'.repeat(40)},
   {commit_sha:'6'.repeat(40)},
   {proof_status:'REGISTERED_UNVERIFIED'},

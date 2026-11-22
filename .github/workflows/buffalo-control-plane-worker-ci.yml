@@ -41,6 +41,8 @@ jobs:
           node --check workers/buffalo-control-plane/binding-lab.mjs
           node --check workers/buffalo-control-plane/original-live-admission.mjs
           node --test workers/buffalo-control-plane/original-live-admission.test.mjs
+          node --check workers/buffalo-control-plane/original-ws-bridge-lab.mjs
+          node --test workers/buffalo-control-plane/original-ws-bridge-lab.test.mjs
           node --check workers/buffalo-control-plane/full-handoff-lab.mjs
           node --test workers/buffalo-control-plane/full-handoff-lab.test.mjs
           node --check workers/buffalo-control-plane/real-source-proof-lab.mjs
@@ -115,6 +117,7 @@ jobs:
         run: |
           node --test scripts/full-integration/original-offline-orchestrator.test.mjs
           node --test scripts/full-integration/original-websocket-handshake.test.mjs
+          node --test scripts/full-integration/original-worker-ws-bridge.test.mjs
       - name: Produce and re-check a real DEV case source-proof JSON (no API)
         env:
           SOURCE_COMMIT: ${{ github.sha }}

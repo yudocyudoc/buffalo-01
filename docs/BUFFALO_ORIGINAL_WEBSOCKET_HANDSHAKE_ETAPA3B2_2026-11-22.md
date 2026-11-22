@@ -37,7 +37,7 @@ select_agent y chat rechazados POR EL GATE (nunca llegan a Buffalo)
 disconnect → cierre limpio
 ```
 
-`OriginalHandshakeFrameGate` es una **sonda local de política en Node**, todavía **no** el gateway de Cloudflare desplegado. Solo admite `initialize_session` con modelo exacto por SHA, sin historial, sin herramientas, sin adjuntos ni configuración personalizada. El gate no guarda el secreto de origen en un artefacto y no acepta que el usuario lo envíe. Rechaza mensajes fuera de orden y `select_agent`/`chat` deliberadamente. No se conoce ni se usa un grant `APPROVED` real.
+`OriginalHandshakeFrameGate` es una **sonda local de política en Node**, todavía **no** el gateway de Cloudflare desplegado. Solo admite `initialize_session` con modelo exacto por SHA, sin historial, sin herramientas, sin adjuntos ni configuración personalizada. **Hallazgo de la primera CI:** aunque el esquema de `initialize_session` declara `clientId` opcional, `SessionManager.initializeSession()` rechaza su ausencia. El gate lo inyecta como identificador controlado por el servidor (no aceptado desde el cliente) sin cambiar Buffalo. El gate tampoco permite que el cliente aporte `clientId`, y no guarda el secreto de origen en un artefacto y no acepta que el usuario lo envíe. Rechaza mensajes fuera de orden y `select_agent`/`chat` deliberadamente. No se conoce ni se usa un grant `APPROVED` real.
 
 No hay Cloudflare API, Workers AI ni tareas pagadas. No se usa la credencial `GITHUB_SOURCE_READ_TOKEN`. La suite corre en GitHub Actions sin secretos de inferencia y usa un cliente local `ws`.
 

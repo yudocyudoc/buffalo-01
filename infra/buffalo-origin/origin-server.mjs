@@ -43,7 +43,9 @@ export function validateOriginEnvironment(config){
    typeof config.upgradeKey!=='string'||config.upgradeKey.length<32||
    config.upgradeKey===config.authenticationKey||
    !SHA64.test(config.modelSha256??'')||
-   !SHA40.test(config.commitSha??''))
+   !SHA40.test(config.commitSha??'')||
+   !SHA40.test(config.imageSourceSha??'')||
+   config.imageSourceSha!==config.commitSha)
   throw Error('BUFFALO_PRIVATE_ORIGIN_CONFIG_INVALID');
 }
 const denyUpgrade=(socket,code=403)=>{
@@ -181,6 +183,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
    upgradeKey:process.env.BUFFALO_ORIGIN_UPGRADE_TOKEN,
    modelSha256:process.env.BUFFALO_ORIGIN_MODEL_SHA256,
    commitSha:process.env.BUFFALO_ORIGIN_COMMIT_SHA,
+   imageSourceSha:process.env.BUFFALO_IMAGE_SOURCE_SHA,
    host:'0.0.0.0',port:ORIGIN_PORT
   };
   await startPrivateBuffaloOrigin(config);

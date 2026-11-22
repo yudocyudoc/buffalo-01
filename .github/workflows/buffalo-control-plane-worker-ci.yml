@@ -13,6 +13,7 @@ on:
       - 'scripts/run-one-native-agent-case.mjs'
       - '.github/workflows/paid-agent-case.yml'
       - '.github/workflows/buffalo-full-source-proof.yml'
+      - '.github/workflows/buffalo-full-prepare-handoff.yml'
       - 'migrations/control-plane/**'
       - '.github/workflows/buffalo-control-plane-*.yml'
       - 'docs/BUFFALO_CONTROL_PLANE_FASE_1_2026-11-21.md'

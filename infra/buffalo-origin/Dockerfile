@@ -1,9 +1,12 @@
-# Build context MUST be the repository root:
-#   docker build -f infra/buffalo-origin/Dockerfile .
-# No image is built/deployed by this PR. Pin image digest before first deploy.
-FROM node:22-bookworm-slim
-# Build identity is supplied from the *verified checkout*, never the runtime.
-# A distinct GitHub/image attestation must verify this build argument before use.
+# Build context MUST be the repository root.
+# The CI gate supplies a digest-pinned Node 22 base and the exact checkout SHA:
+#   docker buildx build --build-arg NODE_BASE_IMAGE=node:22-bookworm-slim@sha256:<verified> \
+#     --build-arg BUFFALO_IMAGE_SOURCE_SHA=<verified-git-sha> \
+#     -f infra/buffalo-origin/Dockerfile .
+# This image remains handshake-only. Build does not authorize deployment.
+ARG NODE_BASE_IMAGE
+FROM ${NODE_BASE_IMAGE}
+# Identity below is a claim checked against GitHub CI metadata, NOT independent attestation.
 ARG BUFFALO_IMAGE_SOURCE_SHA
 RUN node -e "if(!/^[a-f0-9]{40}$/.test(process.argv[1]||''))process.exit(1)" "$BUFFALO_IMAGE_SOURCE_SHA"
 ENV NODE_ENV=production

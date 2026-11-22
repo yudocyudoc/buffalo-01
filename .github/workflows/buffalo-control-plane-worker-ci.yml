@@ -54,6 +54,8 @@ jobs:
           node --check scripts/full-integration/original-gate.mjs
           node --check scripts/full-integration/offline-egress-guard.mjs
           node --check scripts/full-integration/original-offline-orchestrator.mjs
+          node --check scripts/full-integration/original-ws-handshake-gate.mjs
+          node --test scripts/full-integration/original-ws-handshake-gate.test.mjs
           node scripts/full-integration/original-gate.mjs --check
           node --test scripts/full-integration/original-gate.test.mjs
           node --check scripts/full-integration/handoff-contract.mjs
@@ -112,6 +114,7 @@ jobs:
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
           node --test scripts/full-integration/original-offline-orchestrator.test.mjs
+          node --test scripts/full-integration/original-websocket-handshake.test.mjs
       - name: Produce and re-check a real DEV case source-proof JSON (no API)
         env:
           SOURCE_COMMIT: ${{ github.sha }}

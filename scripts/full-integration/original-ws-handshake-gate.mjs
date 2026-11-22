@@ -16,11 +16,14 @@ const fail=reason=>({allowed:false,reason});
 const pass=body=>({allowed:true,reason:'ALLOW_ORIGINAL_HANDSHAKE',body});
 
 export class OriginalHandshakeFrameGate{
- constructor({modelSha256,authenticationKey}={}){
+ constructor({modelSha256,authenticationKey,clientId='buffalo-offline-handshake-client'}={}){
   if(!/^[a-f0-9]{64}$/.test(modelSha256??''))throw Error('WS_GATE_MODEL_SHA_REQUIRED');
   if(typeof authenticationKey!=='string'||authenticationKey.length<32)
    throw Error('WS_GATE_ORIGIN_AUTH_REQUIRED');
+  if(typeof clientId!=='string'||clientId.length<1||clientId.length>128)
+   throw Error('WS_GATE_CLIENT_ID_REQUIRED');
   this.modelSha256=modelSha256;this.authenticationKey=authenticationKey;
+  this.clientId=clientId;
   this.serverSessionId=null;this.state='AWAIT_SESSION_CREATED';
   this.inbound=0;this.outbound=0;
  }
@@ -68,7 +71,7 @@ export class OriginalHandshakeFrameGate{
     return fail('CLIENT_INITIAL_MODEL_OR_CAPABILITIES_MISMATCH');
    this.state='AWAIT_SESSION_READY';
    this.inbound++;
-   return pass(JSON.stringify({...body,authenticationKey:this.authenticationKey}));
+   return pass(JSON.stringify({...body,authenticationKey:this.authenticationKey,clientId:this.clientId}));
   }
   if(body.type==='disconnect'&&this.state!=='AWAIT_SESSION_CREATED'&&
      body.sessionId===this.serverSessionId){

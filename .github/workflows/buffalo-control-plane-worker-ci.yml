@@ -40,6 +40,46 @@ jobs:
           node --check scripts/full-integration/original-gate.mjs
           node scripts/full-integration/original-gate.mjs --check
           node --test scripts/full-integration/original-gate.test.mjs
+          node --check scripts/full-integration/handoff-contract.mjs
+          node --check scripts/full-integration/prepare-handoff.mjs
+          node --check workers/buffalo-control-plane/full-handoff-store.mjs
+          node --test scripts/full-integration/handoff-contract.test.mjs
           node --test scripts/control-plane/contract.test.mjs workers/buffalo-control-plane/control-plane.test.mjs
       - name: Verify SQL migration and atomic state claims (SQLite only)
-        run: python scripts/control-plane/test-sql-offline.py
+        run: |
+          python scripts/control-plane/test-sql-offline.py
+          python scripts/full-integration/test-handoff-sql.py
+
+  full-handoff-source-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install metadata dependencies without invoking install hooks
+        run: npm ci --ignore-scripts
+      - name: Derive one real development-case manifest per original agent (no inference)
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          for agent in merlin socrates themis athena_SFD; do
+            node scripts/full-integration/prepare-handoff.mjs \
+              --handoff-id "123e4567-e89b-42d3-a456-426614174111" \
+              --agent "$agent" --case-index 0 --commit "$SOURCE_COMMIT" \
+              > "$RUNNER_TEMP/full-handoff-$agent.json"
+            node -e '
+              const fs=require("node:fs"),assert=require("node:assert/strict");
+              const x=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+              assert.equal(x.execution,"NOT_EXECUTED");
+              assert.equal(x.provenance,"DECLARED_UNVERIFIED");
+              assert.equal(x.manifest.kind,"BUFFALO_FULL_HANDOFF_V1");
+              assert.match(x.manifest.initial_model_sha256,/^[a-f0-9]{64}$/);
+              assert.match(x.manifest_sha256,/^[a-f0-9]{64}$/);
+              console.log("PASS handoff source metadata:",x.manifest.agent,x.manifest.scenario_id)
+            ' "$RUNNER_TEMP/full-handoff-$agent.json"
+          done

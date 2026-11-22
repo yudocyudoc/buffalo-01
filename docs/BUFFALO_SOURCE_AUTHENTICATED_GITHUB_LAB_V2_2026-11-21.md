@@ -24,8 +24,8 @@ Documentación Cloudflare: https://developers.cloudflare.com/workers/configurati
 
 Tiene dos endpoints detrás de **Cloudflare Access**:
 
-- `GET /v1/lab/source/preflight`: una sola llamada GitHub GET autenticada; devuelve status, identidad del workflow y `x-ratelimit-remaining` acotado; sin D1 mutations. No expone respuestas o credenciales crudas.
-- `POST /v1/lab/source/verify-once` con body fijo `{"action":"VERIFY_AUTHENTICATED_SOURCE_PROOF_V1"}`: repite preflight antes de reclamar el fence D1 para **no consumir el único intento por token ausente o HTTP 403**. Luego verifica el run real, ZIP, hash del JSON y manifiesto, persiste mediante el Writer verdadero y comprueba idempotencia y estado original.
+- `GET /v1/lab/source/preflight`: consulta autenticada el workflow y ejecuta **el verificador original completo** de run, artefacto ZIP y todos los hashes sobre un SELECT de D1, sin escribir ninguna atestación ni consumir el fence; devuelve solo status y códigos HTTP acotados. No expone respuestas o credenciales crudas.
+- `POST /v1/lab/source/verify-once` con body fijo `{"action":"VERIFY_AUTHENTICATED_SOURCE_PROOF_V1"}`: repite el **preflight de evidencia completa** antes de reclamar el fence D1 para **no consumir el único intento por token ausente, HTTP 403, archivo expirado, redirección inválida o hash discrepante**. Luego verifica el run real, ZIP, hash del JSON y manifiesto, persiste mediante el Writer verdadero y comprueba idempotencia y estado original.
 
 El laboratorio se despliega exclusivamente con el binding `DB` a `buffalo-control-plane-race-lab-20261121` (`d1e23807-b076-4c36-8785-7b423fc41614`), sin cron. No se utiliza `GITHUB_FINE_GRAINED_TOKEN` de producción ni `CONTROL_API_TOKEN` real.
 
@@ -43,7 +43,7 @@ El laboratorio se despliega exclusivamente con el binding `DB` a `buffalo-contro
 2. Desplegar nuevo Worker dedicado **sin subdominio público** y con único binding a D1 experimental. Crear app Cloudflare Access con política de miembros de cuenta; verificar `workers.dev=false`, previews=false, schedules=[].
 3. El usuario crea PAT fine-grained y lo guarda como secreto mediante Cloudflare dashboard. **La credencial es acción exclusiva del usuario**.
 4. Comprobar por API solo la **existencia del nombre del secreto** (no solicitar ni imprimir su valor), habilitar temporalmente URL protegida.
-5. Ejecutar preflight GET; si devuelve READY, lanzar un POST **una sola vez**. Si devuelve error, NO hacer el POST.
+5. Ejecutar preflight GET; solo si devuelve `ready=true` y `status=READY_FULL_EVIDENCE`, lanzar un POST **una sola vez**. Si devuelve error, NO hacer el POST.
 6. Verificar con SELECT independiente un `SOURCE_ATTESTED`, su evento, idempotencia y el handoff original.
 7. Desactivar URL y previews, comprobar cron[], preservar recibos y revocar el token creado para el laboratorio.
 

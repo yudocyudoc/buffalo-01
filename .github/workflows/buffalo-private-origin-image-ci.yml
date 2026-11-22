@@ -1,0 +1,132 @@
+name: Buffalo private origin OCI build proof (no deploy, no AI)
+
+on:
+  pull_request:
+    paths:
+      - 'infra/buffalo-origin/**'
+      - '.dockerignore'
+      - '.github/workflows/buffalo-private-origin-image-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/buffalo-origin/**'
+      - '.dockerignore'
+      - '.github/workflows/buffalo-private-origin-image-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  image-build-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact checkout and isolated Docker build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          docker buildx version
+      - name: Pin Node 22 base by immutable registry digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          BASE_REF="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
+          case "$BASE_REF" in
+            node@sha256:*) ;;
+            *) echo 'BASE_NOT_DIGEST_PINNED'; exit 1 ;;
+          esac
+          echo "BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+      - name: Build local image only; never push or deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 \
+            --provenance=false --sbom=false \
+            --build-arg "NODE_BASE_IMAGE=$BASE_REF" \
+            --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/yudocyudoc/buffalo-01" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.base.name=$BASE_REF" \
+            --metadata-file "$RUNNER_TEMP/buffalo-origin-build-metadata.json" \
+            --tag buffalo-private-origin:stage3b5 --load \
+            -f infra/buffalo-origin/Dockerfile .
+      - name: Test ORIGINAL Node handshake from built image without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=16m \
+            buffalo-private-origin:stage3b5 \
+            node --test infra/buffalo-origin/origin-server.test.mjs
+          docker run --rm --network none --read-only \
+            buffalo-private-origin:stage3b5 \
+            sh -ec 'test ! -e /app/.env && test ! -e /app/.git && test ! -e /app/.github && test ! -e /app/docs && test ! -e /app/.wrangler'
+      - name: Validate Buildx digest, actual image config and source identity
+        shell: bash
+        env:
+          RECEIPT_FILE: ${{ runner.temp }}/buffalo-origin-build-receipt.json
+          METADATA_FILE: ${{ runner.temp }}/buffalo-origin-build-metadata.json
+          INSPECT_FILE: ${{ runner.temp }}/buffalo-origin-inspect.json
+        run: |
+          set -euo pipefail
+          docker image inspect buffalo-private-origin:stage3b5 > "$INSPECT_FILE"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const metadata=JSON.parse(readFileSync(process.env.METADATA_FILE,'utf8'));
+          const image=JSON.parse(readFileSync(process.env.INSPECT_FILE,'utf8'))[0];
+          const sha=process.env.GITHUB_SHA;
+          const base=process.env.BASE_REF;
+          const digest=metadata['containerimage.digest']
+            ??metadata['containerimage.descriptor']?.digest;
+          const hex64=/^sha256:[0-9a-f]{64}$/;
+          assert.match(digest??'',hex64,'Buildx must provide an image manifest digest');
+          assert.match(image.Id??'',hex64,'Docker must provide the loaded image config ID');
+          if(metadata['containerimage.config.digest'])
+            assert.equal(metadata['containerimage.config.digest'],image.Id);
+          assert.equal(image.Config.User,'node');
+          assert.equal(image.Config.Env.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
+            'BUFFALO_IMAGE_SOURCE_SHA='+sha);
+          assert.equal(image.Config.Labels['org.opencontainers.image.revision'],sha);
+          assert.equal(image.Config.Labels['org.opencontainers.image.base.name'],base);
+          assert.equal(image.Config.Labels['org.opencontainers.image.source'],
+            'https://github.com/yudocyudoc/buffalo-01');
+          assert.ok(image.Config.ExposedPorts['8080/tcp']);
+          const hashFile=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
+          const receipt={
+            schema:'BUFFALO_PRIVATE_ORIGIN_BUILD_RECEIPT_V1',
+            status:'CI_BUILD_TESTED_NO_DEPLOY',
+            source_commit:sha,
+            github_run_id:process.env.GITHUB_RUN_ID,
+            github_run_attempt:process.env.GITHUB_RUN_ATTEMPT,
+            base_image_reference:base,
+            image_manifest_digest:digest,
+            image_config_digest:image.Id,
+            dockerfile_sha256:hashFile('infra/buffalo-origin/Dockerfile'),
+            dockerignore_sha256:hashFile('.dockerignore'),
+            security_mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
+            execution:'ORIGINAL_NODE_WEBSOCKET_HANDSHAKE_TESTED_NETWORK_NONE',
+            published_to_registry:false,
+            cloudflare_container_deployed:false,
+            agent_turns:0,
+            provider_requests:0,
+            attestation_scope:'CI_LOCAL_BUILD_RECEIPT_NOT_SIGNED_NOT_REGISTRY_IDENTITY'
+          };
+          writeFileSync(process.env.RECEIPT_FILE,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});
+          console.log('PASS private origin image locally built and tested; no deploy',digest);
+          NODE
+      - name: Save bounded OCI identity receipt, not the image itself
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-origin-oci-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/buffalo-origin-build-receipt.json
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error

@@ -1,0 +1,65 @@
+name: Buffalo original orchestrator offline boundary (no AI)
+run-name: Original Merlin offline boundary ${{ github.sha }}
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-merlin-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify exact checkout and original source contracts
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/full-integration/original-gate.mjs --check
+      - name: Install local dependencies without install hooks
+        run: npm ci --ignore-scripts
+      - name: Exercise ORIGINAL SessionManager and AgentOrchestrator without provider
+        run: |
+          set -euo pipefail
+          HANDOFF_ID="$(node -p "require('node:crypto').randomUUID()")"
+          node --import ./scripts/full-integration/offline-egress-guard.mjs \
+            scripts/full-integration/original-offline-orchestrator.mjs \
+            --agent merlin --case-index 0 --commit "$GITHUB_SHA" \
+            --handoff-id "$HANDOFF_ID" > "$RUNNER_TEMP/original-offline-stdout.txt"
+          node --input-type=module - "$RUNNER_TEMP/original-offline-stdout.txt" "$RUNNER_TEMP/original-offline-evidence.json" <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const content=readFileSync(process.argv[2],'utf8');
+          const rows=content.split('\n').filter(s=>s.startsWith('BUFFALO_ORIGINAL_OFFLINE_EVIDENCE='));
+          assert.equal(rows.length,1);
+          const evidence=JSON.parse(rows[0].slice('BUFFALO_ORIGINAL_OFFLINE_EVIDENCE='.length));
+          assert.equal(evidence.status,'OFFLINE_BOUNDARY_PASS_NO_AGENT_OUTPUT');
+          assert.equal(evidence.execution_allowed,false);
+          assert.equal(evidence.agent_turn_executed,false);
+          assert.equal(evidence.grader_executed,false);
+          assert.equal(evidence.simulation_executed,false);
+          assert.equal(evidence.provider_requests,0);
+          assert.equal(evidence.network_attempts,0);
+          assert.equal(evidence.original_tool_model_sync_responses,2);
+          assert.equal(evidence.terminal_error_code,'CONVERSATION_ERROR');
+          assert.equal(evidence.commit_sha,process.env.GITHUB_SHA);
+          writeFileSync(process.argv[3],JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
+          console.log('PASS stage3 original Merlin offline session and explicit provider refusal');
+          console.log(JSON.stringify({schema:evidence.schema,status:evidence.status,
+            agent:evidence.agent,scenario_id:evidence.scenario_id,
+            manifest_sha256:evidence.manifest_sha256,
+            network_attempts:evidence.network_attempts,agent_turn_executed:false}));
+          NODE
+      - name: Upload only the offline observation JSON (not an agent result)
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-original-orchestrator-offline-${{ github.run_id }}
+          path: ${{ runner.temp }}/original-offline-evidence.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

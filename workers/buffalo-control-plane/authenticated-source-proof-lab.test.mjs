@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createSourceReadTransport,workflowReadPreflight}
  from './source-auth-transport.mjs';
-import lab,{LAB_ID,executeAuthenticatedSourceLab}
+import lab,{LAB_ID,sourceReadiness,executeAuthenticatedSourceLab}
  from './authenticated-source-proof-lab.mjs';
 
 const TOKEN='github_pat_TEST_TOKEN_FOR_UNIT_TEST_ONLY_12345678';
@@ -150,4 +150,45 @@ test('durable one-shot replay guard stops all verification and GitHub calls',asy
  assert.equal(calls,0);
  await assert.rejects(()=>executeAuthenticatedSourceLab(null,TOKEN),
   /SOURCE_AUTH_LAB_D1_BINDING_MISSING/);
+});
+
+test('full preflight rejects mismatched GitHub run BEFORE any D1 write',async()=>{
+ let writes=0,reads=0,requests=0;
+ const db={prepare(sql){
+  if(!/^SELECT \* FROM buffalo_full_handoffs/.test(sql)){writes++;throw Error('no writes permitted')}
+  return{bind(){return{first:async()=>{
+   reads++;
+   return {handoff_id:'6bce82ee-d179-4a2e-9317-f7f4708c5be2',
+    state:'REGISTERED_UNVERIFIED',execution_allowed:0,
+    provenance_verified:0,github_run_id:null,
+    commit_sha:'66bee2d96ec71692608fc0829486c2dc130ab7a0'};
+  }}}};
+ }};
+ const request=async url=>{
+  requests++;
+  if(url.includes('/actions/workflows/'))
+   return Response.json({id:426442743,path:'.github/workflows/buffalo-full-source-proof.yml'});
+  if(url.includes('/actions/runs/44976002057'))
+   return Response.json({id:44976002057,head_sha:'WRONG_COMMIT'});
+  throw Error('unexpected third endpoint');
+ };
+ const out=await sourceReadiness(db,TOKEN,request);
+ assert.equal(out.ready,false);
+ assert.equal(out.status,'SOURCE_PROOF_BAD_RUN_IDENTITY');
+ assert.equal(out.checks.filter(x=>x.stage==='REPO_WORKFLOW').length,2);
+ assert.equal(out.checks.filter(x=>x.stage==='REPO_RUN').length,1);
+ assert.equal(reads,1);
+ assert.equal(writes,0);
+ assert.equal(requests,3);
+});
+test('full preflight does not query D1 when token missing or GitHub returns HTTP 403',async()=>{
+ let touched=false;
+ const db={prepare(){touched=true;throw Error('must not touch DB')}};
+ const absent=await sourceReadiness(db,undefined);
+ assert.equal(absent.ready,false);
+ assert.equal(absent.status,'SOURCE_AUTH_LAB_SOURCE_READ_SECRET_MISSING');
+ const forbidden=await sourceReadiness(db,TOKEN,async()=>new Response('{}',{status:403}));
+ assert.equal(forbidden.ready,false);
+ assert.equal(forbidden.status,'HTTP_403');
+ assert.equal(touched,false);
 });

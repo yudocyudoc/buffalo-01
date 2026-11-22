@@ -7,6 +7,7 @@ const ID='6bce82ee-d179-4a2e-9317-f7f4708c5be2';
 const COMMIT='66bee2d96ec71692608fc0829486c2dc130ab7a0';
 const secret='worker-lab-token-for-tests-only-1234567890';
 const originAuth='original-buffalo-origin-auth-for-tests-1234567890';
+const internalToken='lab-origin-internal-token-never-browser-123456789';
 const model={variables:[],relationships:[],title:'offline local Buffalo'};
 const modelSha=createHash('sha256').update(JSON.stringify(model)).digest('hex');
 const validRow={
@@ -32,6 +33,7 @@ const env=(changes={})=>({
  BUFFALO_RUNTIME_COMMIT_SHA:COMMIT,
  BUFFALO_WS_LAB_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
  BUFFALO_ORIGIN_AUTH_KEY:originAuth,
+ BUFFALO_ORIGIN_UPGRADE_TOKEN:internalToken,
  BUFFALO_ORIGIN:{fetch:async()=>({status:503})},
  ...changes
 });
@@ -66,7 +68,9 @@ test('must be configured for internal no-agent origin BEFORE reading D1',async()
  for(const change of [
   {BUFFALO_ORIGIN:undefined},
   {BUFFALO_WS_LAB_MODE:'ALLOW_INFERENCE'},
-  {BUFFALO_ORIGIN_AUTH_KEY:''}
+  {BUFFALO_ORIGIN_AUTH_KEY:''},
+  {BUFFALO_ORIGIN_UPGRADE_TOKEN:''},
+  {BUFFALO_ORIGIN_UPGRADE_TOKEN:originAuth}
  ]){
   const e=env(change);
   const res=await handleOriginalWorkerBridge(request(),e);
@@ -107,6 +111,7 @@ test('origin binding receives ONLY fixed internal /api/v1 request and no caller 
   assert.equal(req.method,'GET');
   assert.equal(req.headers.get('upgrade'),'websocket');
   assert.equal(req.headers.get('authorization'),null);
+  assert.equal(req.headers.get('x-buffalo-origin-token'),internalToken);
   return {status:503};
  }}});
  const res=await handleOriginalWorkerBridge(request({'x-backend':'https://evil.invalid'}),e);

@@ -16,6 +16,7 @@ const HANDOFF='6bce82ee-d179-4a2e-9317-f7f4708c5be2';
 const COMMIT='66bee2d96ec71692608fc0829486c2dc130ab7a0';
 const TOKEN='test-bridge-bearer-secret-123456789012345';
 const AUTH='test-original-buffalo-origin-credential-123456789';
+const INTERNAL='test-private-origin-upgrade-secret-123456789012';
 const MODEL={variables:[],relationships:[],title:'Buffalo bridge offline no agent'};
 const sha=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 
@@ -110,6 +111,7 @@ test('Worker bridge function -> original Buffalo WebSocket, D1 proof, chat denie
     assert.equal(new URL(request.url).pathname,'/api/v1');
     assert.equal(request.headers.get('authorization'),null);
     assert.equal(request.headers.get('upgrade'),'websocket');
+    assert.equal(request.headers.get('x-buffalo-origin-token'),INTERNAL);
     const ws=new WebSocket('ws://127.0.0.1:'+port+'/api/v1');
     const adapter=new NodeOriginSocket(ws);
     await new Promise((resolve,reject)=>{ws.once('open',resolve);ws.once('error',reject)});
@@ -132,7 +134,8 @@ test('Worker bridge function -> original Buffalo WebSocket, D1 proof, chat denie
   };
   const env={
    DB:db,BUFFALO_ORIGIN:origin,BUFFALO_WS_LAB_BEARER:TOKEN,
-   BUFFALO_ORIGIN_AUTH_KEY:AUTH,BUFFALO_WS_LAB_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
+   BUFFALO_ORIGIN_AUTH_KEY:AUTH,BUFFALO_ORIGIN_UPGRADE_TOKEN:INTERNAL,
+   BUFFALO_WS_LAB_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
    BUFFALO_RUNTIME_COMMIT_SHA:COMMIT
   };
   let browser;

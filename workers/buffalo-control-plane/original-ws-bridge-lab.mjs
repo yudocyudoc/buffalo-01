@@ -107,7 +107,10 @@ export async function handleOriginalWorkerBridge(request,env,deps={}){
  if(env.BUFFALO_WS_LAB_MODE!=='HANDSHAKE_ONLY_NO_AGENT_PROCESS'||
     !env.BUFFALO_ORIGIN?.fetch||
     typeof env.BUFFALO_ORIGIN_AUTH_KEY!=='string'||
-    env.BUFFALO_ORIGIN_AUTH_KEY.length<32)
+    env.BUFFALO_ORIGIN_AUTH_KEY.length<32||
+    typeof env.BUFFALO_ORIGIN_UPGRADE_TOKEN!=='string'||
+    env.BUFFALO_ORIGIN_UPGRADE_TOKEN.length<32||
+    env.BUFFALO_ORIGIN_UPGRADE_TOKEN===env.BUFFALO_ORIGIN_AUTH_KEY)
   return json('NO_SAFE_ORIGIN_CONFIGURED',503);
  let source;
  try{source=await readVerifiedSource(env.DB,env.BUFFALO_RUNTIME_COMMIT_SHA)}
@@ -122,7 +125,10 @@ export async function handleOriginalWorkerBridge(request,env,deps={}){
  try{
   response=await env.BUFFALO_ORIGIN.fetch(new Request(
    'https://buffalo-internal.invalid'+ORIGINAL_PATH,
-   {method:'GET',headers:{Upgrade:'websocket'}}));
+   {method:'GET',headers:{
+    Upgrade:'websocket',
+    'x-buffalo-origin-token':env.BUFFALO_ORIGIN_UPGRADE_TOKEN
+   }}));
  }catch{return json('ORIGIN_CONNECTION_FAILED',503)}
  if(response?.status!==101||!response.webSocket)
   return json('ORIGIN_WEBSOCKET_UNAVAILABLE',503);

@@ -23,6 +23,34 @@ const categorize=e=>{
  return /^SOURCE_AUTH_LAB_[A-Z0-9_]{1,70}$/.test(message)?message:
   'SOURCE_AUTH_LAB_RUNTIME_ERROR';
 };
+/** Read all four GitHub endpoints and verify ZIP/digests BEFORE any D1 one-shot write.
+ * Uses the original read-only verifier and never saves a source attestation. */
+export async function sourceReadiness(db,secret,requestFn){
+ const first=await workflowReadPreflight(secret,requestFn);
+ if(!first.ready)return first;
+ const checks=[...first.checks];
+ try{
+  assert(Boolean(db?.prepare),'D1_READ_BINDING_MISSING');
+  const row=await db.prepare('SELECT * FROM buffalo_full_handoffs WHERE handoff_id=?')
+   .bind(HANDOFF).first();
+  assert(Boolean(row),'HANDOFF_NOT_FOUND');
+  const transport=createSourceReadTransport(secret,requestFn,
+   observation=>checks.push(observation));
+  const github=new GitHubFullSourceProof('NON_SECRET_PLACEHOLDER_TOKEN',transport);
+  const result=await github.verify(row,RUN_ID);
+  assert(result.github_artifact_id===ARTIFACT_ID&&
+   result.manifest_sha256===MANIFEST_SHA&&
+   result.commit_sha===COMMIT&&result.artifact_sha256===ZIP_SHA&&
+   result.result_sha256===CONTENT_SHA,'SOURCE_CONTENT_MISMATCH');
+  return {ready:true,status:'READY_FULL_EVIDENCE',
+   github_run_id:RUN_ID,checks};
+ }catch(error){
+  const msg=String(error?.message??'');
+  const status=/^(SOURCE_AUTH_LAB_[A-Z0-9_]{1,70}|GITHUB_(?:ARTIFACT_)?HTTP_[1-5][0-9]{2}|SOURCE_PROOF_[A-Z0-9_]{1,70}|ZIP_[A-Z0-9_]{1,70})$/.test(msg)?
+   msg:'SOURCE_PROOF_READINESS_FAILED';
+  return {ready:false,status,checks};
+ }
+}
 const getAttestation=db=>db.prepare(
  'SELECT * FROM buffalo_full_source_attestations WHERE handoff_id=?'
 ).bind(HANDOFF).first();
@@ -132,7 +160,7 @@ export default {
   if(pathname==='/v1/lab/source/preflight'&&request.method==='GET'){
    if(!request.headers.get('Cf-Access-Jwt-Assertion'))
     return Response.json({error:'ACCESS_REQUIRED'},{status:403});
-   const proof=await workflowReadPreflight(env[SOURCE_READ_SECRET]);
+   const proof=await sourceReadiness(env.DB,env[SOURCE_READ_SECRET]);
    return Response.json(proof,{status:proof.ready?200:503,
     headers:{'cache-control':'no-store'}});
   }
@@ -148,7 +176,7 @@ export default {
   try{body=await request.text()}catch{return Response.json({error:'INVALID_BODY'},{status:400})}
   if(body!==fixedBody)return Response.json({error:'INVALID_INPUT'},{status:400});
   // Guard: do not consume durable one-shot while token/access to GitHub is not ready.
-  const preflight=await workflowReadPreflight(env[SOURCE_READ_SECRET]);
+  const preflight=await sourceReadiness(env.DB,env[SOURCE_READ_SECRET]);
   if(!preflight.ready)return Response.json({status:'PRECHECK_BLOCKED',
    code:preflight.status,checks:preflight.checks,run_again:false},
    {status:503,headers:{'cache-control':'no-store'}});

@@ -1,0 +1,85 @@
+name: Prepare Buffalo Full handoff (metadata only, no AI)
+run-name: Prepare handoff ${{ inputs.agent }} · case ${{ inputs.case_index }}
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: Original Buffalo Full agent
+        required: true
+        type: choice
+        default: merlin
+        options:
+          - merlin
+          - socrates
+          - themis
+          - athena_SFD
+      case_index:
+        description: Zero-based development scenario index
+        required: true
+        type: string
+        default: '0'
+permissions:
+  contents: read
+jobs:
+  prepare-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Confirm exact checked-out commit and original components
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/full-integration/original-gate.mjs --check > /dev/null
+      - name: Install metadata dependencies without install hooks
+        run: npm ci --ignore-scripts
+      - name: Prepare one canonical declaration without agents or providers
+        env:
+          BUFFALO_PREP_AGENT: ${{ inputs.agent }}
+          BUFFALO_PREP_CASE_INDEX: ${{ inputs.case_index }}
+        run: |
+          case "$BUFFALO_PREP_AGENT" in
+            merlin|socrates|themis|athena_SFD) ;;
+            *) echo "DENIED_AGENT"; exit 2 ;;
+          esac
+          if ! [[ "$BUFFALO_PREP_CASE_INDEX" =~ ^(0|[1-9][0-9]{0,2})$ ]]; then
+            echo "DENIED_CASE_INDEX"; exit 2
+          fi
+          HANDOFF_ID="$(node -p "require('node:crypto').randomUUID()")"
+          node scripts/full-integration/prepare-handoff.mjs \
+            --handoff-id "$HANDOFF_ID" \
+            --agent "$BUFFALO_PREP_AGENT" \
+            --case-index "$BUFFALO_PREP_CASE_INDEX" \
+            --commit "$GITHUB_SHA" > "$RUNNER_TEMP/buffalo-full-handoff-prepared.json"
+          node --input-type=module - "$RUNNER_TEMP/buffalo-full-handoff-prepared.json" <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const data=JSON.parse(readFileSync(process.argv[2],'utf8'));
+          assert.equal(data.source,'BENCHMARK_DEV_METADATA_ONLY');
+          assert.equal(data.execution,'NOT_EXECUTED');
+          assert.equal(data.provenance,'DECLARED_UNVERIFIED');
+          assert.equal(data.manifest.kind,'BUFFALO_FULL_HANDOFF_V1');
+          assert.equal(data.manifest.commit_sha,process.env.GITHUB_SHA.toLowerCase());
+          assert.match(data.manifest_sha256,/^[a-f0-9]{64}$/);
+          // Only hashes and identifiers, never raw prompts, models, tokens or secrets.
+          console.log('BUFFALO_HANDOFF_PREPARED_JSON='+JSON.stringify(data));
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            '## Buffalo Full handoff · metadata only\n\n'+
+            '**Execution:** NOT_EXECUTED · **Provenance:** DECLARED_UNVERIFIED\n\n'+
+            'Copy the following JSON into ChatGPT for lab registration:\n\n'+
+            '```json\n'+JSON.stringify(data,null,2)+'\n```\n');
+          NODE
+      - name: Upload prepared declaration (7-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-full-handoff-prepared-${{ github.run_id }}
+          path: ${{ runner.temp }}/buffalo-full-handoff-prepared.json
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error

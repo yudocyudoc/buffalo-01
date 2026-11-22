@@ -7,6 +7,7 @@ import {handoffReceipt} from '../../scripts/full-integration/handoff-contract.mj
 import {GitHubFullSourceProof} from './full-provenance-github.mjs';
 import {D1FullSourceAttestationStore} from './full-source-attestation-store.mjs';
 import {FullSourceAttestationService} from './full-source-attestation-service.mjs';
+import {OriginalLiveAdmission} from './original-live-admission.mjs';
 async function authorized(request,secret){
  if(typeof secret!=='string'||secret.length<32)return false;
  const bearer=request.headers.get('authorization')??'';
@@ -68,6 +69,15 @@ export async function handle(request,env,deps={}){
    const fullStore=deps.fullHandoffStore??new D1FullHandoffStore(env.DB);
    const saved=await fullStore.read(handoffMatch[1]);
    return saved?send(handoffReceipt(saved)):send({error:'NOT_FOUND'},404);
+  }
+  // Stage 3B-1: ONLY a read-only admission preflight for the original
+  // interactive WebSocket runtime. No live socket, approval minting or paid run.
+  const liveMatch=path.match(/^\/v1\/full\/live\/grants\/([a-f0-9-]{36})\/preflight$/);
+  if(liveMatch){
+   if(method!=='GET')return send({error:'METHOD_NOT_ALLOWED'},405);
+   return await respond(new OriginalLiveAdmission(env.DB,{
+    runtimeCommit:env.BUFFALO_ORIGINAL_RUNTIME_COMMIT_SHA??null
+   }).preflight(liveMatch[1]));
   }
   if(path==='/v1/tasks'&&method==='POST'){
    const body=await request.text();

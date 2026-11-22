@@ -9,6 +9,7 @@ const model='e'.repeat(64), manifest='f'.repeat(64);
 const evidence=()=>({
  schema:STAGE3B6_SCHEMA,mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
  account_id:acc,source_commit:sha,
+ handoff_id:'6bce82ee-d179-4a2e-9317-f7f4708c5be2',
  local_build:{
   schema:'BUFFALO_PRIVATE_ORIGIN_BUILD_RECEIPT_V1',
   status:'CI_BUILD_TESTED_NO_DEPLOY',source_commit:sha,
@@ -74,7 +75,7 @@ test('no registry digest or only old CI local image is never enough',()=>{
 });
 test('prior handoff attestation cannot be applied to new Container commit',()=>{
  for(const a of [
-  {handoff_id:'00000000-0000-0000-0000-000000000000'},
+  {handoff_id:'00000000-0000-4000-8000-000000000000'},
   {proof_commit_sha:'6'.repeat(40)},
   {commit_sha:'6'.repeat(40)},
   {proof_status:'REGISTERED_UNVERIFIED'},
@@ -112,4 +113,14 @@ test('only handshake mode, 1 lite instance, no Internet are eligible',()=>{
  ]){
   assert.equal(prepareStage3B6({...evidence(),...a}).valid,false);
  }
+});
+
+test('new immutable handoff is eligible only with matching configured ID',()=>{
+ const e=evidence();
+ e.handoff_id='70000000-0000-4000-8000-000000000777';
+ e.source_attestation.handoff_id=e.handoff_id;
+ assert.equal(prepareStage3B6(e).valid,true);
+ const bad=evidence();
+ bad.handoff_id='70000000-0000-4000-8000-000000000777';
+ assert.equal(prepareStage3B6(bad).code,'RUNTIME_SOURCE_ATTESTATION_MISSING');
 });

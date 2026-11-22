@@ -60,3 +60,13 @@ La CI añade un job que carga el grupo **real** `policyImplementation` y genera 
 ## Invariantes conservados
 
 Ningún cambio a `buffalo_tasks`, `BUFFALO_OFFLINE_ECHO_V1`, el workflow de eco, sus artefactos o a `paid-agent-case.yml`. No se toca `agent/`, `evals/`, herramientas ni prompts originales. La primera tarea remota sigue identificada por `d3af46b3-01ce-4c28-ba24-31d52a908464`, run `44956533083`, artefacto `14728065888`, y se debe verificar antes de cualquier despliegue.
+
+## Evidencia de esta implementación (2026-11-21 UTC)
+
+- PR #26, commit de revisión `4408d2dab7d7a8d36ab9927e83452ea027868eed`: GitHub CI reportó éxito en los jobs `control-plane-offline`, `full-handoff-source-snapshot`, `Buffalo control-plane contract (offline)`, `Go` y `Run Unit Tests`. El primero pasó las 6 pruebas de contrato handoff, 6 de source gate, 31 de control plane y dos scripts SQLite (migraciones V1 y 0003). El job de manifiestos generó un caso de desarrollo real `dialysisClinic` para `merlin`, `socrates`, `themis`, `athena_SFD` con `npm ci --ignore-scripts`, sin invocar agentes.
+- Base aislada Cloudflare `buffalo-control-plane-race-lab-20261121` (`d1e23807-b076-4c36-8785-7b423fc41614`): se aplicaron las cuatro sentencias de `0003_full_handoffs.sql` sobre las tablas V1 existentes; todas respondieron `success=true`.
+- D1 REST real: 8 batches simultáneos con `INSERT ... ON CONFLICT DO NOTHING` + evento bajo `changes()=1` sobre UUID **sintético** `123e4567-e89b-42d3-a456-426614174601`. Un único batch escribió (1 fila y 1 evento), los otros siete no escribieron. Se comprobó por SELECT 1 `REGISTERED_UNVERIFIED`, 1 `DECLARATION_ADMITTED`.
+- D1 REST real rechazó con error de restricción las cuatro actualizaciones: `state='SUCCEEDED'`, `execution_allowed=1`, `provenance_verified=1`, `github_run_id=44956533083` (el run se utilizó solo como número sintético de intento de UPDATE, sin asociación real). Tras los rechazos, la fila seguía `REGISTERED_UNVERIFIED`, `0`, `0`, `NULL`.
+- La fila de laboratorio utiliza hashes literales de prueba, incluida `manifest_sha256='9'.repeat(64)`; **no** es una huella computada del objeto real y no debe confundirse con una atestación GitHub. Las rutas del Worker calculan su propio digest al recibir un manifiesto, pero aún **no se han probado desplegadas** contra D1 0003.
+
+**Veredicto acotado:** contrato y pruebas CI PASS; SQL de admisión/concurrencia/restricciones PASS sobre D1 real por API REST. **Worker productivo sin desplegar**, **migración 0003 no aplicada a D1 productiva**, **sin ejecución de agentes**, **sin procedencia independiente**. La etapa 2 de código queda preparada, pero no se debe declarar que el handoff HTTP remoto ha sido ejercitado hasta un smoke aislado del Worker.

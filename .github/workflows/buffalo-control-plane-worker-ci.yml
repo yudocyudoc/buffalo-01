@@ -14,6 +14,7 @@ on:
       - '.github/workflows/paid-agent-case.yml'
       - '.github/workflows/buffalo-full-source-proof.yml'
       - '.github/workflows/buffalo-full-prepare-handoff.yml'
+      - '.github/workflows/buffalo-original-orchestrator-offline.yml'
       - 'migrations/control-plane/**'
       - '.github/workflows/buffalo-control-plane-*.yml'
       - 'docs/BUFFALO_CONTROL_PLANE_FASE_1_2026-11-21.md'
@@ -49,6 +50,8 @@ jobs:
           node --test workers/buffalo-control-plane/authenticated-source-proof-lab.test.mjs
           node --check scripts/control-plane/offline-echo.mjs
           node --check scripts/full-integration/original-gate.mjs
+          node --check scripts/full-integration/offline-egress-guard.mjs
+          node --check scripts/full-integration/original-offline-orchestrator.mjs
           node scripts/full-integration/original-gate.mjs --check
           node --test scripts/full-integration/original-gate.test.mjs
           node --check scripts/full-integration/handoff-contract.mjs
@@ -101,6 +104,11 @@ jobs:
               console.log("PASS handoff source metadata:",x.manifest.agent,x.manifest.scenario_id)
             ' "$RUNNER_TEMP/full-handoff-$agent.json"
           done
+      - name: Exercise ORIGINAL Merlin SessionManager/Orchestrator in no-provider subprocess
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          node --test scripts/full-integration/original-offline-orchestrator.test.mjs
       - name: Produce and re-check a real DEV case source-proof JSON (no API)
         env:
           SOURCE_COMMIT: ${{ github.sha }}

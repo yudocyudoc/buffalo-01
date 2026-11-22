@@ -136,7 +136,8 @@ test('Worker bridge function -> original Buffalo WebSocket, D1 proof, chat denie
    DB:db,BUFFALO_ORIGIN:origin,BUFFALO_WS_LAB_BEARER:TOKEN,
    BUFFALO_ORIGIN_AUTH_KEY:AUTH,BUFFALO_ORIGIN_UPGRADE_TOKEN:INTERNAL,
    BUFFALO_WS_LAB_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
-   BUFFALO_RUNTIME_COMMIT_SHA:COMMIT
+   BUFFALO_RUNTIME_COMMIT_SHA:COMMIT,
+   BUFFALO_LAB_HANDOFF_ID:HANDOFF
   };
   let browser;
   const request=new Request('https://lab.invalid/v1/lab/original-ws',{

@@ -39,6 +39,8 @@ jobs:
           node --check workers/buffalo-control-plane/store.mjs
           node --check workers/buffalo-control-plane/service.mjs
           node --check workers/buffalo-control-plane/binding-lab.mjs
+          node --check workers/buffalo-control-plane/original-live-admission.mjs
+          node --test workers/buffalo-control-plane/original-live-admission.test.mjs
           node --check workers/buffalo-control-plane/full-handoff-lab.mjs
           node --test workers/buffalo-control-plane/full-handoff-lab.test.mjs
           node --check workers/buffalo-control-plane/real-source-proof-lab.mjs
@@ -70,6 +72,7 @@ jobs:
           python scripts/control-plane/test-sql-offline.py
           python scripts/full-integration/test-handoff-sql.py
           python scripts/full-integration/test-source-provenance-sql.py
+          python scripts/full-integration/test-live-admission-sql.py
 
   full-handoff-source-snapshot:
     runs-on: ubuntu-latest

@@ -11,7 +11,7 @@ const model={variables:[],relationships:[],title:'Native Buffalo private origin 
 const sha=createHash('sha256').update(JSON.stringify(model)).digest('hex');
 const config={
  mode:ORIGIN_MODE,authenticationKey:auth,upgradeKey:token,
- modelSha256:sha,commitSha:'6'.repeat(40),port:0,host:'127.0.0.1'
+ modelSha256:sha,commitSha:'6'.repeat(40),imageSourceSha:'6'.repeat(40),port:0,host:'127.0.0.1'
 };
 function busFor(ws){
  const items=[],listeners=new Set();
@@ -142,6 +142,7 @@ test('server refuses to start without a distinct internal upgrade credential and
   {...config,authenticationKey:undefined},
   {...config,mode:'ALLOW_INFERENCE'},
   {...config,modelSha256:'wrong'},
-  {...config,commitSha:'short'}
+  {...config,commitSha:'short'},
+  {...config,imageSourceSha:'f'.repeat(40)}
  ])assert.throws(()=>validateOriginEnvironment(invalid),/BUFFALO_PRIVATE_ORIGIN_CONFIG_INVALID/);
 });

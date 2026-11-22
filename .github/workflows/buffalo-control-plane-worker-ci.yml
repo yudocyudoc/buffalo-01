@@ -130,3 +130,47 @@ jobs:
             assert.equal(proof.evidence.kind,"GITHUB_SOURCE_METADATA_ONLY");
             console.log("PASS source proof from original DEV case; no model calls");
           ' "$RUNNER_TEMP/source-proof-ci.json" "$DIGEST"
+      - name: Capture one original Merlin session/router offline receipt (no AI)
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          HANDOFF_ID="$(node -p "require('node:crypto').randomUUID()")"
+          node --import ./scripts/full-integration/offline-egress-guard.mjs \
+            scripts/full-integration/original-offline-orchestrator.mjs \
+            --agent merlin --case-index 0 --commit "$SOURCE_COMMIT" \
+            --handoff-id "$HANDOFF_ID" > "$RUNNER_TEMP/stage3-original-stdout.txt"
+          node --input-type=module - "$RUNNER_TEMP/stage3-original-stdout.txt" "$RUNNER_TEMP/stage3-original-evidence.json" <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const rows=readFileSync(process.argv[2],'utf8').split('\n')
+            .filter(x=>x.startsWith('BUFFALO_ORIGINAL_OFFLINE_EVIDENCE='));
+          assert.equal(rows.length,1);
+          const evidence=JSON.parse(rows[0].slice('BUFFALO_ORIGINAL_OFFLINE_EVIDENCE='.length));
+          assert.equal(evidence.schema,'BUFFALO_ORIGINAL_ORCHESTRATOR_OFFLINE_PREP_V1');
+          assert.equal(evidence.status,'OFFLINE_BOUNDARY_PASS_NO_AGENT_OUTPUT');
+          assert.equal(evidence.commit_sha,process.env.SOURCE_COMMIT);
+          assert.equal(evidence.original_tool_model_sync_responses,2);
+          assert.equal(evidence.terminal_error_code,'CONVERSATION_ERROR');
+          assert.equal(evidence.network_attempts,0);
+          assert.equal(evidence.provider_requests,0);
+          assert.equal(evidence.agent_turn_executed,false);
+          assert.equal(evidence.output_model_generated,false);
+          assert.equal(evidence.execution_allowed,false);
+          assert.equal(evidence.github_provenance_attested,false);
+          writeFileSync(process.argv[3],JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
+          console.log(JSON.stringify({
+            schema:evidence.schema,status:evidence.status,agent:evidence.agent,
+            scenario_id:evidence.scenario_id,commit:evidence.commit_sha,
+            manifest_sha256:evidence.manifest_sha256,
+            network_attempts:0,agent_turn_executed:false
+          }));
+          NODE
+      - name: Upload one offline original orchestration boundary record
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-stage3-original-offline-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage3-original-evidence.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

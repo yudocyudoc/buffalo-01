@@ -12,6 +12,7 @@ import {pathToFileURL} from 'node:url';
 export const STAGE3B6_SCHEMA='BUFFALO_STAGE3B6_PREDEPLOY_EVIDENCE_V1';
 const MODE='HANDSHAKE_ONLY_NO_AGENT_PROCESS';
 const hex40=/^[a-f0-9]{40}$/;
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const hex64=/^[a-f0-9]{64}$/;
 const dig=/^sha256:[a-f0-9]{64}$/;
 const account=/^[a-f0-9]{32}$/;
@@ -50,7 +51,8 @@ export function prepareStage3B6(evidence){
     registry.proof!=='INDEPENDENT_REGISTRY_PULL_AND_INSPECT')
     return blocked('REGISTRY_IMAGE_IDENTITY_UNPROVEN');
   const source=evidence.source_attestation;
-  if(source?.handoff_id!=='6bce82ee-d179-4a2e-9317-f7f4708c5be2'||
+  if(!uuid.test(evidence.handoff_id??'')||
+    source?.handoff_id!==evidence.handoff_id||
     source?.proof_status!=='SOURCE_ATTESTED'||
     source.commit_sha!==sha||source.proof_commit_sha!==sha||
     source.agent!=='merlin'||source.mode!=='sfd'||

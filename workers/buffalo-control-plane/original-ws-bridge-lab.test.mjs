@@ -31,6 +31,7 @@ const db=(row=validRow)=>{
 const env=(changes={})=>({
  DB:db(),BUFFALO_WS_LAB_BEARER:secret,
  BUFFALO_RUNTIME_COMMIT_SHA:COMMIT,
+ BUFFALO_LAB_HANDOFF_ID:ID,
  BUFFALO_WS_LAB_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
  BUFFALO_ORIGIN_AUTH_KEY:originAuth,
  BUFFALO_ORIGIN_UPGRADE_TOKEN:internalToken,
@@ -67,6 +68,8 @@ test('reject method, query string, non-WebSocket and subprotocol requests',async
 test('must be configured for internal no-agent origin BEFORE reading D1',async()=>{
  for(const change of [
   {BUFFALO_ORIGIN:undefined},
+  {BUFFALO_LAB_HANDOFF_ID:undefined},
+  {BUFFALO_LAB_HANDOFF_ID:'6bce82ee-d179-4a2e-9317-f7f4708c5be2?x=1'},
   {BUFFALO_WS_LAB_MODE:'ALLOW_INFERENCE'},
   {BUFFALO_ORIGIN_AUTH_KEY:''},
   {BUFFALO_ORIGIN_UPGRADE_TOKEN:''},
@@ -118,4 +121,27 @@ test('origin binding receives ONLY fixed internal /api/v1 request and no caller 
  assert.equal(res.status,503);
  assert.equal(calls,1);
  assert.equal(e.DB.queries.length,1);
+});
+
+test('explicit new server-pinned handoff ID uses only its own attested D1 row',async()=>{
+ const newerId='70000000-0000-4000-8000-000000000777';
+ const newCommit='7'.repeat(40);
+ const row={...validRow,handoff_id:newerId,commit_sha:newCommit,
+  proof_commit_sha:newCommit};
+ let bound;
+ const database={prepare(sql){
+  assert.match(sql,/^SELECT/);
+  return {bind(id){bound=id;return {first:async()=>row}}};
+ }};
+ const e=env({DB:database,BUFFALO_LAB_HANDOFF_ID:newerId,
+  BUFFALO_RUNTIME_COMMIT_SHA:newCommit});
+ const res=await handleOriginalWorkerBridge(request(),e);
+ assert.equal(res.status,503);
+ assert.equal((await res.json()).error,'ORIGIN_WEBSOCKET_UNAVAILABLE');
+ assert.equal(bound,newerId);
+ const stale=await handleOriginalWorkerBridge(request(),env({
+  DB:database,BUFFALO_LAB_HANDOFF_ID:ID,BUFFALO_RUNTIME_COMMIT_SHA:newCommit
+ }));
+ assert.equal(stale.status,403);
+ assert.equal((await stale.json()).error,'ORIGINAL_SOURCE_NOT_ATTESTED_FOR_RUNTIME');
 });

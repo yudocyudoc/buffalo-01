@@ -13,7 +13,9 @@
 import {OriginalHandshakeFrameGate} from '../../scripts/full-integration/original-ws-handshake-gate.mjs';
 
 export const BRIDGE_SCHEMA='BUFFALO_ORIGINAL_WS_WORKER_BRIDGE_LAB_V1';
-const ID='6bce82ee-d179-4a2e-9317-f7f4708c5be2';
+// Handoff is configured server-side; a historical immutable D1 row cannot
+// be relabeled with a new runtime commit. Never take this ID from the client.
+const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const ORIGINAL_PATH='/api/v1';
 const REJECTED=new Set([1004,1005,1006,1015]);
 const json=(error,status=403)=>Response.json({
@@ -43,8 +45,8 @@ async function authorize(request,secret){
  for(let i=0;i<u.length;i++)diff|=u[i]^v[i];
  return diff===0;
 }
-async function readVerifiedSource(db,commit){
- if(!db?.prepare||!regex40.test(commit??''))return null;
+async function readVerifiedSource(db,commit,handoffId){
+ if(!db?.prepare||!regex40.test(commit??'')||!UUID.test(handoffId??''))return null;
  const sql=[
   'SELECT h.handoff_id,h.agent,h.mode,h.commit_sha,',
   'h.initial_model_sha256,h.manifest_sha256,',
@@ -54,8 +56,8 @@ async function readVerifiedSource(db,commit){
   'JOIN buffalo_full_source_attestations a ON a.handoff_id=h.handoff_id',
   'WHERE h.handoff_id=?'
  ].join(' ');
- const row=await db.prepare(sql).bind(ID).first();
- if(!row||row.handoff_id!==ID||row.agent!=='merlin'||
+ const row=await db.prepare(sql).bind(handoffId).first();
+ if(!row||row.handoff_id!==handoffId||row.agent!=='merlin'||
   row.mode!=='sfd'||!regex64.test(row.initial_model_sha256??'')||
   !regex64.test(row.manifest_sha256??'')||
   row.proof_status!=='SOURCE_ATTESTED'||row.commit_sha!==commit||
@@ -105,6 +107,7 @@ export async function handleOriginalWorkerBridge(request,env,deps={}){
  // A D1 source attestation is NOT permission for inference. This private
  // endpoint only authorizes the original no-inference handshake.
  if(env.BUFFALO_WS_LAB_MODE!=='HANDSHAKE_ONLY_NO_AGENT_PROCESS'||
+    !UUID.test(env.BUFFALO_LAB_HANDOFF_ID??'')||
     !env.BUFFALO_ORIGIN?.fetch||
     typeof env.BUFFALO_ORIGIN_AUTH_KEY!=='string'||
     env.BUFFALO_ORIGIN_AUTH_KEY.length<32||
@@ -113,7 +116,7 @@ export async function handleOriginalWorkerBridge(request,env,deps={}){
     env.BUFFALO_ORIGIN_UPGRADE_TOKEN===env.BUFFALO_ORIGIN_AUTH_KEY)
   return json('NO_SAFE_ORIGIN_CONFIGURED',503);
  let source;
- try{source=await readVerifiedSource(env.DB,env.BUFFALO_RUNTIME_COMMIT_SHA)}
+ try{source=await readVerifiedSource(env.DB,env.BUFFALO_RUNTIME_COMMIT_SHA,env.BUFFALO_LAB_HANDOFF_ID)}
  catch{return json('SOURCE_LOOKUP_FAILED',503)}
  if(!source)return json('ORIGINAL_SOURCE_NOT_ATTESTED_FOR_RUNTIME',403);
  const pairFactory=deps.newPair??(()=>new WebSocketPair());

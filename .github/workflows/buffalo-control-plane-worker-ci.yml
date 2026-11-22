@@ -44,6 +44,9 @@ jobs:
           node --test workers/buffalo-control-plane/real-source-proof-lab.test.mjs
           node --check workers/buffalo-control-plane/source-first-get-diagnostic.mjs
           node --test workers/buffalo-control-plane/source-first-get-diagnostic.test.mjs
+          node --check workers/buffalo-control-plane/source-auth-transport.mjs
+          node --check workers/buffalo-control-plane/authenticated-source-proof-lab.mjs
+          node --test workers/buffalo-control-plane/authenticated-source-proof-lab.test.mjs
           node --check scripts/control-plane/offline-echo.mjs
           node --check scripts/full-integration/original-gate.mjs
           node scripts/full-integration/original-gate.mjs --check

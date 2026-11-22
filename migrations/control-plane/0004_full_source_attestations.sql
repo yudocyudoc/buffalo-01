@@ -27,3 +27,17 @@ CREATE TABLE IF NOT EXISTS buffalo_full_source_events (
 );
 CREATE INDEX IF NOT EXISTS idx_buffalo_full_source_events
  ON buffalo_full_source_events(handoff_id,event_id);
+
+-- Defense in depth: at-tested proofs and their audit entries cannot be rewritten.
+CREATE TRIGGER IF NOT EXISTS buffalo_full_source_attestations_no_update
+ BEFORE UPDATE ON buffalo_full_source_attestations
+ BEGIN SELECT RAISE(ABORT,'SOURCE_ATTESTATION_IMMUTABLE'); END;
+CREATE TRIGGER IF NOT EXISTS buffalo_full_source_attestations_no_delete
+ BEFORE DELETE ON buffalo_full_source_attestations
+ BEGIN SELECT RAISE(ABORT,'SOURCE_ATTESTATION_IMMUTABLE'); END;
+CREATE TRIGGER IF NOT EXISTS buffalo_full_source_events_no_update
+ BEFORE UPDATE ON buffalo_full_source_events
+ BEGIN SELECT RAISE(ABORT,'SOURCE_ATTESTATION_EVENT_IMMUTABLE'); END;
+CREATE TRIGGER IF NOT EXISTS buffalo_full_source_events_no_delete
+ BEFORE DELETE ON buffalo_full_source_events
+ BEGIN SELECT RAISE(ABORT,'SOURCE_ATTESTATION_EVENT_IMMUTABLE'); END;

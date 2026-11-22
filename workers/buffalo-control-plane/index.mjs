@@ -42,7 +42,7 @@ export async function handle(request,env,deps={}){
     result.created?201:200);
   }
   // A separate, read-only GitHub proof gate. No dispatch or paid execution.
-  const proofMatch=path.match(/^\\/v1\\/full\\/handoffs\\/([a-fA-F0-9-]{36})\\/(verify-source|source-proof)$/);
+  const proofMatch=path.match(/^\/v1\/full\/handoffs\/([a-fA-F0-9-]{36})\/(verify-source|source-proof)$/);
   if(proofMatch){
    const [,id,action]=proofMatch;
    const attestSvc=deps.fullSourceAttestationService??new FullSourceAttestationService(

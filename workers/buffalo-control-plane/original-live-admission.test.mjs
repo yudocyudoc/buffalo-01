@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {OriginalLiveAdmission,LIVE_GRANT_SCHEMA} from './original-live-admission.mjs';
+import {handle} from './index.mjs';
 
 const GRANT='123e4567-e89b-42d3-a456-426614174111';
 const HANDOFF='6bce82ee-d179-4a2e-9317-f7f4708c5be2';
@@ -116,4 +117,29 @@ test('invalid id never touches D1',async()=>{
  const r=await a.preflight('https://unsafe.invalid');
  assert.equal(r.code,400);
  assert.equal(r.body.execution_started,false);
+});
+
+test('real Worker route uses existing bearer auth and never starts GitHub or the Buffalo runtime',async()=>{
+ let lookups=0;
+ const db={batch:async()=>{throw Error('D1_WRITES_DENIED')},prepare(sql){
+  assert.match(sql,/^\s*SELECT\s/i);
+  lookups++;
+  return{bind(){return{first:async()=>null}}};
+ }};
+ const secret='a'.repeat(48);
+ const env={DB:db,CONTROL_API_TOKEN:secret,GITHUB_FINE_GRAINED_TOKEN:'TEST_NEVER_USED'};
+ const url='https://worker.invalid/v1/full/live/grants/'+GRANT+'/preflight';
+ const denied=await handle(new Request(url),env,{store:{},github:{}});
+ assert.equal(denied.status,401);
+ assert.equal(lookups,0);
+ const good=await handle(new Request(url,{headers:{authorization:'Bearer '+secret}}),
+  env,{store:{},github:{}});
+ assert.equal(good.status,404);
+ assert.equal((await good.json()).reason_code,'LIVE_GRANT_NOT_FOUND');
+ assert.equal(lookups,1);
+ const post=await handle(new Request(url,{method:'POST',headers:{
+  authorization:'Bearer '+secret
+ }}),env,{store:{},github:{}});
+ assert.equal(post.status,405);
+ assert.equal(lookups,1);
 });

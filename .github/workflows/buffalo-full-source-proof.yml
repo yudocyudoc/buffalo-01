@@ -1,0 +1,66 @@
+name: Buffalo Full source provenance (metadata only, no AI)
+run-name: Buffalo full source proof ${{ inputs.handoff_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      handoff_id:
+        description: UUID of existing declared handoff (no dispatch capability)
+        required: true
+        type: string
+      agent:
+        description: One of merlin, socrates, themis, athena_SFD
+        required: true
+        type: choice
+        options:
+          - merlin
+          - socrates
+          - themis
+          - athena_SFD
+      case_index:
+        description: Zero-based original dev scenario index
+        required: true
+        type: string
+      manifest_sha256:
+        description: Expected digest of stored immutable handoff declaration
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-full-source-${{ inputs.handoff_id }}
+  cancel-in-progress: false
+jobs:
+  derive-source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify exact checkout and source gate
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/full-integration/original-gate.mjs --check
+      - name: Install metadata dependencies (no install hooks)
+        run: npm ci --ignore-scripts
+      - name: Derive one GitHub-anchored source proof, no agents
+        env:
+          BUFFALO_HANDOFF_ID: ${{ inputs.handoff_id }}
+          BUFFALO_HANDOFF_AGENT: ${{ inputs.agent }}
+          BUFFALO_HANDOFF_CASE_INDEX: ${{ inputs.case_index }}
+          BUFFALO_HANDOFF_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          BUFFALO_SOURCE_PROOF_PATH: ${{ runner.temp }}/buffalo-full-source-proof.json
+        run: node scripts/full-integration/create-source-proof.mjs
+      - name: Upload exactly one bounded stored ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-full-source-${{ inputs.handoff_id }}
+          path: ${{ runner.temp }}/buffalo-full-source-proof.json
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error

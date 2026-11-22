@@ -4,6 +4,9 @@ import {GitHubOffline} from './github.mjs';
 import {ControlPlaneService} from './service.mjs';
 import {D1FullHandoffStore} from './full-handoff-store.mjs';
 import {handoffReceipt} from '../../scripts/full-integration/handoff-contract.mjs';
+import {GitHubFullSourceProof} from './full-provenance-github.mjs';
+import {D1FullSourceAttestationStore} from './full-source-attestation-store.mjs';
+import {FullSourceAttestationService} from './full-source-attestation-service.mjs';
 async function authorized(request,secret){
  if(typeof secret!=='string'||secret.length<32)return false;
  const bearer=request.headers.get('authorization')??'';
@@ -37,6 +40,28 @@ export async function handle(request,env,deps={}){
    const result=await fullStore.create(JSON.parse(body));
    return send({created:result.created,...handoffReceipt(result.row)},
     result.created?201:200);
+  }
+  // A separate, read-only GitHub proof gate. No dispatch or paid execution.
+  const proofMatch=path.match(/^\/v1\/full\/handoffs\/([a-fA-F0-9-]{36})\/(verify-source|source-proof)$/);
+  if(proofMatch){
+   const [,id,action]=proofMatch;
+   const attestSvc=deps.fullSourceAttestationService??new FullSourceAttestationService(
+    deps.fullHandoffStore??new D1FullHandoffStore(env.DB),
+    deps.fullSourceAttestationStore??new D1FullSourceAttestationStore(env.DB),
+    deps.fullSourceGithub??new GitHubFullSourceProof(env.GITHUB_FINE_GRAINED_TOKEN)
+   );
+   if(action==='source-proof'&&method==='GET')
+    return await respond(attestSvc.inspect(id));
+   if(action==='verify-source'&&method==='POST'){
+    const body=await request.text();
+    if(body.length>128)return send({error:'INVALID_PROOF_INPUT'},400);
+    const value=JSON.parse(body);
+    if(!value||typeof value!=='object'||Array.isArray(value)||
+      Object.keys(value).join(',')!=='github_run_id')
+     return send({error:'INVALID_PROOF_INPUT'},400);
+    return await respond(attestSvc.attest(id,value.github_run_id));
+   }
+   return send({error:'METHOD_NOT_ALLOWED'},405);
   }
   const handoffMatch=path.match(/^\/v1\/full\/handoffs\/([a-fA-F0-9-]{36})$/);
   if(handoffMatch&&method==='GET'){

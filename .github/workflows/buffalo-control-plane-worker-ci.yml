@@ -12,6 +12,7 @@ on:
       - 'evals/utilities/simulator/PySDSimulator.js'
       - 'scripts/run-one-native-agent-case.mjs'
       - '.github/workflows/paid-agent-case.yml'
+      - '.github/workflows/buffalo-full-source-proof.yml'
       - 'migrations/control-plane/**'
       - '.github/workflows/buffalo-control-plane-*.yml'
       - 'docs/BUFFALO_CONTROL_PLANE_FASE_1_2026-11-21.md'
@@ -45,12 +46,19 @@ jobs:
           node --check scripts/full-integration/handoff-contract.mjs
           node --check scripts/full-integration/prepare-handoff.mjs
           node --check workers/buffalo-control-plane/full-handoff-store.mjs
+          node --check workers/buffalo-control-plane/full-provenance-github.mjs
+          node --check workers/buffalo-control-plane/full-source-attestation-store.mjs
+          node --check workers/buffalo-control-plane/full-source-attestation-service.mjs
+          node --check scripts/full-integration/source-proof-contract.mjs
+          node --check scripts/full-integration/create-source-proof.mjs
+          node --test workers/buffalo-control-plane/full-source-provenance.test.mjs
           node --test scripts/full-integration/handoff-contract.test.mjs
           node --test scripts/control-plane/contract.test.mjs workers/buffalo-control-plane/control-plane.test.mjs
       - name: Verify SQL migration and atomic state claims (SQLite only)
         run: |
           python scripts/control-plane/test-sql-offline.py
           python scripts/full-integration/test-handoff-sql.py
+          python scripts/full-integration/test-source-provenance-sql.py
 
   full-handoff-source-snapshot:
     runs-on: ubuntu-latest
@@ -85,3 +93,24 @@ jobs:
               console.log("PASS handoff source metadata:",x.manifest.agent,x.manifest.scenario_id)
             ' "$RUNNER_TEMP/full-handoff-$agent.json"
           done
+      - name: Produce and re-check a real DEV case source-proof JSON (no API)
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          DIGEST="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).manifest_sha256' "$RUNNER_TEMP/full-handoff-merlin.json")"
+          BUFFALO_HANDOFF_ID="123e4567-e89b-42d3-a456-426614174111" \
+          BUFFALO_HANDOFF_AGENT="merlin" \
+          BUFFALO_HANDOFF_CASE_INDEX="0" \
+          BUFFALO_HANDOFF_MANIFEST_SHA256="$DIGEST" \
+          BUFFALO_SOURCE_PROOF_PATH="$RUNNER_TEMP/source-proof-ci.json" \
+          GITHUB_SHA="$SOURCE_COMMIT" \
+            node scripts/full-integration/create-source-proof.mjs
+          node -e '
+            const fs=require("node:fs"),assert=require("node:assert/strict");
+            const proof=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+            assert.equal(proof.schema,"BUFFALO_FULL_SOURCE_PROOF_V1");
+            assert.equal(proof.manifest_sha256,process.argv[2]);
+            assert.equal(proof.commit,process.env.SOURCE_COMMIT);
+            assert.equal(proof.evidence.kind,"GITHUB_SOURCE_METADATA_ONLY");
+            console.log("PASS source proof from original DEV case; no model calls");
+          ' "$RUNNER_TEMP/source-proof-ci.json" "$DIGEST"

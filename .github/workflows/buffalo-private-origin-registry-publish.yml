@@ -36,11 +36,11 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_CONTAINERS_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN" || {
-            echo "::error::REGISTRY_PUBLISH_BLOCKED_MISSING_GITHUB_CLOUDFLARE_API_TOKEN"
+            echo "::error::REGISTRY_PUBLISH_BLOCKED_MISSING_BUFFALO_CF_CONTAINERS_TOKEN"
             exit 1
           }
       - name: Resolve immutable base and build image locally
@@ -78,7 +78,7 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_CONTAINERS_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN" || exit 1

@@ -50,7 +50,8 @@ export function prepareStage3B6(evidence){
     registry.proof!=='INDEPENDENT_REGISTRY_PULL_AND_INSPECT')
     return blocked('REGISTRY_IMAGE_IDENTITY_UNPROVEN');
   const source=evidence.source_attestation;
-  if(source?.proof_status!=='SOURCE_ATTESTED'||
+  if(source?.handoff_id!=='6bce82ee-d179-4a2e-9317-f7f4708c5be2'||
+    source?.proof_status!=='SOURCE_ATTESTED'||
     source.commit_sha!==sha||source.proof_commit_sha!==sha||
     source.agent!=='merlin'||source.mode!=='sfd'||
     !hex64.test(source.initial_model_sha256??'')||

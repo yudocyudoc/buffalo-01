@@ -9,7 +9,7 @@ La build 3B-5 entrega un digest **local** verificado, pero no deja ninguna image
 ### Precondiciones
 
 - Solo en el **push a main que modifica este workflow** intenta publicación. En PR construye, ejecuta las pruebas Node del servidor original con red deshabilitada, y **no** utiliza credenciales de Cloudflare ni publica.
-- Exige el secret de GitHub Actions `CLOUDFLARE_API_TOKEN` ya usado por otros workflows del repositorio. Si falta o carece de permiso para Containers Registry, falla cerrado. No crear/presentar secretos en documentación, salidas o logs.
+- Exige el secret dedicado de GitHub Actions `BUFFALO_CF_CONTAINERS_TOKEN`, distinto de `CLOUDFLARE_API_TOKEN` utilizado para Workers AI. Debe pertenecer a la cuenta `e0cb52526a69c0f48f001901a5b9a640`, con permiso de cuenta **Workers Containers Write**, restringido a esa cuenta. Si falta o carece del permiso de Containers Registry, falla cerrado. No crear/presentar secretos en documentación, salidas o logs.
 - El `CLOUDFLARE_ACCOUNT_ID` se fija al account ya verificado de este proyecto. Cualquier permiso de token o coste de registro se limita por las políticas reales de la cuenta, no por un cálculo dentro de CI.
 
 ### Recorrido de publicación
@@ -32,3 +32,11 @@ La primera publicación de imagen puede usar cuota de almacenamiento o tiempo de
 ### Pendiente después del push
 
 Registrar un handoff nuevo para ese mismo commit y atestarlo por el workflow GitHub; configurar secretos privados en Cloudflare y el binding `BUFFALO_ORIGIN`, sin exponer el origen. Solo después validar `workerd → Container → WebSocketHandler`. Los agentes seguirán bloqueados.
+
+## Incidente de credenciales observado
+
+El primer push desde main, workflow [45077832219](https://github.com/yudocyudoc/buffalo-01/actions/runs/45077832219), completó el checkout, el build y las 4 pruebas Node dentro de 256 MiB, pero Wrangler 4.166.0 devolvió `Forbidden` en `wrangler containers push`, sin publicar ninguna imagen. La presencia de `CLOUDFLARE_API_TOKEN` en GitHub **no prueba que el token tenga Workers Containers Write**; un 403 también puede deberse a que la cuenta/token no esté habilitada para Containers. No afirmar cuál de esas causas es hasta revalidar con un token dedicado y la cuenta/plan correctos.
+
+No ampliar el token compartido para Workers AI: crear token específico en Cloudflare Dashboard → My Profile / API Tokens, con **Account → Workers Containers → Write** para esta cuenta, y guardarlo únicamente en GitHub → Repository Settings → Secrets and variables → Actions → New repository secret con nombre `BUFFALO_CF_CONTAINERS_TOKEN`. No pegar el valor en issues, commits, chat ni artifacts.
+
+La configuración del nuevo secret no dispara por sí sola el workflow. Para probarlo después, usar **Re-run failed jobs** sobre el run de `main` correspondiente al workflow ya modificado, o solicitar una ejecución manual controlada. No se requiere modificar D1 ni habilitar un Container para verificar el push.

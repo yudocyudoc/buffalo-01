@@ -70,3 +70,17 @@ test('original SHA is required to agree with GitHub checkout',()=>{
  assert.notEqual(child.status,0);
  assert.match(child.stderr,/STAGE3_FAIL_CHECKOUT_COMMIT_MISMATCH/);
 });
+
+test('egress guard actually blocks global fetch and forbids outbound process launch',()=>{
+ const fetchTrial=spawnSync(process.execPath,['--import',guard,
+  '--input-type=module','-e', "await fetch('https://example.invalid')"],{
+  cwd:process.cwd(),encoding:'utf8',timeout:15000});
+ assert.notEqual(fetchTrial.status,0);
+ assert.match(fetchTrial.stderr,/STAGE3_EXTERNAL_OPERATION_BLOCKED_FETCH/);
+ const spawnTrial=spawnSync(process.execPath,['--import',guard,
+  '--input-type=module','-e',
+  "import {spawn} from 'node:child_process';spawn('sh',['-c','echo not-allowed'])"],{
+  cwd:process.cwd(),encoding:'utf8',timeout:15000});
+ assert.notEqual(spawnTrial.status,0);
+ assert.match(spawnTrial.stderr,/STAGE3_EXTERNAL_OPERATION_BLOCKED_PROCESS_SPAWN/);
+});

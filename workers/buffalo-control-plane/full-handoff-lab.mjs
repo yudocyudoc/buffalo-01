@@ -6,7 +6,7 @@
  * External HTTP permits one fixed POST action and rejects all other routes.
  */
 import {handle} from './index.mjs';
-import {HANDOFF_KIND,HANDOFF_SCHEMA,digestHandoff} from './handoff-contract.mjs';
+import {HANDOFF_KIND,HANDOFF_SCHEMA,digestHandoff} from '../../scripts/full-integration/handoff-contract.mjs';
 
 const TEST_ID='buffalo-full-handoff-worker-binding-v1';
 const ID='91000000-0000-4000-8000-000000000201';

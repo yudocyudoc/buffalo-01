@@ -118,13 +118,21 @@ jobs:
             echo "::error::MAIN_MOVED_ABORT_DISPATCH"
             exit 1
           fi
-          gh api --method POST \
+          node --input-type=module <<'NODE' | gh api --method POST \
             "repos/$GITHUB_REPOSITORY/actions/workflows/buffalo-full-source-proof.yml/dispatches" \
-            --field ref=main \
-            --field "inputs[handoff_id]=$BUFFALO_HANDOFF_ID" \
-            --field "inputs[agent]=merlin" \
-            --field "inputs[case_index]=0" \
-            --field "inputs[manifest_sha256]=$MANIFEST_SHA"
+            --input -
+          import assert from 'node:assert/strict';
+          const id=process.env.BUFFALO_HANDOFF_ID;
+          const digest=process.env.MANIFEST_SHA;
+          assert.match(id??'',/^[a-f0-9-]{36}$/);
+          assert.match(digest??'',/^[a-f0-9]{64}$/);
+          const request={ref:'main',inputs:{
+            handoff_id:id,agent:'merlin',case_index:'0',
+            manifest_sha256:digest
+          }};
+          assert.equal(typeof request.inputs.case_index,'string');
+          process.stdout.write(JSON.stringify(request));
+          NODE
           echo "SOURCE_PROOF_DISPATCH_ACCEPTED_NOT_ATTESTED"
           echo "HANDOFF_ID=$BUFFALO_HANDOFF_ID"
           echo "COMMIT=$GITHUB_SHA"

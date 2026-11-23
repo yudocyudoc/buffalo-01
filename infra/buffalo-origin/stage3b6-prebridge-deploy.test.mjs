@@ -21,7 +21,8 @@ const good=()=>({
    {type:'secret_text',name:'BUFFALO_ORIGIN_AUTH_KEY'},
    {type:'secret_text',name:'BUFFALO_ORIGIN_UPGRADE_TOKEN'}
   ]},
- bridgeSettings:{bindings:[{name:'DB',type:'d1',database_id:DB}]},
+ bridgeSettings:{bindings:[{name:'DB',type:'d1',database_id:DB},
+  ...['BUFFALO_ORIGIN_AUTH_KEY','BUFFALO_ORIGIN_UPGRADE_TOKEN','BUFFALO_WS_LAB_BEARER'].map(name=>({name,type:'secret_text'}))]},
  handoff:[{handoff_id:HANDOFF,commit_sha:SOURCE,
   manifest_sha256:'4d80f1f4ee8a75ba610943826ab3858c2019a79414e5aad249f3f3342f29aa0e',
   execution_allowed:0}],

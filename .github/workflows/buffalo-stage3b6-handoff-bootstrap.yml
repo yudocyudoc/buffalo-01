@@ -1,0 +1,126 @@
+name: Buffalo 3B-6 handoff manifest and source-proof bootstrap (metadata only)
+run-name: Buffalo 3B-6 immutable handoff bootstrap
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/buffalo-stage3b6-handoff-bootstrap.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/buffalo-stage3b6-handoff-bootstrap.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: buffalo-stage3b6-handoff-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  manifest-read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      BUFFALO_HANDOFF_ID: cffb07d9-78b5-464f-8194-3f6ffd144b90
+      BUFFALO_AGENT: merlin
+      BUFFALO_CASE_INDEX: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify exact checked out source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          node scripts/full-integration/original-gate.mjs --check > /dev/null
+      - name: Install metadata dependencies only
+        run: npm ci --ignore-scripts
+      - name: Derive immutable Merlin DEV scenario handoff, no AI
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/full-integration/prepare-handoff.mjs \
+            --handoff-id "$BUFFALO_HANDOFF_ID" \
+            --agent "$BUFFALO_AGENT" \
+            --case-index "$BUFFALO_CASE_INDEX" \
+            --commit "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/stage3b6-handoff.json"
+          node --input-type=module - "$RUNNER_TEMP/stage3b6-handoff.json" <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          import {digestHandoff} from './scripts/full-integration/handoff-contract.mjs';
+          const x=JSON.parse(readFileSync(process.argv[2],'utf8'));
+          assert.equal(x.execution,'NOT_EXECUTED');
+          assert.equal(x.provenance,'DECLARED_UNVERIFIED');
+          assert.equal(x.manifest.commit_sha,process.env.GITHUB_SHA);
+          assert.equal(x.manifest.handoff_id,process.env.BUFFALO_HANDOFF_ID);
+          assert.equal(x.manifest.agent,'merlin');
+          assert.equal(x.manifest.mode,'sfd');
+          assert.equal(x.manifest.case_index,0);
+          assert.equal(await digestHandoff(x.manifest),x.manifest_sha256);
+          console.log('STAGE3B6_HANDOFF_MANIFEST='+JSON.stringify(x.manifest));
+          console.log('STAGE3B6_HANDOFF_DIGEST='+x.manifest_sha256);
+          console.log('STAGE3B6_HANDOFF_NOT_REGISTERED_NOT_ATTESTED_NO_INFERENCE');
+          NODE
+      - name: Save bounded non-executable handoff manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-stage3b6-merlin-handoff-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage3b6-handoff.json
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+  dispatch-existing-source-proof:
+    needs: manifest-read-only
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUFFALO_HANDOFF_ID: cffb07d9-78b5-464f-8194-3f6ffd144b90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Independently reconstruct manifest from exact main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/full-integration/original-gate.mjs --check > /dev/null
+          npm ci --ignore-scripts
+          node scripts/full-integration/prepare-handoff.mjs \
+            --handoff-id "$BUFFALO_HANDOFF_ID" --agent merlin \
+            --case-index 0 --commit "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/stage3b6-handoff-dispatch.json"
+          echo "MANIFEST_SHA=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).manifest_sha256' "$RUNNER_TEMP/stage3b6-handoff-dispatch.json")" >> "$GITHUB_ENV"
+      - name: Dispatch ORIGINAL GitHub source proof with bounded inputs only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${#MANIFEST_SHA}" = 64
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/buffalo-full-source-proof.yml/dispatches" \
+            --field ref=main \
+            --field "inputs[handoff_id]=$BUFFALO_HANDOFF_ID" \
+            --field "inputs[agent]=merlin" \
+            --field "inputs[case_index]=0" \
+            --field "inputs[manifest_sha256]=$MANIFEST_SHA"
+          echo "SOURCE_PROOF_DISPATCH_ACCEPTED_NOT_ATTESTED"
+          echo "HANDOFF_ID=$BUFFALO_HANDOFF_ID"
+          echo "COMMIT=$GITHUB_SHA"
+          echo "MANIFEST_SHA=$MANIFEST_SHA"

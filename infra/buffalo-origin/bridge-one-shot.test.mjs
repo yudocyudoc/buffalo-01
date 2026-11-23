@@ -49,11 +49,19 @@ test('origin uses a named private RPC, persistent claim before start, and only f
  assert.match(origin,/this\.bridgeKeys=\{auth,upgrade,used:false/);
  assert.match(origin,/keys\.used=true/);
  assert.match(origin,/buffalo_stage3b7_private_bridge_receipts/);
+ assert.match(origin,/ON CONFLICT\(probe_id\) DO UPDATE SET/);
+ assert.match(origin,/BRIDGE_PROBE_PREPARED/);
+ assert.match(origin,/BRIDGE_POSITIVE_EVIDENCE_INCOMPLETE/);
+ assert.match(origin,/await persistBridgeReceipt\(this\.env\.DB,result\)/);
+ assert.doesNotMatch(origin,/JSON\.stringify\(granted\)/);
+
  assert.doesNotMatch(origin,/BUFFALO_WS_LAB_BEARER\s*:/);
  assert.doesNotMatch(origin,/WorkerSpawner\.spawn\(/);
 });
 test('bridge uses original handshake gate through original bridge, not a new unrestricted proxy',()=>{
  assert.match(client,/handleOriginalWorkerBridge\(request,sessionEnv\)/);
+ assert.match(client,/const sessionEnv=\{DB:env\.DB,BUFFALO_ORIGIN:env\.BUFFALO_ORIGIN/);
+ assert.doesNotMatch(client,/const sessionEnv=\{\.\.\.env/);
  assert.match(client,/BUFFALO_ORIGIN\.prepareBridgeOnce\(\)/);
  assert.match(client,/BUFFALO_ORIGIN\.finishBridgeOnce\(receipt\)/);
  assert.match(client,/session_created/);

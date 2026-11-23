@@ -84,6 +84,11 @@ jobs:
         run: |
           set -euo pipefail
           docker image inspect "buffalo-private-origin:$GITHUB_SHA" > "$RUNNER_TEMP/buffalo-local-image-inspect.json"
+          docker image save "buffalo-private-origin:$GITHUB_SHA" \
+            -o "$RUNNER_TEMP/buffalo-local-image.tar"
+          export LOCAL_CONFIG_DIGEST
+          LOCAL_CONFIG_DIGEST="$(node infra/buffalo-origin/oci-config-digest.mjs "$RUNNER_TEMP/buffalo-local-image.tar")"
+          echo "LOCAL_CONFIG_DIGEST=$LOCAL_CONFIG_DIGEST" >> "$GITHUB_ENV"
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import {readFileSync,writeFileSync} from 'node:fs';
@@ -96,6 +101,11 @@ jobs:
           const manifest=metadata['containerimage.digest']??metadata['containerimage.descriptor']?.digest;
           assert.match(manifest??'',/^sha256:[a-f0-9]{64}$/);
           assert.match(image.Id??'',/^sha256:[a-f0-9]{64}$/);
+          const configDigest=process.env.LOCAL_CONFIG_DIGEST;
+          assert.match(configDigest??'',/^sha256:[a-f0-9]{64}$/);
+          assert.notEqual(configDigest,manifest,'CONFIG_IS_NOT_MANIFEST');
+          if(metadata['containerimage.config.digest'])
+            assert.equal(configDigest,metadata['containerimage.config.digest']);
           assert.equal(image.Config?.User,'node');
           assert.equal(image.Config?.Labels?.['org.opencontainers.image.revision'],sha);
           assert.equal(image.Config?.Env?.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
@@ -111,7 +121,7 @@ jobs:
             github_run_attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
             node_tests_passed:4,
             image_manifest_digest:manifest,
-            image_config_digest:image.Id,
+            image_config_digest:configDigest,
             dockerfile_sha256:fileHash('infra/buffalo-origin/Dockerfile'),
             dockerignore_sha256:fileHash('.dockerignore'),
             security_mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
@@ -141,6 +151,10 @@ jobs:
           set -euo pipefail
           docker pull "$REGISTRY_REF"
           docker image inspect "$REGISTRY_REF" > "$RUNNER_TEMP/buffalo-registry-inspect.json"
+          docker image save "$REGISTRY_REF" \
+            -o "$RUNNER_TEMP/buffalo-remote-image.tar"
+          export REMOTE_CONFIG_DIGEST
+          REMOTE_CONFIG_DIGEST="$(node infra/buffalo-origin/oci-config-digest.mjs "$RUNNER_TEMP/buffalo-remote-image.tar")"
           node --input-type=module <<'NODE'
           import {readFileSync,writeFileSync} from 'node:fs';
           import assert from 'node:assert/strict';
@@ -160,13 +174,15 @@ jobs:
           assert.match(expected??'',/^sha256:[a-f0-9]{64}$/);
           assert.equal(got,expected,'REGISTRY_MANIFEST_DIFFERS_FROM_CI_BUILD');
           assert.equal(built.image_manifest_digest,got);
-          assert.equal(built.image_config_digest,remote.Id);
+          assert.equal(built.image_config_digest,process.env.REMOTE_CONFIG_DIGEST,
+            'LOCAL_AND_REMOTE_CONFIG_BYTES_DIFFER');
+          assert.notEqual(built.image_config_digest,got,'CONFIG_DIGEST_CONFUSED_WITH_MANIFEST');
           assert.equal(remote.Config?.User,'node');
           assert.equal(remote.Config?.Labels?.['org.opencontainers.image.revision'],source);
           assert.equal(remote.Config?.Env?.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
             'BUFFALO_IMAGE_SOURCE_SHA='+source);
           if(local['containerimage.config.digest'])
-            assert.equal(remote.Id,local['containerimage.config.digest']);
+            assert.equal(process.env.REMOTE_CONFIG_DIGEST,local['containerimage.config.digest']);
           const receipt={
             schema:'BUFFALO_ORIGIN_PRIVATE_REGISTRY_RELEASE_V1',
             state:'REGISTRY_IMAGE_PULLED_AND_VERIFIED_NO_DEPLOY',
@@ -176,7 +192,7 @@ jobs:
             base_image:process.env.BASE_REF,
             local_manifest_digest:expected,
             remote_manifest_digest:got,
-            remote_image_config_digest:remote.Id,
+            remote_image_config_digest:process.env.REMOTE_CONFIG_DIGEST,
             remote_ref:refs[0],
             agent_turns:0,
             cloudflare_container_started:false,

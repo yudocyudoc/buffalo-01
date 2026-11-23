@@ -61,10 +61,15 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --network none --read-only \
+            --memory 256m --memory-swap 256m --pids-limit 64 \
             --tmpfs /tmp:rw,nosuid,nodev,size=16m \
             buffalo-private-origin:stage3b5 \
-            node --test infra/buffalo-origin/origin-server.test.mjs
+            node --test infra/buffalo-origin/origin-server.test.mjs | tee "$RUNNER_TEMP/buffalo-origin-node-tests.log"
+          grep -Fx '# tests 4' "$RUNNER_TEMP/buffalo-origin-node-tests.log"
+          grep -Fx '# pass 4' "$RUNNER_TEMP/buffalo-origin-node-tests.log"
+          grep -Fx '# fail 0' "$RUNNER_TEMP/buffalo-origin-node-tests.log"
           docker run --rm --network none --read-only \
+            --memory 256m --memory-swap 256m --pids-limit 64 \
             buffalo-private-origin:stage3b5 \
             sh -ec 'test ! -e /app/.env && test ! -e /app/.git && test ! -e /app/.github && test ! -e /app/docs && test ! -e /app/.wrangler'
       - name: Validate Buildx digest, actual image config and source identity
@@ -73,9 +78,14 @@ jobs:
           RECEIPT_FILE: ${{ runner.temp }}/buffalo-origin-build-receipt.json
           METADATA_FILE: ${{ runner.temp }}/buffalo-origin-build-metadata.json
           INSPECT_FILE: ${{ runner.temp }}/buffalo-origin-inspect.json
+          TEST_LOG_FILE: ${{ runner.temp }}/buffalo-origin-node-tests.log
+          ARCHIVE_FILE: ${{ runner.temp }}/buffalo-origin-image.tar
         run: |
           set -euo pipefail
           docker image inspect buffalo-private-origin:stage3b5 > "$INSPECT_FILE"
+          docker image save buffalo-private-origin:stage3b5 -o "$ARCHIVE_FILE"
+          CONFIG_DIGEST="$(node infra/buffalo-origin/oci-config-digest.mjs "$ARCHIVE_FILE")"
+          export CONFIG_DIGEST
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import {readFileSync,writeFileSync} from 'node:fs';
@@ -88,9 +98,16 @@ jobs:
             ??metadata['containerimage.descriptor']?.digest;
           const hex64=/^sha256:[0-9a-f]{64}$/;
           assert.match(digest??'',hex64,'Buildx must provide an image manifest digest');
-          assert.match(image.Id??'',hex64,'Docker must provide the loaded image config ID');
+          // Docker image inspect .Id is not necessarily the OCI config digest.
+          // Hash the actual config JSON bytes from docker save, as the release job does.
+          const configDigest=process.env.CONFIG_DIGEST;
+          assert.match(configDigest??'',hex64,'Archive must provide a config-bytes digest');
+          assert.notEqual(configDigest,digest,'CONFIG_DIGEST_CONFUSED_WITH_MANIFEST');
           if(metadata['containerimage.config.digest'])
-            assert.equal(metadata['containerimage.config.digest'],image.Id);
+            assert.equal(metadata['containerimage.config.digest'],configDigest);
+          const output=readFileSync(process.env.TEST_LOG_FILE,'utf8');
+          for(const line of ['# tests 4','# pass 4','# fail 0'])
+            assert.ok(output.split(/\r?\n/).includes(line),line);
           assert.equal(image.Config.User,'node');
           assert.equal(image.Config.Env.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
             'BUFFALO_IMAGE_SOURCE_SHA='+sha);
@@ -104,11 +121,12 @@ jobs:
             schema:'BUFFALO_PRIVATE_ORIGIN_BUILD_RECEIPT_V1',
             status:'CI_BUILD_TESTED_NO_DEPLOY',
             source_commit:sha,
-            github_run_id:process.env.GITHUB_RUN_ID,
-            github_run_attempt:process.env.GITHUB_RUN_ATTEMPT,
+            github_run_id:Number(process.env.GITHUB_RUN_ID),
+            github_run_attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
+            node_tests_passed:4,
             base_image_reference:base,
             image_manifest_digest:digest,
-            image_config_digest:image.Id,
+            image_config_digest:configDigest,
             dockerfile_sha256:hashFile('infra/buffalo-origin/Dockerfile'),
             dockerignore_sha256:hashFile('.dockerignore'),
             security_mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
@@ -120,7 +138,7 @@ jobs:
             attestation_scope:'CI_LOCAL_BUILD_RECEIPT_NOT_SIGNED_NOT_REGISTRY_IDENTITY'
           };
           writeFileSync(process.env.RECEIPT_FILE,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});
-          console.log('PASS private origin image locally built and tested; no deploy',digest);
+          console.log('PASS local OCI manifest and independent config-bytes digests, Node 4/4, no deploy',digest,configDigest);
           NODE
       - name: Save bounded OCI identity receipt, not the image itself
         uses: actions/upload-artifact@v4

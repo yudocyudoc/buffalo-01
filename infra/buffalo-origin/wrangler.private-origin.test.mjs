@@ -18,7 +18,9 @@ test('private origin matches exact tested and published OCI identity',()=>{
  assert.equal(cfg.containers[0].name,'buffalo-private-origin-lab');
  assert.equal(cfg.containers[0].class_name,'BuffaloHandshakeContainer');
  assert.equal(cfg.containers[0].scheduling_policy,'durable_object');
- assert.equal(cfg.containers[0].max_instances,1);
+ assert.equal('max_instances' in cfg.containers[0],false);
+ assert.match(controller,/const INSTANCE='buffalo-original-handshake-only'/);
+ assert.match(controller,/\.getByName\(INSTANCE\)/);
  assert.equal(cfg.containers[0].images.base.image,ref);
  assert.deepEqual(cfg.durable_objects.bindings,[{
   name:'BUFFALO_CONTAINER',class_name:'BuffaloHandshakeContainer'

@@ -42,12 +42,7 @@ function safeError(error){
 }
 async function persistBridgeReceipt(db,result){
  // The D1 row is an audit trail. Never serialize the returned ephemeral keys.
- await db.prepare(
-  'CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_receipts ('+
-  'probe_id TEXT PRIMARY KEY,handoff_id TEXT NOT NULL,commit_sha TEXT NOT NULL,'+
-  'status TEXT NOT NULL,receipt_json TEXT NOT NULL,'+
-  'created_at TEXT DEFAULT CURRENT_TIMESTAMP)'
- ).run();
+ // Requires migrations/control-plane/lab/0003_stage3b7_observability.sql.
  await db.prepare(
   'INSERT INTO buffalo_stage3b7_private_bridge_receipts '+
   '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+
@@ -138,6 +133,17 @@ export class BuffaloHandshakeContainer extends Base {
 /** This named entrypoint is callable only through an explicitly configured
  * private Worker service binding. It exposes no public URL. */
 export class BridgeProbePort extends WorkerEntrypoint {
+ /** Read-only claim inspection: wakes the DO, NEVER starts its Container. */
+ async readBridgeOnce(){
+  if(this.env.BUFFALO_PROBE_MODE!=='ONE_SHOT_NO_INFERENCE')
+   throw Error('BRIDGE_PROBE_DISABLED');
+  const claim=await this.env.BUFFALO_CONTAINER.getByName(INSTANCE).readBridgeOnce();
+  const status=claim?.status;
+  return {status:typeof status==='string'&&[
+   'NOT_RUN','CLAIMED','BRIDGE_PROBE_PREPARE_FAILED',
+   'REAL_BRIDGE_HANDSHAKE_PASS','REAL_BRIDGE_HANDSHAKE_FAILED'
+  ].includes(status)?status:'UNRECOGNIZED_CLAIM'};
+ }
  async prepareBridgeOnce(){
   await sourceAllowsProbe(this.env);
   const result=await this.env.BUFFALO_CONTAINER.getByName(INSTANCE).prepareBridgeOnce();

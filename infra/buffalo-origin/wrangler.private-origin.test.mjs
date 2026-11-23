@@ -10,6 +10,7 @@ test('private origin matches exact tested and published OCI identity',()=>{
  assert.equal(cfg.main,'./container-controller.mjs');
  assert.equal(cfg.workers_dev,false);
  assert.equal(cfg.preview_urls,false);
+ assert.deepEqual(cfg.triggers,{crons:[]});
  assert.ok(!('routes' in cfg));
  assert.ok(!('route' in cfg));
  assert.ok(!('triggers' in cfg));

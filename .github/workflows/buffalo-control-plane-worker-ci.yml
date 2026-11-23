@@ -49,6 +49,8 @@ jobs:
           node --check infra/buffalo-origin/probe-controller.mjs
           node --check infra/buffalo-origin/bridge-probe-controller.mjs
           node --check infra/buffalo-origin/bridge-one-shot.mjs
+          node --check infra/buffalo-origin/bridge-diagnostics.mjs
+          node --test infra/buffalo-origin/bridge-diagnostics.test.mjs
           node --test infra/buffalo-origin/bridge-one-shot.test.mjs
           node --test infra/buffalo-origin/probe-controller.test.mjs
           node --check infra/buffalo-origin/stage3b6-preflight.mjs
@@ -95,6 +97,7 @@ jobs:
       - name: Verify SQL migration and atomic state claims (SQLite only)
         run: |
           python scripts/control-plane/test-sql-offline.py
+          python scripts/control-plane/test-stage3b7-sql.py
           python scripts/full-integration/test-handoff-sql.py
           python scripts/full-integration/test-source-provenance-sql.py
           python scripts/full-integration/test-live-admission-sql.py
@@ -172,6 +175,7 @@ jobs:
           node infra/buffalo-origin/generate-probe-model.mjs
           node --test infra/buffalo-origin/probe-controller.test.mjs
           node --test infra/buffalo-origin/bridge-one-shot.test.mjs
+          node --test infra/buffalo-origin/bridge-diagnostics.test.mjs
       - name: Wrangler 4.166.0 dry-run a private, unscheduled, no-secrets canary
         env:
           CLOUDFLARE_SEND_METRICS: 'false'

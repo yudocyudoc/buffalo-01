@@ -10,9 +10,9 @@ test('private origin matches exact tested and published OCI identity',()=>{
  assert.equal(cfg.main,'./container-controller.mjs');
  assert.equal(cfg.workers_dev,false);
  assert.equal(cfg.preview_urls,false);
+ assert.deepEqual(cfg.triggers,{crons:[]});
  assert.ok(!('routes' in cfg));
  assert.ok(!('route' in cfg));
- assert.ok(!('triggers' in cfg));
  assert.deepEqual(cfg.vars,{
   BUFFALO_ORIGIN_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
   BUFFALO_ORIGIN_COMMIT_SHA:'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d',

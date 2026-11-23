@@ -42,8 +42,11 @@ export function assertSafePreBridge(x,account){
     !originBindings.some(b=>b.name==='BUFFALO_ORIGIN_COMMIT_SHA'&&b.text===SOURCE)||
     !originBindings.some(b=>b.name==='BUFFALO_ORIGIN_MODEL_SHA256'&&b.text===MODEL))
    fail('ORIGIN_IDENTITY');
- if(!exact(names(x.bridgeSettings?.bindings),['DB'])||
-    x.bridgeSettings.bindings[0]?.database_id!==DB)fail('BRIDGE_BASELINE');
+ const bridgeBindings=x.bridgeSettings?.bindings??[];
+ if(!exact(names(bridgeBindings),['DB',...expectedBridge])||
+    bridgeBindings.find(b=>b.name==='DB')?.database_id!==DB||
+    !exact(bridgeBindings.filter(b=>b.type==='secret_text').map(b=>b.name),expectedBridge)||
+    bridgeBindings.some(b=>b.type==='service'))fail('BRIDGE_BASELINE');
  if(x.proof?.length!==1||x.proof[0].proof_status!=='SOURCE_ATTESTED'||
     x.proof[0].commit_sha!==SOURCE||
     Number(x.proof[0].execution_allowed)!==0||

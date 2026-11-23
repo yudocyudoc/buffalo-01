@@ -73,7 +73,22 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
       }else{
         // The Wrangler config must sit alongside the Worker entrypoint.
         // Disallow arbitrary output paths that change relative resolution.
-        if(!/^infra\\/buffalo-origin\\/wrangler\\.stage3b6\\.[a-z0-9_-]+\\.jsonc$/.test(args[3])){
+        const safePath=new RegExp('^infra/buffalo-origin/wrangler[.]stage3b6[.][a-z0-9_-]+[.]jsonc
+          console.error('STAGE3B6_FAILED_CONFIG_OUTPUT_PATH_UNSAFE');
+          process.exitCode=1;
+        }else{
+          writeFileSync(args[3],JSON.stringify(result.config,null,2)+'\n',{flag:'wx',mode:0o600});
+          console.log('STAGE3B6_CONFIG_PREPARED_NO_DEPLOY '+args[3]);
+        }
+      }
+    }catch(e){
+      console.error('STAGE3B6_FAILED '+(e?.code==='EEXIST'?'OUTPUT_ALREADY_EXISTS':'INVALID_INPUT_OR_PATH'));
+      process.exitCode=1;
+    }
+  }
+}
+);
+        if(!safePath.test(args[3])){
           console.error('STAGE3B6_FAILED_CONFIG_OUTPUT_PATH_UNSAFE');
           process.exitCode=1;
         }else{

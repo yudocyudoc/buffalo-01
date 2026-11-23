@@ -189,7 +189,7 @@ jobs:
           let prior='',sawEntry=false,sawTerminal=false;
           while(Date.now()<deadline){
            const [events,receipts]=await Promise.all([
-            query('SELECT phase,code FROM buffalo_stage3b7_private_bridge_events WHERE probe_id=? ORDER BY created_at,phase',[id]),
+            query('SELECT phase,code FROM buffalo_stage3b7_private_bridge_events WHERE probe_id=? ORDER BY seq',[id]),
             query('SELECT status,receipt_json FROM buffalo_stage3b7_private_bridge_receipts WHERE probe_id=?',[id])
            ]);
            const phases=events.map(x=>x.phase);
@@ -241,7 +241,7 @@ jobs:
             headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
              'content-type':'application/json'},
             body:JSON.stringify({sql:
-             'SELECT phase,code FROM buffalo_stage3b7_private_bridge_events WHERE probe_id=? ORDER BY created_at,phase',
+             'SELECT phase,code FROM buffalo_stage3b7_private_bridge_events WHERE probe_id=? ORDER BY seq',
              params:['one-shot-private-bridge-v1']})
            });
            const stages=await stageResponse.text();

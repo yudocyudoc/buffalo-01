@@ -54,7 +54,8 @@ test('manual D1 migration precreates BOTH independent tables and primary-key gat
  const sql=source('../../migrations/control-plane/lab/0003_stage3b7_observability.sql');
  assert.match(sql,/CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_receipts/);
  assert.match(sql,/CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_events/);
- assert.match(sql,/PRIMARY KEY\(probe_id,phase\)/);
+ assert.match(sql,/UNIQUE\(probe_id,phase\)/);
+ assert.match(sql,/seq INTEGER PRIMARY KEY AUTOINCREMENT/);
  assert.doesNotMatch(sql,/INSERT INTO|UPDATE |DELETE FROM|DROP TABLE|GRANT /);
 });
 test('the Bridge checks persisted DO claim AFTER cron entry but BEFORE any prepare RPC',()=>{

@@ -48,6 +48,7 @@ jobs:
           node --check infra/buffalo-origin/container-controller.mjs
           node --check infra/buffalo-origin/stage3b6-preflight.mjs
           node --test infra/buffalo-origin/stage3b6-preflight.test.mjs
+          node --test infra/buffalo-origin/wrangler.private-origin.test.mjs
           node --test workers/buffalo-control-plane/original-ws-bridge-lab.test.mjs
           node --check workers/buffalo-control-plane/full-handoff-lab.mjs
           node --test workers/buffalo-control-plane/full-handoff-lab.test.mjs

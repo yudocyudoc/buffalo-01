@@ -39,7 +39,8 @@ const evidence=()=>({
   bridge_schedules_count:0,production_workers_changed:false
  },
  limits:{
-  max_instances:1,instance:'lite',enable_internet:false,
+  fixed_singleton_name:'buffalo-original-handshake-only',
+  instance:'lite',enable_internet:false,
   inactivity_timeout_ms:60000,agent_execution_enabled:false
  }
 });
@@ -49,7 +50,7 @@ test('valid evidence prepares only private Worker/DO config without credentials 
  assert.equal(r.code,'OFFLINE_CONFIG_READY_NOT_DEPLOYED');
  assert.equal(r.config.workers_dev,false);
  assert.equal(r.config.preview_urls,false);
- assert.equal(r.config.containers[0].max_instances,1);
+ assert.equal('max_instances' in r.config.containers[0],false);
  assert.equal(r.config.containers[0].scheduling_policy,'durable_object');
  assert.equal(r.config.containers[0].images.base.image,
    `registry.cloudflare.com/${acc}/buffalo-private-origin@${digest}`);
@@ -105,7 +106,7 @@ test('public bridge, leaked secrets, existing app, or changed production workers
 test('only handshake mode, 1 lite instance, no Internet are eligible',()=>{
  for(const a of [
   {mode:'ALLOW_INFERENCE'},
-  {limits:{...evidence().limits,max_instances:2}},
+  {limits:{...evidence().limits,fixed_singleton_name:'another-instance'}},
   {limits:{...evidence().limits,instance:'standard-2'}},
   {limits:{...evidence().limits,enable_internet:true}},
   {limits:{...evidence().limits,inactivity_timeout_ms:600000}},

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "buffalo-private-origin-router-lab",
+  "main": "./container-controller.mjs",
+  "compatibility_date": "2026-11-22",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BUFFALO_CONTAINER",
+        "class_name": "BuffaloHandshakeContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "buffalo-private-origin-3b6-v1",
+      "new_sqlite_classes": [
+        "BuffaloHandshakeContainer"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "name": "buffalo-private-origin-lab",
+      "class_name": "BuffaloHandshakeContainer",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/buffalo-private-origin@sha256:a9500540247ddc8c617f381565f67720e8e720c6042381c2e135bd73430a09b9"
+        }
+      }
+    }
+  ]
+}

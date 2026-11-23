@@ -2,53 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareStage3B6,STAGE3B6_SCHEMA} from './stage3b6-preflight.mjs';
 
-const sha='c'.repeat(40),acc='a'.repeat(32);
-const digest='sha256:'+'b'.repeat(64);
-const configDigest='sha256:'+'d'.repeat(64);
-const model='e'.repeat(64), manifest='f'.repeat(64);
-const evidence=()=>({
- schema:STAGE3B6_SCHEMA,mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
- account_id:acc,source_commit:sha,
- handoff_id:'6bce82ee-d179-4a2e-9317-f7f4708c5be2',
- local_build:{
-  schema:'BUFFALO_PRIVATE_ORIGIN_BUILD_RECEIPT_V1',
-  status:'CI_BUILD_TESTED_NO_DEPLOY',source_commit:sha,
-  image_manifest_digest:digest,image_config_digest:configDigest,
-  dockerfile_sha256:'1'.repeat(64),dockerignore_sha256:'2'.repeat(64),
-  security_mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
-  published_to_registry:false,cloudflare_container_deployed:false,
-  agent_turns:0,provider_requests:0
- },
- registry_pull:{
-  reference:`registry.cloudflare.com/${acc}/buffalo-private-origin@${digest}`,
-  manifest_digest:digest,config_digest:configDigest,image_source_sha:sha,
-  proof:'INDEPENDENT_REGISTRY_PULL_AND_INSPECT'
- },
- source_attestation:{
-  handoff_id:'6bce82ee-d179-4a2e-9317-f7f4708c5be2',
-  proof_status:'SOURCE_ATTESTED',commit_sha:sha,proof_commit_sha:sha,
-  agent:'merlin',mode:'sfd',manifest_sha256:manifest,
-  proof_manifest_sha256:manifest,initial_model_sha256:model,
-  execution_allowed:false
- },
- cloudflare_readback:{
-  account_id:acc,container_app_count:0,container_running_instances:0,
-  bridge_name:'buffalo-original-ws-bridge-lab',
-  bridge_workers_dev_enabled:false,bridge_previews_enabled:false,
-  bridge_service_binding_present:false,bridge_secrets_count:0,
-  bridge_schedules_count:0,production_workers_changed:false
- },
- limits:{
-  fixed_singleton_name:'buffalo-original-handshake-only',
-  instance:'lite',enable_internet:false,
-  inactivity_timeout_ms:60000,agent_execution_enabled:false
- }
-});
+import {syntheticStage3B6Evidence,testSha as sha,testAccount as acc,
+ testDigest as digest,testConfigDigest as configDigest,testModel as model,
+ testManifest as manifest} from './stage3b6-test-fixture.mjs';
+const evidence=syntheticStage3B6Evidence;
 test('valid evidence prepares only private Worker/DO config without credentials or deployment',()=>{
  const r=prepareStage3B6(evidence());
  assert.equal(r.valid,true);
  assert.equal(r.code,'OFFLINE_CONFIG_READY_NOT_DEPLOYED');
  assert.equal(r.config.workers_dev,false);
+ assert.equal(r.config.main,'./container-controller.mjs');
  assert.equal('migrations' in r.config,false);
  assert.deepEqual(r.config.exports,{BuffaloHandshakeContainer:{type:'durable-object',storage:'sqlite'}});
  assert.equal(r.config.preview_urls,false);
@@ -71,6 +34,10 @@ test('no registry digest or only old CI local image is never enough',()=>{
   {registry_pull:{...evidence().registry_pull,reference:`registry.cloudflare.com/${acc}/buffalo-private-origin:latest`}},
   {local_build:{...evidence().local_build,source_commit:'3'.repeat(40)}},
   {local_build:{...evidence().local_build,agent_turns:1}},
+  {local_build:{...evidence().local_build,github_run_id:500}},
+  {registry_receipt:undefined},
+  {registry_receipt:{...evidence().registry_receipt,github_run_id:999}},
+  {registry_receipt:{...evidence().registry_receipt,remote_image_config_digest:'sha256:'+'9'.repeat(64)}},
  ]){
   const r=prepareStage3B6({...evidence(),...change});
   assert.equal(r.valid,false);
@@ -105,7 +72,7 @@ test('public bridge, leaked secrets, existing app, or changed production workers
   assert.equal(prepareStage3B6({...evidence(),cloudflare_readback:{...c,...a}}).valid,false);
  }
 });
-test('only handshake mode, 1 lite instance, no Internet are eligible',()=>{
+test('only handshake mode, fixed singleton, lite and no Internet are eligible',()=>{
  for(const a of [
   {mode:'ALLOW_INFERENCE'},
   {limits:{...evidence().limits,fixed_singleton_name:'another-instance'}},

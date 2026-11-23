@@ -47,7 +47,10 @@ jobs:
           node --check infra/buffalo-origin/origin-server.mjs
           node --check infra/buffalo-origin/container-controller.mjs
           node --check infra/buffalo-origin/stage3b6-preflight.mjs
+          node --check infra/buffalo-origin/stage3b6-release-evidence.mjs
+          node --check infra/buffalo-origin/stage3b6-prehandshake.mjs
           node --test infra/buffalo-origin/stage3b6-preflight.test.mjs
+          node --test infra/buffalo-origin/stage3b6-prehandshake.test.mjs
           node --test infra/buffalo-origin/wrangler.private-origin.test.mjs
           node --test workers/buffalo-control-plane/original-ws-bridge-lab.test.mjs
           node --check workers/buffalo-control-plane/full-handoff-lab.mjs
@@ -85,6 +88,57 @@ jobs:
           python scripts/full-integration/test-handoff-sql.py
           python scripts/full-integration/test-source-provenance-sql.py
           python scripts/full-integration/test-live-admission-sql.py
+
+  private-origin-wrangler-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exercise real predeploy CLI with synthetic, clearly labeled evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {writeFileSync} from 'node:fs';
+          import {syntheticStage3B6Evidence} from './infra/buffalo-origin/stage3b6-test-fixture.mjs';
+          writeFileSync(process.env.RUNNER_TEMP+'/stage3b6-SYNTHETIC-ONLY.json',
+            JSON.stringify(syntheticStage3B6Evidence(),null,2)+'\n',{flag:'wx'});
+          NODE
+          node infra/buffalo-origin/stage3b6-preflight.mjs \
+            --evidence "$RUNNER_TEMP/stage3b6-SYNTHETIC-ONLY.json" \
+            --out infra/buffalo-origin/wrangler.stage3b6.ci-fixture.jsonc
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const cfg=JSON.parse(readFileSync('infra/buffalo-origin/wrangler.stage3b6.ci-fixture.jsonc','utf8'));
+          assert.equal(cfg.main,'./container-controller.mjs');
+          assert.equal(cfg.workers_dev,false);
+          assert.equal(cfg.preview_urls,false);
+          assert.equal('max_instances' in cfg.containers[0],false);
+          assert.equal('routes' in cfg,false);
+          NODE
+          echo 'SYNTHETIC_FIXTURE_FOR_DRY_RUN_ONLY'
+
+      - name: Wrangler 4.166.0 dry-run static and generated config (no API or deploy)
+        shell: bash
+        env:
+          CLOUDFLARE_SEND_METRICS: 'false'
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-origin.jsonc \
+            --outdir "$RUNNER_TEMP/buffalo-wrangler-static"
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.stage3b6.ci-fixture.jsonc \
+            --outdir "$RUNNER_TEMP/buffalo-wrangler-generated"
+          test -d "$RUNNER_TEMP/buffalo-wrangler-static"
+          test -d "$RUNNER_TEMP/buffalo-wrangler-generated"
+          echo 'WRANGLER_DRY_RUN_BOTH_PASS_NO_CLOUDFLARE_MUTATION'
 
   full-handoff-source-snapshot:
     runs-on: ubuntu-latest

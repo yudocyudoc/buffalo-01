@@ -71,11 +71,59 @@ jobs:
             --memory 256m --memory-swap 256m --pids-limit 64 \
             --tmpfs /tmp:rw,nosuid,nodev,size=16m \
             "buffalo-private-origin:$GITHUB_SHA" \
-            node --test infra/buffalo-origin/origin-server.test.mjs
+            node --test infra/buffalo-origin/origin-server.test.mjs | tee "$RUNNER_TEMP/buffalo-node-test.log"
+          grep -Fx '# tests 4' "$RUNNER_TEMP/buffalo-node-test.log"
+          grep -Fx '# pass 4' "$RUNNER_TEMP/buffalo-node-test.log"
+          grep -Fx '# fail 0' "$RUNNER_TEMP/buffalo-node-test.log"
           docker run --rm --network none --read-only \
             --memory 256m --memory-swap 256m --pids-limit 64 \
             "buffalo-private-origin:$GITHUB_SHA" \
             sh -ec 'test ! -e /app/.env && test ! -e /app/.git && test ! -e /app/.github && test ! -e /app/docs'
+      - name: Produce local OCI receipt from the exact tested image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect "buffalo-private-origin:$GITHUB_SHA" > "$RUNNER_TEMP/buffalo-local-image-inspect.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const temp=process.env.RUNNER_TEMP;
+          const sha=process.env.GITHUB_SHA;
+          const metadata=JSON.parse(readFileSync(temp+'/buffalo-registry-build.json','utf8'));
+          const image=JSON.parse(readFileSync(temp+'/buffalo-local-image-inspect.json','utf8'))[0];
+          const output=readFileSync(temp+'/buffalo-node-test.log','utf8');
+          const manifest=metadata['containerimage.digest']??metadata['containerimage.descriptor']?.digest;
+          assert.match(manifest??'',/^sha256:[a-f0-9]{64}$/);
+          assert.match(image.Id??'',/^sha256:[a-f0-9]{64}$/);
+          assert.equal(image.Config?.User,'node');
+          assert.equal(image.Config?.Labels?.['org.opencontainers.image.revision'],sha);
+          assert.equal(image.Config?.Env?.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
+            'BUFFALO_IMAGE_SOURCE_SHA='+sha);
+          for(const line of ['# tests 4','# pass 4','# fail 0'])
+            assert.ok(output.split(/\r?\n/).includes(line),line);
+          const fileHash=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
+          const receipt={
+            schema:'BUFFALO_PRIVATE_ORIGIN_BUILD_RECEIPT_V1',
+            status:'CI_BUILD_TESTED_NO_DEPLOY',
+            source_commit:sha,
+            github_run_id:Number(process.env.GITHUB_RUN_ID),
+            github_run_attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
+            node_tests_passed:4,
+            image_manifest_digest:manifest,
+            image_config_digest:image.Id,
+            dockerfile_sha256:fileHash('infra/buffalo-origin/Dockerfile'),
+            dockerignore_sha256:fileHash('.dockerignore'),
+            security_mode:'HANDSHAKE_ONLY_NO_AGENT_PROCESS',
+            published_to_registry:false,
+            cloudflare_container_deployed:false,
+            agent_turns:0,provider_requests:0,
+            proof_scope:'CI_LOCAL_TESTED_IMAGE_NOT_CLOUDFLARE_REGISTRY'
+          };
+          writeFileSync(temp+'/buffalo-local-build-receipt.json',
+            JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});
+          console.log('LOCAL_IMAGE_TESTED_RECEIPT_CREATED_NOT_DEPLOYED');
+          NODE
       - name: Publish exact built image to private Cloudflare registry, main only
         if: github.event_name == 'push'
         shell: bash
@@ -99,6 +147,11 @@ jobs:
           const local=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/buffalo-registry-build.json','utf8'));
           const remote=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/buffalo-registry-inspect.json','utf8'))[0];
           const source=process.env.GITHUB_SHA;
+          const built=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/buffalo-local-build-receipt.json','utf8'));
+          assert.equal(built.source_commit,source);
+          assert.equal(built.github_run_id,Number(process.env.GITHUB_RUN_ID));
+          assert.equal(built.github_run_attempt,Number(process.env.GITHUB_RUN_ATTEMPT));
+          assert.equal(built.node_tests_passed,4);
           const expected=local['containerimage.digest']??local['containerimage.descriptor']?.digest;
           const refs=(remote.RepoDigests??[]).filter(x=>
             x.startsWith('registry.cloudflare.com/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/buffalo-private-origin@'));
@@ -106,6 +159,8 @@ jobs:
           const got=refs[0].split('@')[1];
           assert.match(expected??'',/^sha256:[a-f0-9]{64}$/);
           assert.equal(got,expected,'REGISTRY_MANIFEST_DIFFERS_FROM_CI_BUILD');
+          assert.equal(built.image_manifest_digest,got);
+          assert.equal(built.image_config_digest,remote.Id);
           assert.equal(remote.Config?.User,'node');
           assert.equal(remote.Config?.Labels?.['org.opencontainers.image.revision'],source);
           assert.equal(remote.Config?.Env?.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
@@ -116,8 +171,8 @@ jobs:
             schema:'BUFFALO_ORIGIN_PRIVATE_REGISTRY_RELEASE_V1',
             state:'REGISTRY_IMAGE_PULLED_AND_VERIFIED_NO_DEPLOY',
             source_commit:source,
-            github_run_id:process.env.GITHUB_RUN_ID,
-            github_run_attempt:process.env.GITHUB_RUN_ATTEMPT,
+            github_run_id:Number(process.env.GITHUB_RUN_ID),
+            github_run_attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
             base_image:process.env.BASE_REF,
             local_manifest_digest:expected,
             remote_manifest_digest:got,
@@ -136,6 +191,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: buffalo-origin-registry-identity-${{ github.run_id }}
-          path: ${{ runner.temp }}/buffalo-registry-release-receipt.json
+          path: |
+            ${{ runner.temp }}/buffalo-local-build-receipt.json
+            ${{ runner.temp }}/buffalo-registry-release-receipt.json
           if-no-files-found: error
           retention-days: 7

@@ -20,14 +20,14 @@ El registro y la atestación se aplicaron **directamente por la API D1** con sta
 
 ## Configuración preparada
 
-`infra/buffalo-origin/wrangler.private-origin.jsonc`: Worker `buffalo-private-origin-router-lab`, sin `workers.dev` ni preview URLs, Durable Object `BuffaloHandshakeContainer`, aplicación `buffalo-private-origin-lab`, `scheduling_policy=durable_object`, `max_instances=1`, imagen por SHA-256 exacto. El controlador existente usa `lite`, `enableInternet:false`, timeout de 60 s y exige token interno, clave original de autenticación, SHA de modelo y SHA de commit antes de tocar el DO. La falta de esas credenciales devuelve denegación sin iniciar el Container.
+`infra/buffalo-origin/wrangler.private-origin.jsonc`: Worker `buffalo-private-origin-router-lab`, sin `workers.dev` ni preview URLs, Durable Object `BuffaloHandshakeContainer`, aplicación `buffalo-private-origin-lab`, `scheduling_policy=durable_object`, imagen por SHA-256 exacto. **La política `durable_object` no admite `max_instances`**: el aislamiento operativo se consigue por el único `BUFFALO_CONTAINER.getByName('buffalo-original-handshake-only')` del router, protegido antes de llamar al Durable Object; no constituye un límite de facturación absoluto a nivel de cuenta. Consultar el uso real antes y después del handshake. El controlador existente usa `lite`, `enableInternet:false`, timeout de 60 s y exige token interno, clave original de autenticación, SHA de modelo y SHA de commit antes de tocar el DO. La falta de esas credenciales devuelve denegación sin iniciar el Container.
 
 El PR solo introduce configuración verificable y tests. **No** hace `wrangler deploy`, no habilita binding `BUFFALO_ORIGIN` del puente, no establece secretos, no publica el origen, no crea grants y no invoca Merlin.
 
 ## Pasos para prueba en vivo
 
 1. Revalidar que el tag/digest remoto se conserva y que la cuenta no tiene Containers activos.
-2. Desplegar solamente el Worker/DO de origen mediante configuración versionada y confirmar `workers.dev=false`, previews off y `max_instances=1`, con imagen fijada. Desplegar no es iniciar.
+2. Desplegar solamente el Worker/DO de origen mediante configuración versionada y confirmar `workers.dev=false`, previews off, un nombre fijo de Durable Object y ninguna ruta alternativa, con imagen fijada. Desplegar no es iniciar.
 3. Crear dos secretos internos distintos (auth Buffalo y upgrade token) en origen y puente, más bearer de laboratorio privado. Nunca colocarlos en código, GitHub o conversación.
 4. Conectar el `BUFFALO_ORIGIN` solo al puente experimental que ya usa D1 read-only y `BUFFALO_LAB_HANDOFF_ID` nuevo. Verificar que se preservan 0 grants.
 5. Una única conexión de handshake con `session_created` y `session_ready`, denegación de `select_agent` y `chat`, `provider_requests=0`. Registrar arranque, cierre e inactividad. Si falta un requisito, no hacer una conexión alternativa pública.

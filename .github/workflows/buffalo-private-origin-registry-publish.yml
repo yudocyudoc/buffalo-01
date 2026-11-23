@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/buffalo-private-origin-registry-publish.yml'
+      - '.github/workflows/buffalo-stage3b6-handoff-bootstrap.yml'
   push:
     branches: [main]
     paths:
       - '.github/workflows/buffalo-private-origin-registry-publish.yml'
+      - '.github/workflows/buffalo-stage3b6-handoff-bootstrap.yml'
 
 permissions:
   contents: read

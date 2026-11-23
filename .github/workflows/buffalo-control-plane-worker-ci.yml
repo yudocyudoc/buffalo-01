@@ -47,6 +47,9 @@ jobs:
           node --check infra/buffalo-origin/origin-server.mjs
           node --check infra/buffalo-origin/container-controller.mjs
           node --check infra/buffalo-origin/probe-controller.mjs
+          node --check infra/buffalo-origin/bridge-probe-controller.mjs
+          node --check infra/buffalo-origin/bridge-one-shot.mjs
+          node --test infra/buffalo-origin/bridge-one-shot.test.mjs
           node --test infra/buffalo-origin/probe-controller.test.mjs
           node --check infra/buffalo-origin/stage3b6-preflight.mjs
           node --check infra/buffalo-origin/oci-config-digest.mjs
@@ -168,6 +171,7 @@ jobs:
           npm ci --ignore-scripts
           node infra/buffalo-origin/generate-probe-model.mjs
           node --test infra/buffalo-origin/probe-controller.test.mjs
+          node --test infra/buffalo-origin/bridge-one-shot.test.mjs
       - name: Wrangler 4.166.0 dry-run a private, unscheduled, no-secrets canary
         env:
           CLOUDFLARE_SEND_METRICS: 'false'
@@ -177,6 +181,15 @@ jobs:
             --config infra/buffalo-origin/wrangler.private-probe.jsonc \
             --outdir "$RUNNER_TEMP/buffalo-probe-dryrun"
           test -d "$RUNNER_TEMP/buffalo-probe-dryrun"
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-origin-bridge-probe.jsonc \
+            --outdir "$RUNNER_TEMP/stage3b7-origin-dryrun"
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-bridge-probe.jsonc \
+            --outdir "$RUNNER_TEMP/stage3b7-bridge-dryrun"
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-bridge-restored.jsonc \
+            --outdir "$RUNNER_TEMP/stage3b7-restored-dryrun"
           echo 'PRIVATE_PROBE_MODEL_HASH_AND_WRANGLER_DRY_RUN_PASS_NO_DEPLOY'
 
   full-handoff-source-snapshot:

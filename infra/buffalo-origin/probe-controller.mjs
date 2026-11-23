@@ -150,6 +150,13 @@ export default {
   // temporary probe configuration can schedule this callback.
   if(env.BUFFALO_PROBE_MODE!=='ONE_SHOT_NO_INFERENCE')return;
   await sourceAllowsProbe(env);
+  // Isolated laboratory receipt table, NOT a canonical source proof/grant table.
+  await env.DB.prepare(
+   'CREATE TABLE IF NOT EXISTS buffalo_stage3b6_private_probe_receipts ('+
+   'probe_id TEXT PRIMARY KEY, handoff_id TEXT NOT NULL, commit_sha TEXT NOT NULL,'+
+   'status TEXT NOT NULL, receipt_json TEXT NOT NULL,'+
+   'created_at TEXT DEFAULT CURRENT_TIMESTAMP)'
+  ).run();
   const receipt=await env.BUFFALO_CONTAINER.getByName(INSTANCE).runOneShotProbe();
   // Append a minimal audit receipt only in the isolated Buffalo laboratory D1.\n  // This is NOT an inference grant and does not touch the source proof rows.\n  if(receipt.status!=='ALREADY_CLAIMED_NO_RETRY'){\n   await env.DB.prepare('INSERT INTO buffalo_stage3b6_private_probe_receipts '+\n    '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+\n    'ON CONFLICT(probe_id) DO NOTHING').bind(\n    'one-shot-origin-rpc-v1',HANDOFF,SOURCE,receipt.status,JSON.stringify(receipt)\n   ).run();\n  }\n  console.log('BUFFALO_ONE_SHOT_SCHEDULED '+JSON.stringify(receipt));
  }

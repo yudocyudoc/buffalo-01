@@ -69,6 +69,24 @@ jobs:
           console.log('STAGE3B6_HANDOFF_DIGEST='+x.manifest_sha256);
           console.log('STAGE3B6_HANDOFF_NOT_REGISTERED_NOT_ATTESTED_NO_INFERENCE');
           NODE
+      - name: Validate exact workflow_dispatch payload offline (no GitHub POST)
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST_SHA="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).manifest_sha256' "$RUNNER_TEMP/stage3b6-handoff.json")" \
+            node scripts/full-integration/source-proof-dispatch-payload.mjs \
+            > "$RUNNER_TEMP/stage3b6-dispatch-preview.json"
+          node --input-type=module - "$RUNNER_TEMP/stage3b6-dispatch-preview.json" <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const p=JSON.parse(readFileSync(process.argv[2],'utf8'));
+          assert.equal(p.ref,'main');
+          assert.equal(p.inputs.handoff_id,process.env.BUFFALO_HANDOFF_ID);
+          assert.equal(p.inputs.agent,'merlin');
+          assert.equal(p.inputs.case_index,'0');
+          assert.equal(typeof p.inputs.case_index,'string');
+          assert.match(p.inputs.manifest_sha256,/^[a-f0-9]{64}$/);
+          NODE
       - name: Save bounded non-executable handoff manifest
         uses: actions/upload-artifact@v4
         with:
@@ -118,13 +136,10 @@ jobs:
             echo "::error::MAIN_MOVED_ABORT_DISPATCH"
             exit 1
           fi
-          gh api --method POST \
+          node scripts/full-integration/source-proof-dispatch-payload.mjs | \
+            gh api --method POST \
             "repos/$GITHUB_REPOSITORY/actions/workflows/buffalo-full-source-proof.yml/dispatches" \
-            --field ref=main \
-            --field "inputs[handoff_id]=$BUFFALO_HANDOFF_ID" \
-            --field "inputs[agent]=merlin" \
-            --field "inputs[case_index]=0" \
-            --field "inputs[manifest_sha256]=$MANIFEST_SHA"
+            --input -
           echo "SOURCE_PROOF_DISPATCH_ACCEPTED_NOT_ATTESTED"
           echo "HANDOFF_ID=$BUFFALO_HANDOFF_ID"
           echo "COMMIT=$GITHUB_SHA"

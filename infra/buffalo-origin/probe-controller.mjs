@@ -70,7 +70,7 @@ async function handshakeOnce(port,auth,upgrade){
    if(error)reject(error);
    else resolve({http_101:true,session_created:!!session,session_ready:ready,
     disconnect_sent:disconnectSent,connection_closed:true,
-    frame_types:frames,agent_turns:0,provider_requests:0});
+    frame_types:frames,inference_path:'DISABLED_IN_ORIGINAL_NODE_WRAPPER'});
   };
   const timeout=setTimeout(()=>finish(Error('PROBE_WEBSOCKET_TIMEOUT')),MAX_WAIT);
   ws.addEventListener('message',ev=>{
@@ -151,6 +151,6 @@ export default {
   if(env.BUFFALO_PROBE_MODE!=='ONE_SHOT_NO_INFERENCE')return;
   await sourceAllowsProbe(env);
   const receipt=await env.BUFFALO_CONTAINER.getByName(INSTANCE).runOneShotProbe();
-  console.log('BUFFALO_ONE_SHOT_SCHEDULED '+JSON.stringify(receipt));
+  // Append a minimal audit receipt only in the isolated Buffalo laboratory D1.\n  // This is NOT an inference grant and does not touch the source proof rows.\n  if(receipt.status!=='ALREADY_CLAIMED_NO_RETRY'){\n   await env.DB.prepare('INSERT INTO buffalo_stage3b6_private_probe_receipts '+\n    '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+\n    'ON CONFLICT(probe_id) DO NOTHING').bind(\n    'one-shot-origin-rpc-v1',HANDOFF,SOURCE,receipt.status,JSON.stringify(receipt)\n   ).run();\n  }\n  console.log('BUFFALO_ONE_SHOT_SCHEDULED '+JSON.stringify(receipt));
  }
 };

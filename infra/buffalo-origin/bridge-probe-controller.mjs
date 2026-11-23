@@ -40,6 +40,22 @@ async function healthy(port) {
 function safeError(error){
  return String(error?.message??'UNKNOWN').replace(/[^A-Z0-9_]/gi,'_').slice(0,85);
 }
+async function persistBridgeReceipt(db,result){
+ // The D1 row is an audit trail. Never serialize the returned ephemeral keys.
+ await db.prepare(
+  'CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_receipts ('+
+  'probe_id TEXT PRIMARY KEY,handoff_id TEXT NOT NULL,commit_sha TEXT NOT NULL,'+
+  'status TEXT NOT NULL,receipt_json TEXT NOT NULL,'+
+  'created_at TEXT DEFAULT CURRENT_TIMESTAMP)'
+ ).run();
+ await db.prepare(
+  'INSERT INTO buffalo_stage3b7_private_bridge_receipts '+
+  '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+
+  'ON CONFLICT(probe_id) DO UPDATE SET '+
+  'status=excluded.status,receipt_json=excluded.receipt_json'
+ ).bind('one-shot-private-bridge-v1',HANDOFF,SOURCE,result.status,JSON.stringify(result)).run();
+}
+
 export class BuffaloHandshakeContainer extends Base {
  bridgeKeys;
  async prepareBridgeOnce() {
@@ -92,6 +108,13 @@ export class BuffaloHandshakeContainer extends Base {
   if(!claimed||claimed.status!=='CLAIMED')return {status:'NO_ACTIVE_BRIDGE_CLAIM'};
   if(!receipt||!['REAL_BRIDGE_HANDSHAKE_PASS','REAL_BRIDGE_HANDSHAKE_FAILED'].includes(receipt.status))
    throw Error('BRIDGE_PROBE_BAD_RECEIPT');
+  if(receipt.status==='REAL_BRIDGE_HANDSHAKE_PASS'&&
+     (!['http_101','session_created','session_ready',
+         'disconnect_sent','connection_closed'].every(key=>receipt[key]===true)||
+      !Array.isArray(receipt.frame_types)||receipt.frame_types.length!==2||
+      receipt.frame_types[0]!=='session_created'||
+      receipt.frame_types[1]!=='session_ready'))
+   throw Error('BRIDGE_POSITIVE_EVIDENCE_INCOMPLETE');
   const result={status:receipt.status,source_commit:SOURCE,handoff_id:HANDOFF,
    model_sha256:MODEL,
    http_101:receipt.http_101===true,
@@ -117,7 +140,16 @@ export class BuffaloHandshakeContainer extends Base {
 export class BridgeProbePort extends WorkerEntrypoint {
  async prepareBridgeOnce(){
   await sourceAllowsProbe(this.env);
-  return this.env.BUFFALO_CONTAINER.getByName(INSTANCE).prepareBridgeOnce();
+  const result=await this.env.BUFFALO_CONTAINER.getByName(INSTANCE).prepareBridgeOnce();
+  if(result.status!=='ALREADY_CLAIMED_NO_RETRY'){
+   // Do not persist auth/upgrade values from READY. Only the claim state.
+   await persistBridgeReceipt(this.env.DB,{
+    status:result.status==='READY'?'BRIDGE_PROBE_PREPARED':result.status,
+    source_commit:SOURCE,handoff_id:HANDOFF,model_sha256:MODEL,
+    phase:'PREPARE',error_code:result.error_code??null
+   });
+  }
+  return result;
  }
  async fetch(request) {
   if(this.env.BUFFALO_PROBE_MODE!=='ONE_SHOT_NO_INFERENCE')return DENIED();
@@ -129,17 +161,7 @@ export class BridgeProbePort extends WorkerEntrypoint {
    throw Error('BRIDGE_PROBE_DISABLED');
   const result=await this.env.BUFFALO_CONTAINER.getByName(INSTANCE).finishBridgeOnce(receipt);
   if(result.status==='NO_ACTIVE_BRIDGE_CLAIM')return result;
-  await this.env.DB.prepare(
-   'CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_receipts ('+
-   'probe_id TEXT PRIMARY KEY,handoff_id TEXT NOT NULL,commit_sha TEXT NOT NULL,'+
-   'status TEXT NOT NULL,receipt_json TEXT NOT NULL,'+
-   'created_at TEXT DEFAULT CURRENT_TIMESTAMP)'
-  ).run();
-  await this.env.DB.prepare(
-   'INSERT INTO buffalo_stage3b7_private_bridge_receipts '+
-   '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+
-   'ON CONFLICT(probe_id) DO NOTHING'
-  ).bind('one-shot-private-bridge-v1',HANDOFF,SOURCE,result.status,JSON.stringify(result)).run();
+  await persistBridgeReceipt(this.env.DB,result);
   return {status:result.status};
  }
 }

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "buffalo-original-ws-bridge-lab",
+  "main": "./bridge-one-shot.mjs",
+  "compatibility_date": "2026-11-22",
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "buffalo-control-plane-race-lab-20261121",
+      "database_id": "d1e23807-b076-4c36-8785-7b423fc41614"
+    }
+  ],
+  "services": [
+    {
+      "binding": "BUFFALO_ORIGIN",
+      "service": "buffalo-private-origin-router-lab",
+      "entrypoint": "BridgeProbePort"
+    }
+  ],
+  "vars": {
+    "BUFFALO_WS_LAB_MODE": "HANDSHAKE_ONLY_NO_AGENT_PROCESS",
+    "BUFFALO_LAB_HANDOFF_ID": "f9c4db4e-aa31-4b2a-921e-201a5a79fd37",
+    "BUFFALO_RUNTIME_COMMIT_SHA": "a8b1ad0c02d5c3367bd24962e8fd36d277a8135d",
+    "BUFFALO_BRIDGE_PROBE_MODE": "ONE_SHOT_PRIVATE_BRIDGE_NO_INFERENCE"
+  },
+  "triggers": {
+    "crons": []
+  }
+}

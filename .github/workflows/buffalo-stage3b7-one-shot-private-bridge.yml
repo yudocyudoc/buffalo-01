@@ -19,7 +19,7 @@ jobs:
   one-private-bridge:
     if: ${{ inputs.source_commit == 'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d' && inputs.approval == 'ONE_PRIVATE_BRIDGE_HANDSHAKE_NO_INFERENCE' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
       CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
@@ -83,33 +83,40 @@ jobs:
            method:'POST',headers:{...headers,'content-type':'application/json'},
            body:JSON.stringify({sql:"SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b6_private_probe_receipts'"})
           });
-          assert.equal(check.status,200,'D1_READ_PERMISSION_REQUIRED_BEFORE_CONTAINER');
-          const readback=await check.json();
+          const checkRaw=await check.text();
+          if(check.status!==200)throw Error('STAGE3B7_D1_PREFLIGHT_HTTP_'+check.status+' '+checkRaw.slice(0,650));
+          const readback=JSON.parse(checkRaw);
           assert.equal(readback.success,true,'D1_READ_PERMISSION_REQUIRED_BEFORE_CONTAINER');
           assert.equal(readback.result?.[0]?.success,true);
           assert.equal(readback.result?.[0]?.results?.[0]?.name,'buffalo_stage3b6_private_probe_receipts');
-          // A previous D1 result must NEVER be mistaken for a new handshake.
-          // If a prior attempt left a row, do not deploy or incur any Container cost.
-          const existing=await fetch(readbackUrl,{
+          // The SQL migration is applied separately, never by this deploy token.
+          // A missing table is a pre-deploy failure, not permission to start 3B-7.
+          const tables=['buffalo_stage3b7_private_bridge_receipts',
+           'buffalo_stage3b7_private_bridge_events'];
+          const schema=await fetch(readbackUrl,{
            method:'POST',headers:{...headers,'content-type':'application/json'},
-           body:JSON.stringify({sql:"SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b7_private_bridge_receipts'"})
+           body:JSON.stringify({sql:
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('buffalo_stage3b7_private_bridge_receipts','buffalo_stage3b7_private_bridge_events')"})
           });
-          assert.equal(existing.status,200,'D1_PROBE_IDEMPOTENCY_PREFLIGHT');
-          const existingTable=await existing.json();
-          assert.equal(existingTable.success,true);
-          if(existingTable.result?.[0]?.results?.length){
-           const previous=await fetch(readbackUrl,{
+          const schemaRaw=await schema.text();
+          if(schema.status!==200)throw Error('STAGE3B7_SCHEMA_QUERY_HTTP_'+schema.status+' '+schemaRaw.slice(0,650));
+          const schemaResult=JSON.parse(schemaRaw);
+          assert.equal(schemaResult.success,true,'STAGE3B7_SCHEMA_QUERY_REJECTED');
+          assert.deepEqual((schemaResult.result?.[0]?.results??[])
+            .map(x=>x.name).sort(),tables.sort(),'STAGE3B7_SCHEMA_NOT_PREAPPLIED');
+          for(const table of tables){
+           const response=await fetch(readbackUrl,{
             method:'POST',headers:{...headers,'content-type':'application/json'},
-            body:JSON.stringify({sql:
-             "SELECT COUNT(*) AS n FROM buffalo_stage3b7_private_bridge_receipts WHERE probe_id=?",
-             params:['one-shot-private-bridge-v1']})
+            body:JSON.stringify({sql:'SELECT COUNT(*) AS n FROM '+table})
            });
-           assert.equal(previous.status,200,'D1_PRIOR_PROBE_READ');
-           const previousResult=await previous.json();
-           assert.equal(previousResult.success,true);
-           assert.equal(Number(previousResult.result?.[0]?.results?.[0]?.n),0,
-            'PREVIOUS_BRIDGE_PROBE_RECEIPT_EXISTS_NO_REPLAY');
+           const raw=await response.text();
+           if(response.status!==200)throw Error('STAGE3B7_PRIOR_STATE_HTTP_'+response.status+' '+raw.slice(0,650));
+           const result=JSON.parse(raw);
+           assert.equal(result.success,true);
+           assert.equal(Number(result.result?.[0]?.results?.[0]?.n),0,
+            'STAGE3B7_PRIOR_ATTEMPT_EVIDENCE_PRESENT_DO_NOT_REPLAY');
           }
+          console.log('STAGE3B7_SCHEMA_PREAPPLIED_AND_EMPTY');
           console.log('STAGE3B7_D1_READBACK_PERMISSION_PASS_BEFORE_DEPLOY');
           console.log('STAGE3B7_PRIVATE_BASELINE_PASS');
           NODE
@@ -153,11 +160,63 @@ jobs:
           echo 'cleanup_needed=true' >> "$GITHUB_OUTPUT"
           npx --yes wrangler@4.166.0 deploy \
            --config infra/buffalo-origin/wrangler.private-bridge-one-shot-run.jsonc
-      - name: Wait one bounded cron window
+      - name: Observe 3B-7 D1 stages up to 17 minutes; finish on terminal evidence
         shell: bash
         run: |
           set -euo pipefail
-          sleep 600
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const url='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
+           '/d1/database/d1e23807-b076-4c36-8785-7b423fc41614/query';
+          const headers={Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
+           'content-type':'application/json'};
+          const id='one-shot-private-bridge-v1';
+          const terminal=new Set([
+           'REAL_BRIDGE_HANDSHAKE_PASS','REAL_BRIDGE_HANDSHAKE_FAILED',
+           'PREFLIGHT_FAILED','RPC_FAILED','CLAIM_READ_FAILED',
+           'DO_CLAIM_ALREADY_USED','PREPARE_FAILED','HANDSHAKE_FAILED',
+           'RECEIPT_FAILED','DIAGNOSTIC_FAILED'
+          ]);
+          const query=async (sql,params=[])=>{
+           const response=await fetch(url,{method:'POST',headers,
+            body:JSON.stringify({sql,params})});
+           const body=await response.text();
+           if(!response.ok)
+            throw Error('STAGE3B7_D1_HTTP_'+response.status+' '+body.slice(0,650));
+           let data;try{data=JSON.parse(body)}catch{throw Error('STAGE3B7_D1_BAD_JSON')}
+           if(!data.success||data.result?.[0]?.success!==true)
+            throw Error('STAGE3B7_D1_SQL_ERROR '+body.slice(0,650));
+           return data.result[0].results??[];
+          };
+          const deadline=Date.now()+17*60_000;
+          let prior='',sawEntry=false,sawTerminal=false;
+          while(Date.now()<deadline){
+           const [events,receipts]=await Promise.all([
+            query('SELECT phase,code FROM buffalo_stage3b7_private_bridge_events WHERE probe_id=? ORDER BY seq',[id]),
+            query('SELECT status,receipt_json FROM buffalo_stage3b7_private_bridge_receipts WHERE probe_id=?',[id])
+           ]);
+           const phases=events.map(x=>x.phase);
+           if(phases.includes('SCHEDULED_ENTERED'))sawEntry=true;
+           const status=receipts[0]?.status??'NO_RECEIPT';
+           const snapshot=JSON.stringify({phases,status});
+           if(snapshot!==prior){
+            console.log('STAGE3B7_OBSERVATION '+snapshot);
+            prior=snapshot;
+           }
+           if(phases.some(p=>terminal.has(p))||
+              ['REAL_BRIDGE_HANDSHAKE_PASS','REAL_BRIDGE_HANDSHAKE_FAILED',
+               'BRIDGE_PROBE_PREPARE_FAILED'].includes(status)){
+            sawTerminal=true;
+            console.log('STAGE3B7_TERMINAL_OBSERVED');
+            break;
+           }
+           await new Promise(r=>setTimeout(r,20_000));
+          }
+          if(!sawTerminal){
+           if(!sawEntry)throw Error('STAGE3B7_CRON_NOT_OBSERVED_WITHIN_17_MINUTES');
+           throw Error('STAGE3B7_CRON_ENTERED_BUT_NO_TERMINAL_RECEIPT');
+          }
+          NODE
       - name: Require actual D1 PASS receipt (workflow success is not proof)
         shell: bash
         run: |
@@ -173,10 +232,24 @@ jobs:
             'SELECT status,receipt_json FROM buffalo_stage3b7_private_bridge_receipts WHERE probe_id=?',
             params:['one-shot-private-bridge-v1']})
           });
-          assert.equal(res.status,200);
-          const r=await res.json();assert.equal(r.success,true);
+          const raw=await res.text();
+          if(res.status!==200)throw Error('STAGE3B7_D1_HTTP_'+res.status+' '+raw.slice(0,650));
+          const r=JSON.parse(raw);
+          if(!r.success||r.result?.[0]?.success!==true)
+           throw Error('STAGE3B7_D1_SQL_ERROR '+raw.slice(0,650));
           const row=r.result?.[0]?.results?.[0];
-          assert.ok(row,'NO_REAL_BRIDGE_RECEIPT');
+          if(!row){
+           const stageResponse=await fetch(url,{
+            method:'POST',
+            headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
+             'content-type':'application/json'},
+            body:JSON.stringify({sql:
+             'SELECT phase,code FROM buffalo_stage3b7_private_bridge_events WHERE probe_id=? ORDER BY seq',
+             params:['one-shot-private-bridge-v1']})
+           });
+           const stages=await stageResponse.text();
+           throw Error('NO_REAL_BRIDGE_RECEIPT stages='+stages.slice(0,800));
+          }
           const receipt=JSON.parse(row.receipt_json);
           console.log('STAGE3B7_RECEIPT_STATUS '+row.status);
           assert.equal(row.status,'REAL_BRIDGE_HANDSHAKE_PASS');
@@ -208,26 +281,12 @@ jobs:
           set -euo pipefail
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
+          import {verifyStage3B7Restored} from './infra/buffalo-origin/stage3b7-cleanup.mjs';
           const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
           const get=async p=>{
            const r=await fetch(root+p,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
            assert.equal(r.status,200,p);
            const x=await r.json();assert.equal(x.success,true);return x.result;
           };
-          const [o,b,oc,bc,apps,usage]=await Promise.all([
-           get('/workers/scripts/buffalo-private-origin-router-lab/settings'),
-           get('/workers/scripts/buffalo-original-ws-bridge-lab/settings'),
-           get('/workers/scripts/buffalo-private-origin-router-lab/schedules'),
-           get('/workers/scripts/buffalo-original-ws-bridge-lab/schedules'),
-           get('/containers/applications'),get('/containers/usage')
-          ]);
-          assert.deepEqual(o.bindings.map(x=>x.name).sort(),[
-           'BUFFALO_CONTAINER','BUFFALO_ORIGIN_MODE',
-           'BUFFALO_ORIGIN_COMMIT_SHA','BUFFALO_ORIGIN_MODEL_SHA256'].sort());
-          assert.deepEqual(b.bindings.map(x=>x.name),['DB']);
-          assert.deepEqual(oc.schedules,[]);assert.deepEqual(bc.schedules,[]);
-          assert.equal(apps[0].health.instances.active,0);
-          assert.equal(apps[0].health.instances.starting,0);
-          assert.equal(usage.usage.instances,0);
-          console.log('STAGE3B7_ZERO_CONTAINERS_ZERO_CRON_RESTORED');
+          await verifyStage3B7Restored({read:get,maxWaitMs:120_000,intervalMs:5_000});
           NODE

@@ -47,6 +47,8 @@ jobs:
           node --check infra/buffalo-origin/origin-server.mjs
           node --check infra/buffalo-origin/container-controller.mjs
           node --check infra/buffalo-origin/stage3b6-preflight.mjs
+          node --check infra/buffalo-origin/oci-config-digest.mjs
+          node --test infra/buffalo-origin/oci-config-digest.test.mjs
           node --check infra/buffalo-origin/stage3b6-release-evidence.mjs
           node --check infra/buffalo-origin/stage3b6-prehandshake.mjs
           node --test infra/buffalo-origin/stage3b6-preflight.test.mjs

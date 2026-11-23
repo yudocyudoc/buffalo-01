@@ -47,6 +47,17 @@ test('probe uses DO RPC and one-time durable claim, not HTTP public route',()=>{
  assert.equal(src.includes('WorkerSpawner.spawn('),false);
  assert.equal(src.includes('runAgent('),false);
 });
+test('scheduled RPC receipt persistence is executable, not a commented-out string',()=>{
+ const scheduled=src.slice(src.indexOf('async scheduled(_event,env){'));
+ assert.ok(scheduled.startsWith('async scheduled(_event,env){'));
+ assert.equal(scheduled.includes(String.raw`\\n`),false,
+  'literal backslash-n must not hide the D1 receipt block inside a comment');
+ const code=scheduled.split('\n').map(line=>line.split('//')[0]).join('\n');
+ assert.match(code,/if\(receipt\.status!=='ALREADY_CLAIMED_NO_RETRY'\)\{/);
+ assert.match(code,/await env\.DB\.prepare\('INSERT INTO buffalo_stage3b6_private_probe_receipts '/);
+ assert.match(code,/console\.log\('BUFFALO_ONE_SHOT_SCHEDULED '/);
+});
+
 test('generated model, if present, matches original pinned SHA without simulation',()=>{
  let content;
  try{content=readFileSync(new URL('./probe-initial-model.json',root),'utf8')}

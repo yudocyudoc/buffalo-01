@@ -88,6 +88,28 @@ jobs:
           assert.equal(readback.success,true,'D1_READ_PERMISSION_REQUIRED_BEFORE_CONTAINER');
           assert.equal(readback.result?.[0]?.success,true);
           assert.equal(readback.result?.[0]?.results?.[0]?.name,'buffalo_stage3b6_private_probe_receipts');
+          // A previous D1 result must NEVER be mistaken for a new handshake.
+          // If a prior attempt left a row, do not deploy or incur any Container cost.
+          const existing=await fetch(readbackUrl,{
+           method:'POST',headers:{...headers,'content-type':'application/json'},
+           body:JSON.stringify({sql:"SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b7_private_bridge_receipts'"})
+          });
+          assert.equal(existing.status,200,'D1_PROBE_IDEMPOTENCY_PREFLIGHT');
+          const existingTable=await existing.json();
+          assert.equal(existingTable.success,true);
+          if(existingTable.result?.[0]?.results?.length){
+           const previous=await fetch(readbackUrl,{
+            method:'POST',headers:{...headers,'content-type':'application/json'},
+            body:JSON.stringify({sql:
+             "SELECT COUNT(*) AS n FROM buffalo_stage3b7_private_bridge_receipts WHERE probe_id=?",
+             params:['one-shot-private-bridge-v1']})
+           });
+           assert.equal(previous.status,200,'D1_PRIOR_PROBE_READ');
+           const previousResult=await previous.json();
+           assert.equal(previousResult.success,true);
+           assert.equal(Number(previousResult.result?.[0]?.results?.[0]?.n),0,
+            'PREVIOUS_BRIDGE_PROBE_RECEIPT_EXISTS_NO_REPLAY');
+          }
           console.log('STAGE3B7_D1_READBACK_PERMISSION_PASS_BEFORE_DEPLOY');
           console.log('STAGE3B7_PRIVATE_BASELINE_PASS');
           NODE

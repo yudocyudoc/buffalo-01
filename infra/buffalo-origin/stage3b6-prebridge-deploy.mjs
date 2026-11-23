@@ -58,9 +58,12 @@ export function assertSafePreBridge(x,account){
  return 'STAGE3B6_PRIVATE_BRIDGE_GATE_PASS_NO_CONTAINER_STARTED';
 }
 async function api(path,{method='GET',body}={}){
+ const token=path.includes('/d1/database/')?
+  process.env.BUFFALO_CF_D1_READ_TOKEN:process.env.CLOUDFLARE_API_TOKEN;
+ if(!token)fail('READ_SCOPE_TOKEN_MISSING');
  const response=await fetch('https://api.cloudflare.com/client/v4'+path,{
   method,
-  headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
+  headers:{Authorization:'Bearer '+token,
    ...(body?{'Content-Type':'application/json'}:{})},
   ...(body?{body:JSON.stringify(body)}:{})
  });
@@ -78,6 +81,7 @@ async function activeVersion(base,worker){
 export async function inspectPrivateBridge(){
  const account=process.env.CLOUDFLARE_ACCOUNT_ID;
  if(!process.env.CLOUDFLARE_API_TOKEN)fail('DEPLOY_TOKEN_MISSING');
+ if(!process.env.BUFFALO_CF_D1_READ_TOKEN)fail('D1_READ_TOKEN_MISSING');
  const base='/accounts/'+account;
  const [apps,usage,originSub,bridgeSub,originSecrets,bridgeSecrets,
   originVersion,bridgeSettings,d1]=await Promise.all([

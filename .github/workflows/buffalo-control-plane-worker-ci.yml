@@ -46,6 +46,8 @@ jobs:
           node --check workers/buffalo-control-plane/original-ws-bridge-lab.mjs
           node --check infra/buffalo-origin/origin-server.mjs
           node --check infra/buffalo-origin/container-controller.mjs
+          node --check infra/buffalo-origin/probe-controller.mjs
+          node --test infra/buffalo-origin/probe-controller.test.mjs
           node --check infra/buffalo-origin/stage3b6-preflight.mjs
           node --check infra/buffalo-origin/oci-config-digest.mjs
           node --test infra/buffalo-origin/oci-config-digest.test.mjs
@@ -148,6 +150,34 @@ jobs:
           test -d "$RUNNER_TEMP/buffalo-wrangler-static"
           test -d "$RUNNER_TEMP/buffalo-wrangler-generated"
           echo 'WRANGLER_DRY_RUN_BOTH_PASS_NO_CLOUDFLARE_MUTATION'
+
+  private-one-shot-no-secret-probe-dryrun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Generate exact pinned initial model from DEV metadata, without simulation
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          node infra/buffalo-origin/generate-probe-model.mjs
+          node --test infra/buffalo-origin/probe-controller.test.mjs
+      - name: Wrangler 4.166.0 dry-run a private, unscheduled, no-secrets canary
+        env:
+          CLOUDFLARE_SEND_METRICS: 'false'
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-probe.jsonc \
+            --outdir "$RUNNER_TEMP/buffalo-probe-dryrun"
+          test -d "$RUNNER_TEMP/buffalo-probe-dryrun"
+          echo 'PRIVATE_PROBE_MODEL_HASH_AND_WRANGLER_DRY_RUN_PASS_NO_DEPLOY'
 
   full-handoff-source-snapshot:
     runs-on: ubuntu-latest

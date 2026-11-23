@@ -1,0 +1,128 @@
+name: Buffalo 3B-6 one-shot private origin RPC canary (no new secrets)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: 'Pinned original Buffalo OCI source SHA'
+        required: true
+        type: string
+      approval:
+        description: 'Enter ONE_PRIVATE_ORIGIN_PROBE_NO_INFERENCE'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  one-private-probe:
+    if: ${{ inputs.source_commit == 'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d' && inputs.approval == 'ONE_PRIVATE_ORIGIN_PROBE_NO_INFERENCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Check only existing deploy token and immutable original release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::MISSING_EXISTING_WORKERS_DEPLOY_TOKEN"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test infra/buffalo-origin/probe-controller.test.mjs
+          node --test infra/buffalo-origin/wrangler.private-origin.test.mjs
+      - name: Generate exact original DEV initial model, no inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          node infra/buffalo-origin/generate-probe-model.mjs
+          node --test infra/buffalo-origin/probe-controller.test.mjs
+      - name: Read-only precheck private account with no running Container
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
+          const headers={Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN};
+          const get=async path=>{
+            const r=await fetch(root+path,{headers});
+            assert.equal(r.status,200,'Cloudflare readback HTTP '+r.status);
+            const data=await r.json();assert.equal(data.success,true);return data.result;
+          };
+          const [apps,usage,sub,secrets,bridge]=await Promise.all([
+            get('/containers/applications'),get('/containers/usage'),
+            get('/workers/scripts/buffalo-private-origin-router-lab/subdomain'),
+            get('/workers/scripts/buffalo-private-origin-router-lab/secrets'),
+            get('/workers/scripts/buffalo-original-ws-bridge-lab/settings')
+          ]);
+          assert.equal(apps.length,1);
+          assert.equal(apps[0].name,'buffalo-private-origin-lab');
+          assert.equal(apps[0].scheduling_policy,'durable_object');
+          assert.equal(apps[0].health.instances.active,0);
+          assert.equal(apps[0].health.instances.starting,0);
+          assert.equal(usage.usage.instances,0);
+          assert.equal(sub.enabled,false);
+          assert.equal(sub.previews_enabled,false);
+          assert.equal(secrets.length,0);
+          assert.deepEqual(bridge.bindings.map(x=>x.name),['DB']);
+          console.log('PRIVATE_BASELINE_PASS_ZERO_INSTANCES_NO_SECRET_NO_PUBLIC_ROUTE');
+          NODE
+      - name: Prepare one-time internal Cron canary (NOT a public HTTP route)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='infra/buffalo-origin/wrangler.private-probe.jsonc';
+          const cfg=JSON.parse(readFileSync(file,'utf8'));
+          assert.equal(cfg.name,'buffalo-private-origin-router-lab');
+          assert.equal(cfg.workers_dev,false);
+          assert.equal(cfg.preview_urls,false);
+          assert.deepEqual(cfg.triggers,{crons:[]});
+          assert.equal(cfg.containers[0].images.base.image,
+            'registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/'+
+            'buffalo-private-origin@sha256:9db33d0be768d4f70e3dfed21b87b0d048f9a5a63739b8301b324deab020ec1d');
+          // Cron is temporary. Storage claims the attempt before Container start.
+          // The cleanup step unconditionally restores the unscheduled router.
+          cfg.triggers.crons=['* * * * *'];
+          writeFileSync('infra/buffalo-origin/wrangler.probe.one-shot-run.jsonc',
+            JSON.stringify(cfg,null,2)+'\n',{flag:'wx'});
+          NODE
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.probe.one-shot-run.jsonc \
+            --outdir "$RUNNER_TEMP/buffalo-probe-dryrun"
+      - name: Deploy temporary, no-public-ingress one-shot probe with automatic cleanup
+        id: arm
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'cleanup_needed=true' >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.166.0 deploy \
+            --config infra/buffalo-origin/wrangler.probe.one-shot-run.jsonc
+          echo 'PRIVATE_PROBE_ARMED_CRON_RPC_NO_PERMANENT_SECRET'
+      - name: Bounded Cron observation window (one DO claim maximum)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 600
+          echo 'CRON_WINDOW_ELAPSED_READ_D1_RECEIPT_INDEPENDENTLY'
+      - name: ALWAYS restore original private unscheduled Worker (no probe cron)
+        if: ${{ always() && steps.arm.outputs.cleanup_needed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy \
+            --config infra/buffalo-origin/wrangler.private-origin.jsonc
+          echo 'PROBE_SCHEDULE_DISABLED_AND_PRIVATE_ORIGIN_RESTORED'

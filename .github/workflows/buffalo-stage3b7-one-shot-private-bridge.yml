@@ -1,0 +1,198 @@
+name: Buffalo 3B-7 private bridge one-shot (manual, no inference)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Original pinned Buffalo source commit
+        required: true
+        type: string
+      approval:
+        description: Enter ONE_PRIVATE_BRIDGE_HANDSHAKE_NO_INFERENCE
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-stage3b7-private-bridge-single
+  cancel-in-progress: false
+jobs:
+  one-private-bridge:
+    if: ${{ inputs.source_commit == 'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d' && inputs.approval == 'ONE_PRIVATE_BRIDGE_HANDSHAKE_NO_INFERENCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact model and offline contracts (no inference)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::MISSING_EXISTING_TOKEN"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          npm ci --ignore-scripts
+          node infra/buffalo-origin/generate-probe-model.mjs
+          node --test infra/buffalo-origin/bridge-one-shot.test.mjs
+          node --test infra/buffalo-origin/probe-controller.test.mjs
+      - name: Read-only isolation and zero Container baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
+          const headers={Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN};
+          const get=async p=>{
+           const r=await fetch(root+p,{headers});
+           assert.equal(r.status,200,p);
+           const x=await r.json();assert.equal(x.success,true,p);return x.result;
+          };
+          const [apps,usage,os,bs,oc,bc,osec,bsec,bsettings]=await Promise.all([
+           get('/containers/applications'),get('/containers/usage'),
+           get('/workers/scripts/buffalo-private-origin-router-lab/subdomain'),
+           get('/workers/scripts/buffalo-original-ws-bridge-lab/subdomain'),
+           get('/workers/scripts/buffalo-private-origin-router-lab/schedules'),
+           get('/workers/scripts/buffalo-original-ws-bridge-lab/schedules'),
+           get('/workers/scripts/buffalo-private-origin-router-lab/secrets'),
+           get('/workers/scripts/buffalo-original-ws-bridge-lab/secrets'),
+           get('/workers/scripts/buffalo-original-ws-bridge-lab/settings')
+          ]);
+          assert.equal(apps.length,1);
+          assert.equal(apps[0].name,'buffalo-private-origin-lab');
+          assert.equal(apps[0].health.instances.active,0);
+          assert.equal(apps[0].health.instances.starting,0);
+          assert.equal(usage.usage.instances,0);
+          for(const sub of [os,bs]){
+           assert.equal(sub.enabled,false);assert.equal(sub.previews_enabled,false);
+          }
+          for(const sched of [oc,bc])assert.deepEqual(sched.schedules,[]);
+          assert.equal(osec.length,0);assert.equal(bsec.length,0);
+          assert.deepEqual(bsettings.bindings.map(x=>x.name),['DB']);
+          console.log('STAGE3B7_PRIVATE_BASELINE_PASS');
+          NODE
+      - name: Compile private temporary Worker configs and prepare cron
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const x=JSON.parse(readFileSync('infra/buffalo-origin/wrangler.private-bridge-probe.jsonc','utf8'));
+          assert.equal(x.workers_dev,false);assert.equal(x.preview_urls,false);
+          assert.deepEqual(x.triggers,{crons:[]});
+          assert.equal(x.services[0].entrypoint,'BridgeProbePort');
+          x.triggers.crons=['* * * * *'];
+          writeFileSync('infra/buffalo-origin/wrangler.private-bridge-one-shot-run.jsonc',
+           JSON.stringify(x,null,2)+'\n',{flag:'wx'});
+          NODE
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+           --config infra/buffalo-origin/wrangler.private-origin-bridge-probe.jsonc \
+           --outdir "$RUNNER_TEMP/stage3b7-origin"
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+           --config infra/buffalo-origin/wrangler.private-bridge-one-shot-run.jsonc \
+           --outdir "$RUNNER_TEMP/stage3b7-bridge"
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+           --config infra/buffalo-origin/wrangler.private-bridge-restored.jsonc \
+           --outdir "$RUNNER_TEMP/stage3b7-restore"
+      - name: Temporarily deploy private origin named RPC
+        id: origin_arm
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'cleanup_needed=true' >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.166.0 deploy \
+           --config infra/buffalo-origin/wrangler.private-origin-bridge-probe.jsonc
+      - name: Temporarily arm private bridge cron
+        id: bridge_arm
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'cleanup_needed=true' >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.166.0 deploy \
+           --config infra/buffalo-origin/wrangler.private-bridge-one-shot-run.jsonc
+      - name: Wait one bounded cron window
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 600
+      - name: Require actual D1 PASS receipt (workflow success is not proof)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const url='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
+           '/d1/database/d1e23807-b076-4c36-8785-7b423fc41614/query';
+          const res=await fetch(url,{
+           method:'POST',headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
+            'content-type':'application/json'},
+           body:JSON.stringify({sql:
+            'SELECT status,receipt_json FROM buffalo_stage3b7_private_bridge_receipts WHERE probe_id=?',
+            params:['one-shot-private-bridge-v1']})
+          });
+          assert.equal(res.status,200);
+          const r=await res.json();assert.equal(r.success,true);
+          const row=r.result?.[0]?.results?.[0];
+          assert.ok(row,'NO_REAL_BRIDGE_RECEIPT');
+          const receipt=JSON.parse(row.receipt_json);
+          console.log('STAGE3B7_RECEIPT_STATUS '+row.status);
+          assert.equal(row.status,'REAL_BRIDGE_HANDSHAKE_PASS');
+          for(const key of ['http_101','session_created','session_ready',
+            'disconnect_sent','connection_closed'])assert.equal(receipt[key],true,key);
+          assert.deepEqual(receipt.frame_types,['session_created','session_ready']);
+          console.log('REAL_BRIDGE_HANDSHAKE_PASS_VERIFIED_FROM_D1');
+          NODE
+      - name: ALWAYS restore bridge without cron or service binding
+        if: ${{ always() && steps.bridge_arm.outputs.cleanup_needed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy \
+           --config infra/buffalo-origin/wrangler.private-bridge-restored.jsonc
+          echo 'STAGE3B7_BRIDGE_RESTORED'
+      - name: ALWAYS restore original private origin without cron
+        if: ${{ always() && steps.origin_arm.outputs.cleanup_needed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy \
+           --config infra/buffalo-origin/wrangler.private-origin.jsonc
+          echo 'STAGE3B7_ORIGIN_RESTORED'
+      - name: Read-only final cleanup verification
+        if: ${{ always() && (steps.origin_arm.outputs.cleanup_needed == 'true' || steps.bridge_arm.outputs.cleanup_needed == 'true') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
+          const get=async p=>{
+           const r=await fetch(root+p,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
+           assert.equal(r.status,200,p);
+           const x=await r.json();assert.equal(x.success,true);return x.result;
+          };
+          const [o,b,oc,bc,apps,usage]=await Promise.all([
+           get('/workers/scripts/buffalo-private-origin-router-lab/settings'),
+           get('/workers/scripts/buffalo-original-ws-bridge-lab/settings'),
+           get('/workers/scripts/buffalo-private-origin-router-lab/schedules'),
+           get('/workers/scripts/buffalo-original-ws-bridge-lab/schedules'),
+           get('/containers/applications'),get('/containers/usage')
+          ]);
+          assert.deepEqual(o.bindings.map(x=>x.name).sort(),[
+           'BUFFALO_CONTAINER','BUFFALO_ORIGIN_MODE',
+           'BUFFALO_ORIGIN_COMMIT_SHA','BUFFALO_ORIGIN_MODEL_SHA256'].sort());
+          assert.deepEqual(b.bindings.map(x=>x.name),['DB']);
+          assert.deepEqual(oc.schedules,[]);assert.deepEqual(bc.schedules,[]);
+          assert.equal(apps[0].health.instances.active,0);
+          assert.equal(apps[0].health.instances.starting,0);
+          assert.equal(usage.usage.instances,0);
+          console.log('STAGE3B7_ZERO_CONTAINERS_ZERO_CRON_RESTORED');
+          NODE

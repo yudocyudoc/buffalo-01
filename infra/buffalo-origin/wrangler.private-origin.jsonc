@@ -26,7 +26,6 @@
       "name": "buffalo-private-origin-lab",
       "class_name": "BuffaloHandshakeContainer",
       "scheduling_policy": "durable_object",
-      "max_instances": 1,
       "images": {
         "base": {
           "image": "registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/buffalo-private-origin@sha256:a9500540247ddc8c617f381565f67720e8e720c6042381c2e135bd73430a09b9"

@@ -74,7 +74,8 @@ export function prepareStage3B6(evidence){
     cloud.production_workers_changed!==false)
     return blocked('CLOUDFLARE_BASELINE_NOT_ISOLATED');
   const limit=evidence.limits;
-  if(limit?.max_instances!==1||limit?.instance!=='lite'||
+  if(limit?.fixed_singleton_name!=='buffalo-original-handshake-only'||
+    limit?.instance!=='lite'||
     limit?.enable_internet!==false||limit?.inactivity_timeout_ms!==60000||
     limit?.agent_execution_enabled!==false)
     return blocked('BUDGET_OR_ISOLATION_UNSAFE');
@@ -94,7 +95,6 @@ export function prepareStage3B6(evidence){
       name:'buffalo-private-origin-lab',
       class_name:'BuffaloHandshakeContainer',
       scheduling_policy:'durable_object',
-      max_instances:1,
       images:{base:{image:registry.reference}}
     }]
   };

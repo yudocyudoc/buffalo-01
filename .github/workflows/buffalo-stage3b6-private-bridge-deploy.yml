@@ -20,7 +20,6 @@ jobs:
     if: ${{ inputs.handoff_id == 'f9c4db4e-aa31-4b2a-921e-201a5a79fd37' && inputs.approval == 'DEPLOY_BRIDGE_PRIVATE_NO_HANDSHAKE' }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    environment: buffalo-private-lab
     env:
       CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
       CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}

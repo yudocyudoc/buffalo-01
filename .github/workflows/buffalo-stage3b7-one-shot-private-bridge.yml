@@ -19,7 +19,7 @@ jobs:
   one-private-bridge:
     if: ${{ inputs.source_commit == 'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d' && inputs.approval == 'ONE_PRIVATE_BRIDGE_HANDSHAKE_NO_INFERENCE' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
       CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
@@ -281,26 +281,12 @@ jobs:
           set -euo pipefail
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
+          import {verifyStage3B7Restored} from './infra/buffalo-origin/stage3b7-cleanup.mjs';
           const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
           const get=async p=>{
            const r=await fetch(root+p,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
            assert.equal(r.status,200,p);
            const x=await r.json();assert.equal(x.success,true);return x.result;
           };
-          const [o,b,oc,bc,apps,usage]=await Promise.all([
-           get('/workers/scripts/buffalo-private-origin-router-lab/settings'),
-           get('/workers/scripts/buffalo-original-ws-bridge-lab/settings'),
-           get('/workers/scripts/buffalo-private-origin-router-lab/schedules'),
-           get('/workers/scripts/buffalo-original-ws-bridge-lab/schedules'),
-           get('/containers/applications'),get('/containers/usage')
-          ]);
-          assert.deepEqual(o.bindings.map(x=>x.name).sort(),[
-           'BUFFALO_CONTAINER','BUFFALO_ORIGIN_MODE',
-           'BUFFALO_ORIGIN_COMMIT_SHA','BUFFALO_ORIGIN_MODEL_SHA256'].sort());
-          assert.deepEqual(b.bindings.map(x=>x.name),['DB']);
-          assert.deepEqual(oc.schedules,[]);assert.deepEqual(bc.schedules,[]);
-          assert.equal(apps[0].health.instances.active,0);
-          assert.equal(apps[0].health.instances.starting,0);
-          assert.equal(usage.usage.instances,0);
-          console.log('STAGE3B7_ZERO_CONTAINERS_ZERO_CRON_RESTORED');
+          await verifyStage3B7Restored({read:get,maxWaitMs:120_000,intervalMs:5_000});
           NODE

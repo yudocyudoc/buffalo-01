@@ -39,7 +39,7 @@ Antes de la sonda, GitHub verificará por REST/D1 Read: ambas tablas existentes,
 
 ## Sondeo y resultado
 
-Tras crear el cron temporal `* * * * *`, el job sondea D1 **cada 20 segundos durante un máximo de 17 minutos**. Imprime estados sin credenciales y termina anticipadamente al ver un evento terminal o un recibo final. Se reservan minutos para cleanup dentro del límite global de 25 minutos.
+Tras crear el cron temporal `* * * * *`, el job sondea D1 **cada 20 segundos durante un máximo de 17 minutos**. Imprime estados sin credenciales y termina anticipadamente al ver un evento terminal o un recibo final. Tras restaurar los Workers, verifica el apagado del Container cada 5 segundos durante un máximo de 120 segundos, dentro del límite global de 30 minutos.
 
 - Sin `SCHEDULED_ENTERED` dentro de 17 minutos: `STAGE3B7_CRON_NOT_OBSERVED_WITHIN_17_MINUTES`. No equivale a probar ausencia absoluta de invocación si la escritura D1 falló antes de confirmar el evento.
 - Con `SCHEDULED_ENTERED`, pero sin evento terminal: `STAGE3B7_CRON_ENTERED_BUT_NO_TERMINAL_RECEIPT` (indeterminado, no retry).

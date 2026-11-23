@@ -113,6 +113,11 @@ jobs:
         run: |
           set -euo pipefail
           test "${#MANIFEST_SHA}" = 64
+          CURRENT_MAIN="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$CURRENT_MAIN" != "$GITHUB_SHA" ]; then
+            echo "::error::MAIN_MOVED_ABORT_DISPATCH"
+            exit 1
+          fi
           gh api --method POST \
             "repos/$GITHUB_REPOSITORY/actions/workflows/buffalo-full-source-proof.yml/dispatches" \
             --field ref=main \

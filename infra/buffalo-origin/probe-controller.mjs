@@ -158,6 +158,15 @@ export default {
    'created_at TEXT DEFAULT CURRENT_TIMESTAMP)'
   ).run();
   const receipt=await env.BUFFALO_CONTAINER.getByName(INSTANCE).runOneShotProbe();
-  // Append a minimal audit receipt only in the isolated Buffalo laboratory D1.\n  // This is NOT an inference grant and does not touch the source proof rows.\n  if(receipt.status!=='ALREADY_CLAIMED_NO_RETRY'){\n   await env.DB.prepare('INSERT INTO buffalo_stage3b6_private_probe_receipts '+\n    '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+\n    'ON CONFLICT(probe_id) DO NOTHING').bind(\n    'one-shot-origin-rpc-v1',HANDOFF,SOURCE,receipt.status,JSON.stringify(receipt)\n   ).run();\n  }\n  console.log('BUFFALO_ONE_SHOT_SCHEDULED '+JSON.stringify(receipt));
+  // Append a minimal audit receipt only in the isolated Buffalo laboratory D1.
+  // This is NOT an inference grant and does not touch the source proof rows.
+  if(receipt.status!=='ALREADY_CLAIMED_NO_RETRY'){
+   await env.DB.prepare('INSERT INTO buffalo_stage3b6_private_probe_receipts '+
+    '(probe_id,handoff_id,commit_sha,status,receipt_json) VALUES (?,?,?,?,?) '+
+    'ON CONFLICT(probe_id) DO NOTHING').bind(
+    'one-shot-origin-rpc-v1',HANDOFF,SOURCE,receipt.status,JSON.stringify(receipt)
+   ).run();
+  }
+  console.log('BUFFALO_ONE_SHOT_SCHEDULED '+JSON.stringify(receipt));
  }
 };

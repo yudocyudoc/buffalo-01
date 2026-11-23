@@ -25,7 +25,8 @@ test('private origin matches exact tested and published OCI identity',()=>{
  assert.deepEqual(cfg.durable_objects.bindings,[{
   name:'BUFFALO_CONTAINER',class_name:'BuffaloHandshakeContainer'
  }]);
- assert.deepEqual(cfg.migrations[0].new_sqlite_classes,['BuffaloHandshakeContainer']);
+ assert.equal('migrations' in cfg,false);
+ assert.deepEqual(cfg.exports,{BuffaloHandshakeContainer:{type:'durable-object',storage:'sqlite'}});
 });
 test('controller keeps handshake-only, no-internet, lite instance and short inactivity',()=>{
  assert.match(controller,/HANDSHAKE_ONLY_NO_AGENT_PROCESS/);

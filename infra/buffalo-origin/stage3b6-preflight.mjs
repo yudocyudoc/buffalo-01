@@ -89,8 +89,7 @@ export function prepareStage3B6(evidence){
     durable_objects:{bindings:[{
       name:'BUFFALO_CONTAINER',class_name:'BuffaloHandshakeContainer'
     }]},
-    migrations:[{tag:'buffalo-private-origin-3b6-v1',
-      new_sqlite_classes:['BuffaloHandshakeContainer']}],
+    exports:{BuffaloHandshakeContainer:{type:'durable-object',storage:'sqlite'}},
     containers:[{
       name:'buffalo-private-origin-lab',
       class_name:'BuffaloHandshakeContainer',

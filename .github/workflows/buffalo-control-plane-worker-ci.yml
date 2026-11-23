@@ -74,6 +74,7 @@ jobs:
           node --check workers/buffalo-control-plane/full-source-attestation-service.mjs
           node --check scripts/full-integration/source-proof-contract.mjs
           node --check scripts/full-integration/create-source-proof.mjs
+          node --test scripts/full-integration/source-proof-dispatch-payload.test.mjs
           node --test workers/buffalo-control-plane/full-source-provenance.test.mjs
           node --test scripts/full-integration/handoff-contract.test.mjs
           node --test scripts/control-plane/contract.test.mjs workers/buffalo-control-plane/control-plane.test.mjs

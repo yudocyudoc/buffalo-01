@@ -10,6 +10,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 
 import {validateStage3B6Release} from './stage3b6-release-evidence.mjs';
+export {STAGE3B6_SCHEMA} from './stage3b6-release-evidence.mjs';
 
 const blocked=(code)=>({valid:false,code});
 const valid=(config)=>({valid:true,code:'OFFLINE_CONFIG_READY_NOT_DEPLOYED',config});

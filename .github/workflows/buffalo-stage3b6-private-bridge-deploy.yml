@@ -23,6 +23,7 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
       CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+      BUFFALO_CF_D1_READ_TOKEN: ${{ secrets.BUFFALO_CF_D1_READ_TOKEN }}
       CLOUDFLARE_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$BUFFALO_CF_D1_READ_TOKEN" || { echo "::error::MISSING_BUFFALO_CF_D1_READ_TOKEN"; exit 1; }
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node --test infra/buffalo-origin/wrangler.private-bridge.test.mjs
           node --test infra/buffalo-origin/stage3b6-prebridge-deploy.test.mjs

@@ -93,7 +93,9 @@ export async function runPrivateBridgeOnce(env){
      typeof granted.upgrade!=='string'||granted.upgrade.length<32||
      granted.auth===granted.upgrade)throw Error('BRIDGE_BAD_EPHEMERAL_CREDENTIALS');
   const bearer=randomSecret();
-  const sessionEnv={...env,BUFFALO_WS_LAB_BEARER:bearer,
+  const sessionEnv={DB:env.DB,BUFFALO_ORIGIN:env.BUFFALO_ORIGIN,
+   BUFFALO_WS_LAB_MODE:MODE,BUFFALO_LAB_HANDOFF_ID:HANDOFF,
+   BUFFALO_RUNTIME_COMMIT_SHA:COMMIT,BUFFALO_WS_LAB_BEARER:bearer,
    BUFFALO_ORIGIN_AUTH_KEY:granted.auth,
    BUFFALO_ORIGIN_UPGRADE_TOKEN:granted.upgrade};
   const request=new Request('https://buffalo-internal.invalid/v1/lab/original-ws',{

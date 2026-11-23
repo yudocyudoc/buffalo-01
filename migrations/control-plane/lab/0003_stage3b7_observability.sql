@@ -13,9 +13,10 @@ CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_receipts (
 -- Append-only phase markers. SCHEDULED_ENTERED is an atomic, one-shot D1
 -- admission gate: one cron entry per probe_id; subsequent crons do nothing.
 CREATE TABLE IF NOT EXISTS buffalo_stage3b7_private_bridge_events (
+ seq INTEGER PRIMARY KEY AUTOINCREMENT,
  probe_id TEXT NOT NULL,
  phase TEXT NOT NULL,
  code TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- PRIMARY KEY(probe_id,phase)
+ UNIQUE(probe_id,phase)
 );

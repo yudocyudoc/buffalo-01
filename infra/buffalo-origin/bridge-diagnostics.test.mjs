@@ -88,3 +88,6 @@ test('manual workflow waits for 17-minute D1 statuses and always restores BOTH W
  assert.match(flow,/workflow_dispatch:/);
  assert.doesNotMatch(flow,/^[ ]+push:/m);
 });
+
+// Execute the bounded post-restore Container shutdown regressions in offline CI.
+import './stage3b7-cleanup.test.mjs';

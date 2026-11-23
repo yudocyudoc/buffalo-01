@@ -33,7 +33,8 @@ Un resultado PASS **no** comprueba que los valores A y B coinciden; ello se comp
 El workflow manual `.github/workflows/buffalo-stage3b6-private-bridge-deploy.yml` exige:
 - `handoff_id=f9c4db4e-aa31-4b2a-921e-201a5a79fd37`
 - `approval=DEPLOY_BRIDGE_PRIVATE_NO_HANDSHAKE`
-- GitHub Action secret `BUFFALO_CF_WORKERS_DEPLOY_TOKEN`, previamente usado solo para desplegar el origen.
+- GitHub Action secret `BUFFALO_CF_WORKERS_DEPLOY_TOKEN`, previamente usado solo para desplegar el origen. Conserva Workers Scripts Edit y Containers Edit; no ampliar su alcance para D1.
+- GitHub Action secret **adicional** `BUFFALO_CF_D1_READ_TOKEN`, token de Cloudflare limitado a la cuenta de Buffalo con **D1 Read**. Se utiliza únicamente para hacer SELECT del handoff, atestación y 0 grants por API D1 antes del deploy; no tiene D1 Write ni permisos de Workers o Containers.
 
 Antes de desplegar corre pruebas locales, dry run de Wrangler y gate live de solo lectura. Solo entonces despliega **el Worker bridge del laboratorio**, con service binding `BUFFALO_ORIGIN` fijo al router y D1 experimental. Comprueba a posteriori binding, nombres de secretos, ausencia de workers.dev/previews y 0 instancias. No lanza conexiones, no inicializa ningún Container ni concede IA.
 

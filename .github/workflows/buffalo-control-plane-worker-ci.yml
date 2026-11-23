@@ -99,26 +99,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Generate test-only predeploy config beside Node controller (never live evidence)
+      - name: Exercise real predeploy CLI with synthetic, clearly labeled evidence
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
           import {writeFileSync} from 'node:fs';
-          import assert from 'node:assert/strict';
           import {syntheticStage3B6Evidence} from './infra/buffalo-origin/stage3b6-test-fixture.mjs';
-          import {prepareStage3B6} from './infra/buffalo-origin/stage3b6-preflight.mjs';
-          const result=prepareStage3B6(syntheticStage3B6Evidence());
-          assert.equal(result.valid,true);
-          assert.equal(result.config.main,'./container-controller.mjs');
-          assert.equal(result.config.workers_dev,false);
-          assert.equal(result.config.preview_urls,false);
-          assert.equal('max_instances' in result.config.containers[0],false);
-          assert.equal('routes' in result.config,false);
-          writeFileSync('infra/buffalo-origin/wrangler.stage3b6.ci-fixture.jsonc',
-            JSON.stringify(result.config,null,2)+'\n',{flag:'wx'});
-          console.log('SYNTHETIC_FIXTURE_FOR_DRY_RUN_ONLY');
+          writeFileSync(process.env.RUNNER_TEMP+'/stage3b6-SYNTHETIC-ONLY.json',
+            JSON.stringify(syntheticStage3B6Evidence(),null,2)+'\n',{flag:'wx'});
           NODE
+          node infra/buffalo-origin/stage3b6-preflight.mjs \
+            --evidence "$RUNNER_TEMP/stage3b6-SYNTHETIC-ONLY.json" \
+            --out infra/buffalo-origin/wrangler.stage3b6.ci-fixture.jsonc
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const cfg=JSON.parse(readFileSync('infra/buffalo-origin/wrangler.stage3b6.ci-fixture.jsonc','utf8'));
+          assert.equal(cfg.main,'./container-controller.mjs');
+          assert.equal(cfg.workers_dev,false);
+          assert.equal(cfg.preview_urls,false);
+          assert.equal('max_instances' in cfg.containers[0],false);
+          assert.equal('routes' in cfg,false);
+          NODE
+          echo 'SYNTHETIC_FIXTURE_FOR_DRY_RUN_ONLY'
+
       - name: Wrangler 4.166.0 dry-run static and generated config (no API or deploy)
         shell: bash
         env:

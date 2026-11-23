@@ -1,0 +1,90 @@
+name: Buffalo 3B-6 bridge private deploy (manual, no handshake)
+
+on:
+  workflow_dispatch:
+    inputs:
+      handoff_id:
+        description: 'Exact immutable Merlin handoff for a8b1ad0'
+        required: true
+        type: string
+      approval:
+        description: 'Enter DEPLOY_BRIDGE_PRIVATE_NO_HANDSHAKE'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  guarded-private-bridge:
+    if: ${{ inputs.handoff_id == 'f9c4db4e-aa31-4b2a-921e-201a5a79fd37' && inputs.approval == 'DEPLOY_BRIDGE_PRIVATE_NO_HANDSHAKE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: buffalo-private-lab
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact bridge config and unit gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test infra/buffalo-origin/wrangler.private-bridge.test.mjs
+          node --test infra/buffalo-origin/stage3b6-prebridge-deploy.test.mjs
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-bridge.jsonc \
+            --outdir "$RUNNER_TEMP/bridge-dry-run"
+      - name: Read Cloudflare source, secret names, pinned active image and D1 proof
+        run: node infra/buffalo-origin/stage3b6-prebridge-deploy.mjs
+      - name: Deploy only private bridge service binding and vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy \
+            --config infra/buffalo-origin/wrangler.private-bridge.jsonc
+          echo 'PRIVATE_BRIDGE_DEPLOY_REQUESTED_NO_HANDSHAKE'
+      - name: Verify private bridge binding and no public URL, no Container start
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          const root='https://api.cloudflare.com/client/v4/accounts/'+account;
+          const auth={Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN};
+          const get=async p=>{
+            const r=await fetch(root+p,{headers:auth});
+            assert.equal(r.status,200,'readback HTTP '+r.status);
+            const data=await r.json();assert.equal(data.success,true);
+            return data.result;
+          };
+          const [b,s,usage,originSecrets,bridgeSecrets]=await Promise.all([
+            get('/workers/scripts/buffalo-original-ws-bridge-lab/settings'),
+            get('/workers/scripts/buffalo-original-ws-bridge-lab/subdomain'),
+            get('/containers/usage'),
+            get('/workers/scripts/buffalo-private-origin-router-lab/secrets'),
+            get('/workers/scripts/buffalo-original-ws-bridge-lab/secrets')
+          ]);
+          assert.deepEqual(b.bindings.map(x=>x.name).sort(),[
+            'BUFFALO_LAB_HANDOFF_ID','BUFFALO_ORIGIN',
+            'BUFFALO_RUNTIME_COMMIT_SHA','BUFFALO_WS_LAB_MODE','DB',
+            'BUFFALO_ORIGIN_AUTH_KEY','BUFFALO_ORIGIN_UPGRADE_TOKEN',
+            'BUFFALO_WS_LAB_BEARER'
+          ].sort());
+          const binding=b.bindings.find(x=>x.name==='BUFFALO_ORIGIN');
+          assert.equal(binding.type,'service');
+          assert.equal(binding.service,'buffalo-private-origin-router-lab');
+          assert.equal(s.enabled,false);assert.equal(s.previews_enabled,false);
+          assert.equal(usage.usage.instances,0);
+          assert.equal(originSecrets.length,2);assert.equal(bridgeSecrets.length,3);
+          console.log('PRIVATE_BRIDGE_BINDING_PRESENT_NOT_HANDSHAKE_TESTED');
+          NODE

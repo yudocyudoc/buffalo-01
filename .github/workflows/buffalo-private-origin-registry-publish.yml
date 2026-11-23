@@ -101,7 +101,7 @@ jobs:
           assert.equal(image.Config?.Env?.find(x=>x.startsWith('BUFFALO_IMAGE_SOURCE_SHA=')),
             'BUFFALO_IMAGE_SOURCE_SHA='+sha);
           for(const line of ['# tests 4','# pass 4','# fail 0'])
-            assert.ok(output.split(/\\r?\\n/).includes(line),line);
+            assert.ok(output.split(/\r?\n/).includes(line),line);
           const fileHash=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
           const receipt={
             schema:'BUFFALO_PRIVATE_ORIGIN_BUILD_RECEIPT_V1',
@@ -121,7 +121,7 @@ jobs:
             proof_scope:'CI_LOCAL_TESTED_IMAGE_NOT_CLOUDFLARE_REGISTRY'
           };
           writeFileSync(temp+'/buffalo-local-build-receipt.json',
-            JSON.stringify(receipt,null,2)+'\\n',{flag:'wx'});
+            JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});
           console.log('LOCAL_IMAGE_TESTED_RECEIPT_CREATED_NOT_DEPLOYED');
           NODE
       - name: Publish exact built image to private Cloudflare registry, main only

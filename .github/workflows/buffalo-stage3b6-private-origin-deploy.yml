@@ -1,0 +1,81 @@
+name: Buffalo 3B-6 private origin Wrangler deploy (manual, no start)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_source_commit:
+        description: 'Exact verified OCI source commit (NOT current main)'
+        required: true
+        type: string
+      approval:
+        description: 'Enter DEPLOY_PRIVATE_ORIGIN_NO_START'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-private-origin:
+    if: ${{ inputs.image_source_commit == 'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d' && inputs.approval == 'DEPLOY_PRIVATE_ORIGIN_NO_START' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fail closed without dedicated Worker + Containers deployment token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || {
+            echo "::error::MISSING_BUFFALO_CF_WORKERS_DEPLOY_TOKEN"
+            exit 1
+          }
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Verify pinned runtime and no public Worker ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test infra/buffalo-origin/wrangler.private-origin.test.mjs
+          node --test infra/buffalo-origin/wrangler.private-bridge.test.mjs
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const cfg=JSON.parse(readFileSync('infra/buffalo-origin/wrangler.private-origin.jsonc','utf8'));
+          const expected='registry.cloudflare.com/'+process.env.CLOUDFLARE_ACCOUNT_ID+
+            '/buffalo-private-origin@sha256:9db33d0be768d4f70e3dfed21b87b0d048f9a5a63739b8301b324deab020ec1d';
+          assert.equal(cfg.containers[0].images.base.image,expected);
+          assert.equal(cfg.vars.BUFFALO_ORIGIN_COMMIT_SHA,
+            'a8b1ad0c02d5c3367bd24962e8fd36d277a8135d');
+          assert.equal(cfg.workers_dev,false);
+          assert.equal(cfg.preview_urls,false);
+          assert.ok(!('routes' in cfg));
+          assert.ok(!('triggers' in cfg));
+          assert.ok(!('max_instances' in cfg.containers[0]));
+          for(const key of ['BUFFALO_ORIGIN_AUTH_KEY','BUFFALO_ORIGIN_UPGRADE_TOKEN'])
+            assert.ok(!(key in cfg.vars));
+          NODE
+      - name: Validate Wrangler build before touching Cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy --dry-run \
+            --config infra/buffalo-origin/wrangler.private-origin.jsonc \
+            --outdir "$RUNNER_TEMP/buffalo-origin-predeploy"
+          test -d "$RUNNER_TEMP/buffalo-origin-predeploy"
+      - name: Deploy ONLY origin Worker and digest-pinned image map, never start an instance
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.166.0 deploy \
+            --config infra/buffalo-origin/wrangler.private-origin.jsonc
+          echo 'BUFFALO_PRIVATE_ORIGIN_WRANGLER_DEPLOY_REQUESTED'
+          echo 'NO_SERVICE_BINDING_CHANGED_NO_CONTAINER_START_NO_INFERENCE'

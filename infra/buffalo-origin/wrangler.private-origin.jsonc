@@ -20,7 +20,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "base": {
-          "image": "registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/buffalo-private-origin@sha256:a9500540247ddc8c617f381565f67720e8e720c6042381c2e135bd73430a09b9"
+          "image": "registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/buffalo-private-origin@sha256:9db33d0be768d4f70e3dfed21b87b0d048f9a5a63739b8301b324deab020ec1d"
         }
       }
     }
@@ -30,5 +30,10 @@
       "type": "durable-object",
       "storage": "sqlite"
     }
+  },
+  "vars": {
+    "BUFFALO_ORIGIN_MODE": "HANDSHAKE_ONLY_NO_AGENT_PROCESS",
+    "BUFFALO_ORIGIN_COMMIT_SHA": "a8b1ad0c02d5c3367bd24962e8fd36d277a8135d",
+    "BUFFALO_ORIGIN_MODEL_SHA256": "57fed6310be45c10c263aecb796eeb72f993b318c5bc770013ff35e014cb4f39"
   }
 }

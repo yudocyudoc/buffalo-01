@@ -76,6 +76,19 @@ jobs:
           for(const sched of [oc,bc])assert.deepEqual(sched.schedules,[]);
           assert.equal(osec.length,0);assert.equal(bsec.length,0);
           assert.deepEqual(bsettings.bindings.map(x=>x.name),['DB']);
+          // The same existing deploy token must be able to read the D1 receipt
+          // after the attempt. Fail BEFORE arming anything if it cannot.
+          const readbackUrl=root+'/d1/database/d1e23807-b076-4c36-8785-7b423fc41614/query';
+          const check=await fetch(readbackUrl,{
+           method:'POST',headers:{...headers,'content-type':'application/json'},
+           body:JSON.stringify({sql:"SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b6_private_probe_receipts'"})
+          });
+          assert.equal(check.status,200,'D1_READ_PERMISSION_REQUIRED_BEFORE_CONTAINER');
+          const readback=await check.json();
+          assert.equal(readback.success,true,'D1_READ_PERMISSION_REQUIRED_BEFORE_CONTAINER');
+          assert.equal(readback.result?.[0]?.success,true);
+          assert.equal(readback.result?.[0]?.results?.[0]?.name,'buffalo_stage3b6_private_probe_receipts');
+          console.log('STAGE3B7_D1_READBACK_PERMISSION_PASS_BEFORE_DEPLOY');
           console.log('STAGE3B7_PRIVATE_BASELINE_PASS');
           NODE
       - name: Compile private temporary Worker configs and prepare cron

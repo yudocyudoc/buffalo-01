@@ -50,7 +50,7 @@ test('probe uses DO RPC and one-time durable claim, not HTTP public route',()=>{
 test('scheduled RPC receipt persistence is executable, not a commented-out string',()=>{
  const scheduled=src.slice(src.indexOf('async scheduled(_event,env){'));
  assert.ok(scheduled.startsWith('async scheduled(_event,env){'));
- assert.equal(scheduled.includes(String.raw`\\n`),false,
+ assert.equal(scheduled.includes(String.raw`\n`),false,
   'literal backslash-n must not hide the D1 receipt block inside a comment');
  const code=scheduled.split('\n').map(line=>line.split('//')[0]).join('\n');
  assert.match(code,/if\(receipt\.status!=='ALREADY_CLAIMED_NO_RETRY'\)\{/);

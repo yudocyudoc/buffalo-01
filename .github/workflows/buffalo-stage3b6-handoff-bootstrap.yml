@@ -1,5 +1,5 @@
 name: Buffalo 3B-6 handoff manifest and source-proof bootstrap (metadata only)
-run-name: Buffalo 3B-6 immutable handoff bootstrap
+run-name: Buffalo 3B-6 immutable handoff bootstrap (paired OCI release)
 
 on:
   pull_request:
@@ -22,7 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      BUFFALO_HANDOFF_ID: cffb07d9-78b5-464f-8194-3f6ffd144b90
+      # Single-use immutable handoff ID for this release; never reuse for another SHA.
+      BUFFALO_HANDOFF_ID: 07fd7d9d-b8ec-42fe-b5e3-697bbf9901c2
       BUFFALO_AGENT: merlin
       BUFFALO_CASE_INDEX: '0'
     steps:
@@ -105,7 +106,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      BUFFALO_HANDOFF_ID: cffb07d9-78b5-464f-8194-3f6ffd144b90
+      BUFFALO_HANDOFF_ID: 07fd7d9d-b8ec-42fe-b5e3-697bbf9901c2
     steps:
       - uses: actions/checkout@v4
         with:

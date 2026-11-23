@@ -49,6 +49,8 @@ test('valid evidence prepares only private Worker/DO config without credentials 
  assert.equal(r.valid,true);
  assert.equal(r.code,'OFFLINE_CONFIG_READY_NOT_DEPLOYED');
  assert.equal(r.config.workers_dev,false);
+ assert.equal('migrations' in r.config,false);
+ assert.deepEqual(r.config.exports,{BuffaloHandshakeContainer:{type:'durable-object',storage:'sqlite'}});
  assert.equal(r.config.preview_urls,false);
  assert.equal('max_instances' in r.config.containers[0],false);
  assert.equal(r.config.containers[0].scheduling_policy,'durable_object');

@@ -15,7 +15,7 @@
   },
   "migrations": [
     {
-      "tag": "buffalo-private-origin-stage3b6-v1",
+      "tag": "buffalo-private-origin-3b6-v1",
       "new_sqlite_classes": [
         "BuffaloHandshakeContainer"
       ]

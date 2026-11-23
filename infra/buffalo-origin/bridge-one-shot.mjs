@@ -5,6 +5,7 @@
  */
 import {handleOriginalWorkerBridge} from '../../workers/buffalo-control-plane/original-ws-bridge-lab.mjs';
 import model from './probe-initial-model.json';
+import {claimScheduledEntry,markStage,safeCode} from './bridge-diagnostics.mjs';
 
 const COMMIT='a8b1ad0c02d5c3367bd24962e8fd36d277a8135d';
 const MODEL='57fed6310be45c10c263aecb796eeb72f993b318c5bc770013ff35e014cb4f39';
@@ -82,11 +83,14 @@ export function handshakeBridgeSocket(ws) {
   ws.accept();
  });
 }
-export async function runPrivateBridgeOnce(env){
+export async function runPrivateBridgeOnce(env,onPhase=async()=>{}){
  await bridgePreflight(env);
+ await onPhase('PREFLIGHT_PASSED');
+ await onPhase('RPC_PREPARE_REQUESTED');
  const granted=await env.BUFFALO_ORIGIN.prepareBridgeOnce();
  if(granted?.status!=='READY')
   return {status:granted?.status??'BRIDGE_PROBE_NOT_READY'};
+ await onPhase('ORIGIN_READY');
  let receipt;
  try{
   if(typeof granted.auth!=='string'||granted.auth.length<32||
@@ -101,6 +105,7 @@ export async function runPrivateBridgeOnce(env){
   const request=new Request('https://buffalo-internal.invalid/v1/lab/original-ws',{
    method:'GET',headers:{Upgrade:'websocket',Authorization:'Bearer '+bearer}
   });
+  await onPhase('WEBSOCKET_REQUESTED');
   const response=await handleOriginalWorkerBridge(request,sessionEnv);
   if(response.status!==101||!response.webSocket)
    throw Error('BRIDGE_NO_HTTP_101_'+response.status);
@@ -109,17 +114,61 @@ export async function runPrivateBridgeOnce(env){
   receipt={status:'REAL_BRIDGE_HANDSHAKE_FAILED',error_code:safeError(e)};
  }
  // Write only non-secret evidence; a failed transport must not be hidden by CI.
+ await onPhase('RECEIPT_SAVE_REQUESTED');
  const saved=await env.BUFFALO_ORIGIN.finishBridgeOnce(receipt);
  if(saved?.status!==receipt.status)throw Error('BRIDGE_RECEIPT_NOT_PERSISTED');
  console.log('BUFFALO_PRIVATE_BRIDGE_ONE_SHOT '+JSON.stringify(receipt));
  return receipt;
 }
+/**
+ * Diagnostic precedence:
+ * - D1 SCHEDULED_ENTERED is the first side effect and the cron idempotency gate.
+ * - The read-only DO claim check precedes source preflight and any Container start.
+ * - Both final success and failure leave a terminal event, independent of the
+ *   origin receipt. No scheduled retry after a partial invocation.
+ */
 export default {
  fetch(){return new Response('Not Found',{status:404})},
  async scheduled(_event,env){
   if(env.BUFFALO_BRIDGE_PROBE_MODE!==PING)return;
-  const receipt=await runPrivateBridgeOnce(env);
-  if(receipt.status!=='REAL_BRIDGE_HANDSHAKE_PASS')
-   console.log('BUFFALO_BRIDGE_NEGATIVE_OR_INCOMPLETE '+JSON.stringify(receipt));
+  const entered=await claimScheduledEntry(env.DB);
+  if(!entered)return;
+  let phase='CLAIM_READ_REQUESTED';
+  const advance=async p=>{
+   phase=p;
+   await markStage(env.DB,p);
+  };
+  try{
+   await advance('CLAIM_READ_REQUESTED');
+   const existing=await env.BUFFALO_ORIGIN.readBridgeOnce();
+   if(existing?.status!=='NOT_RUN'){
+    await markStage(env.DB,'DO_CLAIM_ALREADY_USED');
+    return;
+   }
+   await advance('CLAIM_ABSENT');
+   const receipt=await runPrivateBridgeOnce(env,advance);
+   if(receipt.status==='REAL_BRIDGE_HANDSHAKE_PASS'){
+    await markStage(env.DB,'REAL_BRIDGE_HANDSHAKE_PASS');
+   }else if(receipt.status==='REAL_BRIDGE_HANDSHAKE_FAILED'){
+    await markStage(env.DB,'REAL_BRIDGE_HANDSHAKE_FAILED',
+     safeCode({message:receipt.error_code??'UNKNOWN'}));
+   }else if(receipt.status==='BRIDGE_PROBE_PREPARE_FAILED'){
+    await markStage(env.DB,'PREPARE_FAILED',
+     safeCode({message:receipt.error_code??'UNKNOWN'}));
+   }else if(receipt.status==='ALREADY_CLAIMED_NO_RETRY'){
+    await markStage(env.DB,'DO_CLAIM_ALREADY_USED');
+   }else{
+    await markStage(env.DB,'RPC_FAILED');
+   }
+  }catch(e){
+   const terminal=phase==='CLAIM_READ_REQUESTED'?'CLAIM_READ_FAILED':
+    phase==='CLAIM_ABSENT'?'PREFLIGHT_FAILED':
+    phase==='RPC_PREPARE_REQUESTED'?'RPC_FAILED':
+    phase==='RECEIPT_SAVE_REQUESTED'?'RECEIPT_FAILED':
+    phase==='ORIGIN_READY'||phase==='WEBSOCKET_REQUESTED'?'HANDSHAKE_FAILED':
+    'DIAGNOSTIC_FAILED';
+   await markStage(env.DB,terminal,safeCode(e));
+   console.log('BUFFALO_BRIDGE_DIAGNOSTIC '+terminal);
+  }
  }
 };

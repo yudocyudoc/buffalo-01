@@ -5,6 +5,7 @@
  */
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
+import {validateMinimalReceipt} from './stage3b8r-bwrap-minimal.mjs';
 
 export const R0_SCHEMA='BUFFALO_STAGE3B8R0_LOCAL_OCI_SANDBOX_GATE_V1';
 const SHA40=/^[a-f0-9]{40}$/;
@@ -15,16 +16,18 @@ const hash=s=>createHash('sha256').update(s).digest('hex');
 const fail=code=>{throw Error('3B8R0_'+code)};
 const bool=(value,key)=>{if(value!==true)fail(key)};
 const falseVal=(value,key)=>{if(value!==false)fail(key)};
-const SANDBOX_DENIED=[
-  /3B8_SANDBOX_NOT_AVAILABLE/i,
-  /bwrap sandbox is unavailable/i,
-  /bwrap exited early/i,
-  /operation not permitted/i,
-  /failed to create.*namespace/i,
-  /creating new namespace failed/i,
-  /user namespaces.*disabled/i,
-  /permission denied.*bwrap/i,
-];
+const MINIMAL_PREFIX='BUFFALO_3B8R0_MINIMAL=';
+function processFailureCode(log){
+ // Observational classification only: a WorkerSpawner warning alone does NOT
+ // establish that the Docker kernel denied namespaces.
+ if(/creating new namespace failed|user namespaces.*disabled/i.test(log))
+  return 'NAMESPACE_ERROR_IN_ORIGINAL_WORKER_LOG';
+ if(/bwrap exited early/i.test(log))return 'WORKER_BWRAP_EARLY_EXIT_CAUSE_UNKNOWN';
+ if(/bwrap sandbox is unavailable/i.test(log))return 'WORKER_BWRAP_UNAVAILABLE_CAUSE_UNKNOWN';
+ if(/3B8_REAL_WORKER_IPC_TIMEOUT|3B8_REAL_WS_TIMEOUT/i.test(log))
+  return 'ORIGINAL_PROCESS_IPC_OR_WS_TIMEOUT';
+ return 'ORIGINAL_PROCESS_ERROR_UNCLASSIFIED';
+}
 function receipt(log,prefix) {
  if(typeof log!=='string'||log.length>1024*1024)fail('LOG_MISSING_OR_TOO_LARGE');
  const rows=log.split(/\r?\n/).filter(x=>x.startsWith(prefix));
@@ -64,38 +67,53 @@ function checkWs(x,sha) {
     x.original_frames.some(name=>['agent_complete','tool_call_request','run_model'].includes(name)))
    fail('WS_ORIGINAL_FRAME_SET');
 }
-const makeBase=(sourceSha,direct,ws)=>({
+const makeBase=(sourceSha,minimal,direct,ws,minimalReceipt)=>({
  schema:R0_SCHEMA,source_commit:sourceSha,
+ minimal_log_sha256:hash(minimal.log),
  direct_log_sha256:hash(direct.log),ws_log_sha256:hash(ws.log),
+ minimal_flags_sha256:minimalReceipt.flags_sha256,
+ minimal_probe_status:minimalReceipt.status,
+ minimal_probe_reason_code:minimalReceipt.reason_code,
  image_test_only:true,artifact_not_remote_attestation:true,
  cloudflare_deployed:false,remote_container_executed:false,
  provider_requests_measured:false,inference_authorized:false,
  grant_created:false,public_ingress_enabled:false,
  next_step_requires_separate_approval:true
 });
-export function classifyR0({sourceSha,imageSourceSha,direct,ws}) {
+export function classifyR0({sourceSha,imageSourceSha,minimal,direct,ws}) {
  if(!SHA40.test(sourceSha??'')||sourceSha!==imageSourceSha)
   fail('IMAGE_CHECKOUT_IDENTITY_MISMATCH');
- if(!direct||!ws||!Number.isInteger(direct.exitCode)||
-    !Number.isInteger(ws.exitCode)||typeof direct.log!=='string'||
+ if(!minimal||!direct||!ws||!Number.isInteger(minimal.exitCode)||
+    !Number.isInteger(direct.exitCode)||!Number.isInteger(ws.exitCode)||
+    typeof minimal.log!=='string'||typeof direct.log!=='string'||
     typeof ws.log!=='string')fail('PROBE_INPUT_INVALID');
- const base=makeBase(sourceSha,direct,ws);
+ const min=validateMinimalReceipt(receipt(minimal.log,MINIMAL_PREFIX),sourceSha);
+ const expectedMinimalExit=min.status==='MINIMAL_BWRAP_PASS'?0:2;
+ if(minimal.exitCode!==expectedMinimalExit)
+  fail('MINIMAL_PROCESS_EXIT_AND_RECEIPT_DISAGREE');
+ const base=makeBase(sourceSha,minimal,direct,ws,min);
+ if(min.status==='MINIMAL_BWRAP_BLOCKED'){
+   if(direct.exitCode!==99||direct.log.trim()!=='SKIPPED_AFTER_MINIMAL_FAILURE'||
+      ws.exitCode!==99||ws.log.trim()!=='SKIPPED_AFTER_MINIMAL_FAILURE')
+    fail('MINIMAL_DENIAL_DID_NOT_SKIP_AGENT');
+   return {...base,status:'OCI_MINIMAL_BWRAP_BLOCKED',phase:'MINIMAL_NAMESPACE',
+      cause_code:min.reason_code,evidence_scope:'LOCAL_OCI_ONLY',
+      ready_for_private_execution:false};
+ }
  if(direct.exitCode!==0){
-   // A failing OCI sandbox is an explicit BLOCK, NOT a successful test.
-   if(!SANDBOX_DENIED.some(rx=>rx.test(direct.log))||
-      ws.exitCode!==99||ws.log.trim()!=='SKIPPED_AFTER_DIRECT_FAILURE')
-    fail('DIRECT_FAILURE_NOT_PROVEN_SANDBOX');
+   if(ws.exitCode!==99||ws.log.trim()!=='SKIPPED_AFTER_DIRECT_FAILURE')
+    fail('DIRECT_FAILURE_DID_NOT_SKIP_WS');
    if(direct.log.includes(directPrefix))fail('CONTRADICTORY_DIRECT_RECEIPT');
-   return {...base,status:'OCI_SANDBOX_BLOCKED',phase:'DIRECT_PROCESS',
-     evidence_scope:'LOCAL_OCI_ONLY',ready_for_private_execution:false};
+   return {...base,status:'OCI_ORIGINAL_WORKER_BLOCKED_AFTER_MINIMAL_PASS',
+      phase:'ORIGINAL_WORKER',cause_code:processFailureCode(direct.log),
+      evidence_scope:'LOCAL_OCI_ONLY',ready_for_private_execution:false};
  }
  checkDirect(receipt(direct.log,directPrefix),sourceSha);
  if(ws.exitCode!==0){
-   if(!SANDBOX_DENIED.some(rx=>rx.test(ws.log)))
-    fail('WS_FAILURE_NOT_PROVEN_SANDBOX');
    if(ws.log.includes(wsPrefix))fail('CONTRADICTORY_WS_RECEIPT');
-   return {...base,status:'OCI_SANDBOX_BLOCKED',phase:'ORIGINAL_WEBSOCKET',
-     evidence_scope:'LOCAL_OCI_ONLY',ready_for_private_execution:false};
+   return {...base,status:'OCI_ORIGINAL_WS_BLOCKED_AFTER_MINIMAL_PASS',
+      phase:'ORIGINAL_WEBSOCKET',cause_code:processFailureCode(ws.log),
+      evidence_scope:'LOCAL_OCI_ONLY',ready_for_private_execution:false};
  }
  checkWs(receipt(ws.log,wsPrefix),sourceSha);
  return {...base,status:'LOCAL_OCI_BWRAP_AND_ORIGINAL_WS_PASS',
@@ -109,15 +127,17 @@ function parse(argv) {
  const opts={};
  for(let i=0;i<argv.length;i+=2){
   const k=argv[i],v=argv[i+1];
-  if(!['--direct-log','--direct-exit','--ws-log','--ws-exit',
-    '--source-sha','--image-sha','--output'].includes(k)||
+  if(!['--minimal-log','--minimal-exit','--direct-log','--direct-exit',
+    '--ws-log','--ws-exit','--source-sha','--image-sha','--output'].includes(k)||
      !v||opts[k])fail('INVALID_ARGS');
   opts[k]=v;
  }
- if(Object.keys(opts).length!==7)fail('MISSING_ARGS');
+ if(Object.keys(opts).length!==9)fail('MISSING_ARGS');
  const ec=s=>{if(!/^(0|[1-9][0-9]{0,2})$/.test(s))fail('BAD_EXIT_CODE');return Number(s)};
  return {
   sourceSha:opts['--source-sha'],imageSourceSha:opts['--image-sha'],
+  minimal:{exitCode:ec(readFileSync(opts['--minimal-exit'],'utf8').trim()),
+    log:readFileSync(opts['--minimal-log'],'utf8')},
   direct:{exitCode:ec(readFileSync(opts['--direct-exit'],'utf8').trim()),
     log:readFileSync(opts['--direct-log'],'utf8')},
   ws:{exitCode:ec(readFileSync(opts['--ws-exit'],'utf8').trim()),
@@ -131,6 +151,6 @@ if(process.argv[1]?.endsWith('/stage3b8r-oci-preflight.mjs')){
   const result=classifyR0(args);
   writeFileSync(output,JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});
   console.log('BUFFALO_3B8R0_RESULT='+JSON.stringify(result));
-  if(result.status==='OCI_SANDBOX_BLOCKED')process.exitCode=2;
+  if(result.status!=='LOCAL_OCI_BWRAP_AND_ORIGINAL_WS_PASS')process.exitCode=2;
  }catch(e){console.error('BUFFALO_3B8R0_INVALID',e.message);process.exitCode=3}
 }

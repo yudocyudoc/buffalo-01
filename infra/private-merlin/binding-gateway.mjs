@@ -2,9 +2,12 @@
 import {ENDPOINT,grant,requireThat,verifyClaim} from './protocol.mjs';
 import {boundedJSON} from './gateway.mjs';
 export const BINDING_TRANSPORT='binding-v2';
-export const GEMMA='@cf/google/gemma-4-26b-a4b-it';
+import {GEMMA,acceptedGemmaModel,responsePredicates,passedPredicates} from './gemma-response.mjs';
+export {GEMMA};
+export const CORRECTED_TRANSPORT='binding-v3';
+export const isBindingTransport=t=>t===BINDING_TRANSPORT||t===CORRECTED_TRANSPORT;
 export function durableStage(env,phase){
- return phase==='I'&&env.MERLIN_I_TRANSPORT===BINDING_TRANSPORT?'I-binding-v2':phase;
+ return phase==='I'&&isBindingTransport(env.MERLIN_I_TRANSPORT)?'I-'+env.MERLIN_I_TRANSPORT:phase;
 }
 const safeErrorCode=e=>{
  const code=e?.code??e?.errors?.[0]?.code;
@@ -14,15 +17,16 @@ const safeErrorCode=e=>{
 const safeStatus=e=>Number.isSafeInteger(e?.status)&&e.status>=100&&e.status<=599?e.status:null;
 export async function bindingProviderRequest(storage,env,phase,request){
  let stage='INTERCEPT',reason='INTERCEPT_FAILURE',reserved=false;
- let started=null,usage=null,finish_reason=null;
+ let started=null,usage=null,finish_reason=null,responseMeta={};
+ const transport=env.MERLIN_I_TRANSPORT;
  const note=async(status,extra={})=>{
   await storage.transaction(async tx=>{
    const s=await tx.get('run');
    if(s?.status!=='RUNNING')return;
    // A concurrent denied request must not overwrite the winning invocation.
    if(!reserved&&s.posts!==0)return;
-   await tx.put('run',{...s,provider_diagnostic:{transport:BINDING_TRANSPORT,stage,status,
-    elapsed_ms:started===null?null:Math.max(0,Date.now()-started),...extra}});
+   await tx.put('run',{...s,provider_diagnostic:{transport,stage,status,
+    elapsed_ms:started===null?null:Math.max(0,Date.now()-started),...responseMeta,...extra}});
   });
  };
  try{
@@ -33,7 +37,7 @@ export async function bindingProviderRequest(storage,env,phase,request){
   if(phase!=='I'||request.method!=='POST'||request.url!==ENDPOINT)return new Response(null,{status:403});
   stage='GRANT';reason='GRANT_OR_BINDING_DENIED';
   const g=grant(env,'I');verifyClaim(g,counter.approval);
-  requireThat(env.MERLIN_I_TRANSPORT===BINDING_TRANSPORT&&g.task_id===counter.task_id&&
+  requireThat(isBindingTransport(transport)&&g.task_id===counter.task_id&&
    g.provider_model===GEMMA&&g.max_posts===1&&g.max_input_bytes===131072&&g.max_output_tokens===2048&&
    typeof env.AI?.run==='function','BINDING_NOT_ARMED');
   stage='REQUEST';reason='INVALID_AGENT_PROMPT';
@@ -50,7 +54,7 @@ export async function bindingProviderRequest(storage,env,phase,request){
    const s=await tx.get('run');requireThat(s.status==='RUNNING'&&s.posts===0&&Date.now()<s.deadline&&Date.now()<g.expires,'POST_DENIED');
    verifyClaim(g,s.approval);
    await tx.put('run',{...s,posts:1,provider_model:GEMMA,usage:null,
-    provider_diagnostic:{transport:BINDING_TRANSPORT,stage:'BINDING_INVOKE',status:'RESERVED',request_bytes:bytes}});
+    provider_diagnostic:{transport,stage:'BINDING_INVOKE',status:'RESERVED',request_bytes:bytes}});
   });
   reserved=true;started=Date.now();stage='BINDING_INVOKE';reason='AI_BINDING_EXCEPTION';
   // The slot is spent before calling; there is no retry even if acknowledgment is ambiguous.
@@ -61,16 +65,17 @@ export async function bindingProviderRequest(storage,env,phase,request){
   usage=u&&[u.prompt_tokens,u.completion_tokens].every(n=>Number.isSafeInteger(n)&&n>=0)
    ?{prompt_tokens:u.prompt_tokens,completion_tokens:u.completion_tokens}:null;
   finish_reason=['stop','length','tool_calls','content_filter','function_call'].includes(choice?.finish_reason)?choice.finish_reason:'unknown';
+  const predicates=responsePredicates(result,g.max_output_tokens,transport===CORRECTED_TRANSPORT);
+  responseMeta={response_model:acceptedGemmaModel(result?.model)?result.model:null,predicates,
+   failed_predicates:Object.keys(predicates).filter(k=>!predicates[k]),
+   neurons:Number.isFinite(u?.neurons)&&u.neurons>=0?u.neurons:null};
   // Store known usage even for an invalid or truncated response; do not fabricate unknown usage.
   await storage.transaction(async tx=>{
    const s=await tx.get('run');if(s.status!=='RUNNING')return;
-   await tx.put('run',{...s,usage,finish_reason,provider_diagnostic:{transport:BINDING_TRANSPORT,stage,status:'RETURNED',
-    elapsed_ms:Math.max(0,Date.now()-started),request_bytes:bytes}});
+   await tx.put('run',{...s,usage,finish_reason,provider_diagnostic:{transport,stage,status:'RETURNED',
+    elapsed_ms:Math.max(0,Date.now()-started),request_bytes:bytes,...responseMeta}});
   });
-  requireThat(usage&&usage.prompt_tokens>0&&usage.completion_tokens>0&&usage.completion_tokens<=g.max_output_tokens&&
-   result?.model===GEMMA&&result.choices?.length===1&&finish_reason==='stop'&&choice.message?.role==='assistant'&&
-   !choice.message.tool_calls?.length&&!choice.message.function_call&&typeof choice.message.content==='string'&&
-   choice.message.content.trim()&&choice.message.content.length<=16000,'INCOMPLETE_OR_NON_TEXT_PROVIDER_RESPONSE');
+  requireThat(passedPredicates(predicates),'INCOMPLETE_OR_NON_TEXT_PROVIDER_RESPONSE');
   stage='COMPLETE';reason='RESPONSE_COMMIT_FAILURE';
   const current=await storage.get('run');
   requireThat(current?.status==='RUNNING'&&current.task_id===g.task_id&&Date.now()<current.deadline&&Date.now()<g.expires,'RESPONSE_AFTER_DEADLINE');
@@ -79,10 +84,10 @@ export async function bindingProviderRequest(storage,env,phase,request){
  }catch(e){
   // Persist only allowlisted stage, reason and numeric provider metadata. No raw exception,
   // prompt, authorization header or response body. Do not invent a provider HTTP status.
-  const diagnostic={reason,provider_code:safeErrorCode(e),provider_http_status:safeStatus(e)};
+  const diagnostic={...responseMeta,reason,provider_code:safeErrorCode(e),provider_http_status:safeStatus(e)};
   await note('FAILED',diagnostic).catch(()=>{});
   console.log(JSON.stringify({event:'MERLIN_NATIVE_AI_FAILURE',stage,...diagnostic,reserved}));
-  return new Response(null,{status:reserved?502:403});
+  return new Response(null,{status:reserved?(stage==='RESPONSE'&&transport===CORRECTED_TRANSPORT?422:502):403});
  }
 }
 
@@ -93,5 +98,9 @@ export async function readDurableTask(env,key){
  const lookup=stage=>env.TASKS.getByName('arena-merlin-v1-'+stage).read(key);
  const result=await lookup(primary);
  if(result!==null||key.phase!=='I')return result;
- return lookup(primary==='I'?'I-binding-v2':'I');
+ for(const stage of ['I','I-binding-v2','I-binding-v3']){
+  if(stage===primary)continue;
+  const old=await lookup(stage);if(old!==null)return old;
+ }
+ return null;
 }

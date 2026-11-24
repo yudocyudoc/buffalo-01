@@ -28,6 +28,8 @@ jobs:
           if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             merlin-private:offline > "$RUNNER_TEMP/unarmed.log" 2>&1; then exit 1; fi
           grep -F 'Error: UNARMED' "$RUNNER_TEMP/unarmed.log"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            merlin-private:offline /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-image | grep -Fx R2_IMAGE_IMPORTS_MODEL_CONFIG_VERIFIED
   private-merlin:
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -38,8 +40,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test infra/private-merlin/*.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test infra/private-merlin/*.test.mjs
       - uses: actions/checkout@v4
         with:
           repository: yudocyudoc/igc-modular

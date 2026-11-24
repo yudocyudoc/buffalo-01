@@ -35,7 +35,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          npm ci --ignore-scripts --no-audit --no-fund
           node --test infra/private-merlin/*.test.mjs
+          node infra/buffalo-origin/generate-probe-model.mjs
       - name: Verify historical R2 and unused private R before publication
         timeout-minutes: 3
         env:
@@ -106,13 +108,6 @@ jobs:
           appendFileSync(e.GITHUB_ENV,'MERLIN_REGISTRY_REF='+ref+'\n');
           writeFileSync(t+'/private-merlin-r/registry.json',JSON.stringify({source_commit:e.GITHUB_SHA,ref,config_digest:e.MERLIN_REMOTE_CONFIG,manifest_digest:digest},null,2));
           NODE
-      - name: Generate the exact development model and private configs
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund
-          node infra/buffalo-origin/generate-probe-model.mjs
-        # no provider keys and no Cloudflare credentials in this step
       - name: Prepare and dry-run exact configurations
         timeout-minutes: 8
         env:

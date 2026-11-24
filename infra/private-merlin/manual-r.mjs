@@ -32,7 +32,14 @@ async function baseline(expectNew=false){
  assert.equal(usage.usage?.instances,0);
  assert.deepEqual(apps.map(a=>a.name).sort(),[...oldApps,...(expectNew?[appName]:[])].sort());
  for(const a of apps){assert.equal(a.health?.instances?.active,0,a.name);assert.equal(a.health?.instances?.starting,0,a.name);assert.deepEqual(await api('/containers/applications/'+a.id+'/instances-v2?state=active&per_page=100'),[])}
- for(const n of oldWorkers)await privateWorker(n,n.includes('namespace-r1')?{R1_MODE:'DISABLED'}:n.includes('worker-r2')?{R2_MODE:'DISABLED'}:n.includes('origin-router')?{BUFFALO_ORIGIN_MODE:'DISABLED'}:{});
+ for(const n of oldWorkers){
+  const r1=n.includes('namespace-r1'),r2=n.includes('worker-r2'),origin=n.includes('origin-router');
+  const expect=r1?{R1_MODE:'DISABLED',R1_EXPIRES_AT:'1970-01-01T00:00:00.000Z'}:r2?{R2_MODE:'DISABLED',R2_EXPIRES_AT:'1970-01-01T00:00:00.000Z'}:origin?{BUFFALO_ORIGIN_MODE:'HANDSHAKE_ONLY_NO_AGENT_PROCESS'}:{};
+  const s=await privateWorker(n,expect);
+  const prefix=r1?'R1':'R2';
+  const expected=r1||r2?['DB',...['MODE','EXPECTED_SHA','EXPIRES_AT','IMAGE_DIGEST','CONTAINER'].map(k=>prefix+'_'+k)]:origin?['BUFFALO_CONTAINER','BUFFALO_ORIGIN_MODE','BUFFALO_ORIGIN_COMMIT_SHA','BUFFALO_ORIGIN_MODEL_SHA256']:['DB'];
+  assert.deepEqual(s.bindings.map(b=>b.name).sort(),expected.sort(),n);
+ }
  for(const [kind,n] of Object.entries(names)){
   assert.equal(workers.some(w=>w.id===n||w.name===n),expectNew,n);
   if(expectNew){
@@ -62,6 +69,7 @@ export function configurations({router,bridge,operator,ref,source,task,model,exp
  assert.match(source,/^[a-f0-9]{40}$/);assert.match(ref,new RegExp('^registry\\.cloudflare\\.com/'+ACCOUNT+'/buffalo-merlin-private-origin@sha256:[a-f0-9]{64}$'));
  assert.match(task,/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
  assert.equal(createHash('sha256').update(model).digest('hex'),MODEL);
+ assert(Buffer.byteLength(model,'utf8')<=5120,'PRIVATE_R_MODEL_VAR_TOO_LARGE');
  const disabled={router:structuredClone(router),bridge:structuredClone(bridge),operator:structuredClone(operator)};
  for(const [k,c] of Object.entries(disabled)){
   assert.equal(c.name,names[k]);assert.equal(c.workers_dev,false);assert.equal(c.preview_urls,false);assert.deepEqual(c.triggers.crons,[]);

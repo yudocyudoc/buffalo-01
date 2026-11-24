@@ -1,0 +1,50 @@
+name: Buffalo R2 original process preparation (NO deploy)
+on:
+  pull_request:
+    paths:
+      - 'infra/buffalo-r2/**'
+      - '.github/workflows/buffalo-stage3b8r2-*.yml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node --check infra/buffalo-r2/controller.mjs
+          node --test infra/buffalo-r2/*.test.mjs
+  image-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build local original process image; verify context without running AgentWorker
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          BASE="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
+          case "$BASE" in node@sha256:*) ;; *) exit 1 ;; esac
+          docker buildx build --platform linux/amd64 --load \
+            --build-arg "NODE_BASE_IMAGE=$BASE" --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            -f infra/buffalo-r2/Dockerfile -t buffalo-r2:local .
+          test "$(docker image inspect --format '{{.Config.User}}' buffalo-r2:local)" = node
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            buffalo-r2:local sh -ec 'test -f /app/agent/AgentWorker.js; test -d /app/node_modules; test ! -e /app/.env; test ! -e /app/.git'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            buffalo-r2:local /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-context | grep -Fx R2_LAUNCH_CONTEXT_VERIFIED
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges buffalo-r2:local
+          rc=$?
+          set -e
+          test "$rc" -eq 78
+          echo 'R2_LOCAL_BUILD_CONTEXT_UNARMED_ONLY'

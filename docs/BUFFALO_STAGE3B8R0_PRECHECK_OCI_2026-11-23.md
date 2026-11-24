@@ -41,3 +41,22 @@ Nunca reutilizar el claim `buffalo-probe-3b7-once` ni su flujo. El código origi
 ## Regla de cierre
 
 No declarar `3B-8/R=PASS` hasta que haya evidencia primaria de `Bridge → RPC → Durable Object → Container → WebSocketHandler → AgentWorker` desplegada y un recibo independiente de cierre del proceso. **R0 es solo una compuerta previa a R, nunca una autorización para consumir recursos.**
+
+## Addenda R0-D1 — diagnóstico mínimo separado (23/24 noviembre 2026)
+
+**Motivo:** [run 45306612826](https://github.com/yudocyudoc/buffalo-01/actions/runs/45306612826) produjo un build OCI correcto y un recibo `OCI_SANDBOX_BLOCKED` en el paso directo. El código 2 mostrado por GitHub corresponde al **clasificador**, no prueba que el `AgentWorker` original saliera con ese código. El primer recibo conservaba hashes de logs, pero **no** el error primario saneado de `bwrap`. La presencia de texto genérico `bwrap exited early` era suficiente para una clasificación excesivamente amplia. **No atribuir aún causa al kernel.**
+
+Esta revisión introduce dos fronteras independientes:
+
+1. `stage3b8r-bwrap-minimal.mjs`: ejecuta un `bwrap` real con un `/usr/bin/true` de solo lectura y los flags de aislamiento de namespace/mount necesarios; **sin importar Buffalo, crear AgentWorker, hablar con proveedores ni habilitar red**. Corre con **exactamente los mismos flags de Docker** de la sonda completa. Produce un recibo de estado y `reason_code` de una lista permitida (p. ej. `NAMESPACE_CREATION_DENIED`, `MOUNT_OPERATION_DENIED`, `PERMISSION_DENIED_UNSPECIFIED`, `BWRAP_PROCESS_FAILED_OTHER`). Conserva el SHA-256 del stderr pero **no su texto** ni rutas.
+2. El clasificador R0 requiere primero un único recibo mínimo válido. Si falla, **no se intenta Merlin** y el estado será `OCI_MINIMAL_BWRAP_BLOCKED`. Si pasa, se permite el proceso directo: un fallo posterior se distingue como `OCI_ORIGINAL_WORKER_BLOCKED_AFTER_MINIMAL_PASS` y, si falla después el protocolo WebSocket, `OCI_ORIGINAL_WS_BLOCKED_AFTER_MINIMAL_PASS`. **La advertencia genérica `bwrap exited early` ya no demuestra la causa de namespaces.**
+
+Cualquiera de los estados bloqueados conserva `ready_for_private_execution=false`, dispara CI no verde y no autoriza ninguna acción en Cloudflare. Los dos recibos originales siguen siendo obligatorios para el único PASS local. El preflight de Docker **no** equivale a comprobar aislamiento en Cloudflare Containers.
+
+### Hallazgo de seguridad adicional: fallback del WorkerSpawner original
+
+En `agent/WorkerSpawner.js`, el camino **Linux sin ejecutable `bwrap`** puede caer a un `fork` sin sandbox incluso con `ALLOW_UNSANDBOXED_FALLBACK=false`. Ese entorno está fuera de los supuestos probados en 3B-8/P. **Queda expresamente bloqueada la autorización de R real** hasta que una compuerta ejecutable del servidor rechace la falta de `bwrap` **antes de cada spawn** y evite de forma demostrable todo proceso de agente sin aislamiento (incluida la carrera de desaparición de `bwrap`). No basta con una variable de entorno ni con comprobar `bwrap --version`.
+
+**No relajar Docker con `--privileged`, `SYS_ADMIN`, `setuid` ni una ruta de fork para conseguir un resultado verde.** En caso de restricción de namespaces, hay que diagnosticar viabilidad de Cloudflare de manera independiente o decidir una arquitectura de aislamiento distinta mediante otro protocolo.
+
+**Identidad de resultados:** el primer run bloqueado sigue como observación histórica; este addendum no reescribe ni sustituye sus recibos. Cualquier resultado posterior corresponde al nuevo SHA, workflow run y recibos propios.

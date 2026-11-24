@@ -74,6 +74,7 @@ const makeBase=(sourceSha,minimal,direct,ws,minimalReceipt)=>({
  minimal_flags_sha256:minimalReceipt.flags_sha256,
  minimal_probe_status:minimalReceipt.status,
  minimal_probe_reason_code:minimalReceipt.reason_code,
+ minimal_probe_stderr_signature:minimalReceipt.stderr_signature,
  image_test_only:true,artifact_not_remote_attestation:true,
  cloudflare_deployed:false,remote_container_executed:false,
  provider_requests_measured:false,inference_authorized:false,

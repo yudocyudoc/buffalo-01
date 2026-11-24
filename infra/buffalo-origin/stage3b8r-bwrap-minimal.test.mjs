@@ -21,6 +21,7 @@ test('namespace denial is an explicit sanitized cause; raw stderr never leaves r
    'bwrap: Creating new namespace failed: Operation not permitted '+secret)});
  assert.equal(r.status,'MINIMAL_BWRAP_BLOCKED');
  assert.equal(r.reason_code,'NAMESPACE_CREATION_DENIED');
+ assert.equal(r.stderr_signature,'CREATING_NAMESPACE_FAILED');
  assert(!JSON.stringify(r).includes(secret));
  assert.match(r.stderr_sha256,/^[0-9a-f]{64}$/);
 });
@@ -49,4 +50,19 @@ test('incorrect receipt, identities and forged pass are rejected',()=>{
  ])assert.throws(()=>validateMinimalReceipt({...r,...change},commit),/3B8R0_/);
  assert.throws(()=>probeMinimal({commit:'b'.repeat(40),env,spawn:fake(0)}),
   /3B8R0_SOURCE_IDENTITY_REQUIRED/);
+});
+
+test('common bubblewrap no-permissions namespace error has specific safe signature',()=>{
+ const r=probeMinimal({commit,env,spawn:fake(1,
+  'bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.')});
+ assert.equal(r.reason_code,'NAMESPACE_CREATION_DENIED');
+ assert.equal(r.stderr_signature,'NO_PERMISSIONS_TO_CREATE_NEW_NAMESPACE');
+ assert.equal(r.status,'MINIMAL_BWRAP_BLOCKED');
+});
+test('unknown bubblewrap message is explicitly unrecognized, never fabricated',()=>{
+ const confidential='example-private-origin-secret-xyz';
+ const r=probeMinimal({commit,env,spawn:fake(1,'bwrap: unusual unknown failure '+confidential)});
+ assert.equal(r.reason_code,'BWRAP_PROCESS_FAILED_OTHER');
+ assert.equal(r.stderr_signature,'BWRAP_DIAGNOSTIC_UNRECOGNIZED');
+ assert.equal(JSON.stringify(r).includes(confidential),false);
 });

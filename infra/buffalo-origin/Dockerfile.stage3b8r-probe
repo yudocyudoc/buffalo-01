@@ -1,0 +1,22 @@
+# Stage 3B-8/R0: LOCAL OCI sandbox feasibility, never a Cloudflare deployment.
+# Build context is repository root. Base image must be supplied by immutable digest.
+ARG NODE_BASE_IMAGE
+FROM ${NODE_BASE_IMAGE}
+ARG BUFFALO_IMAGE_SOURCE_SHA
+RUN test -n "$BUFFALO_IMAGE_SOURCE_SHA" && echo "$BUFFALO_IMAGE_SOURCE_SHA" | grep -Eq '^[a-f0-9]{40}$'
+ENV NODE_ENV=production \
+    BUFFALO_IMAGE_SOURCE_SHA=${BUFFALO_IMAGE_SOURCE_SHA} \
+    ALLOW_UNSANDBOXED_FALLBACK=false
+WORKDIR /app
+# bubblewrap is required, but installing it does NOT prove nested user namespaces work.
+# Never chmod setuid, add SYS_ADMIN or run the container privileged to make it pass.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends bubblewrap ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && test -x /usr/bin/bwrap
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+COPY --chown=node:node . .
+USER node
+# Fail-closed default: there is no server and no entrypoint that can start a remote agent.
+# CI explicitly invokes a bounded offline probe command with --network none.
+CMD ["node", "-e", "console.error('STAGE3B8R0_IMAGE_NOT_DEPLOYABLE_NO_SERVER'); process.exit(78)"]

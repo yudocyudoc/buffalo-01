@@ -15,6 +15,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {WorkerSpawner,IpcWorker} from '../../agent/WorkerSpawner.js';
 import credentialProxy from '../../agent/utilities/CredentialProxy.js';
+import {shutdownOriginalWorker} from './original-merlin-shutdown.mjs';
 import {AgentConfigurationManager} from '../../agent/utilities/AgentConfigurationManager.js';
 import {groups} from '../../evals/categories/policyImplementation.js';
 
@@ -45,7 +46,7 @@ export function assertProcessProbeEnvironment({platform=process.platform,
  return true;
 }
 
-function originalCase(){
+export function originalCase(){
  const scenarios=[...new Set(groups.policyImplementation.map(x=>x.expectations?.scenario))];
  assert.equal(scenarios[0],'dialysisClinic','3B8_ORIGINAL_CASE_DRIFT');
  const same=groups.policyImplementation.filter(x=>x.expectations?.scenario===scenarios[0]);
@@ -139,9 +140,10 @@ export async function originalMerlinProcessProbe({commit}={}){
   assert(existsSync(persisted),'3B8_ORIGINAL_WORKER_MODEL_FILE_MISSING');
   assert.equal(hash(JSON.stringify(JSON.parse(readFileSync(persisted,'utf8')))),
    PINNED_MODEL_SHA,'3B8_ORIGINAL_MODEL_MUTATED');
-  childExit=await stopWorker(worker);
-  assert.equal(childExit,true,'3B8_ORIGINAL_WORKER_NOT_REAPED');
+  const shutdown=await shutdownOriginalWorker(worker);
+  childExit=true;
   worker=null;
+  assert.deepEqual(workerErrors,[],'3B8_WORKER_SHUTDOWN_ERROR');
   return Object.freeze({schema:PROCESS_SCHEMA,
    status:'ORIGINAL_MERLIN_WORKER_OFFLINE_PROVIDER_DENIED_PASS',
    checkout_commit:commit,agent:'merlin',agent_config_sha256:original.configSha,
@@ -149,7 +151,7 @@ export async function originalMerlinProcessProbe({commit}={}){
    original_worker_spawner:true,original_agent_worker:true,
    bwrap_ipc_worker:true,ipc_barriers:2,model_sync_requests:modelRequests,
    genuine_terminal_error:'CONVERSATION_ERROR',terminal_status:completion.status,
-   worker_exited:true,provider:'UNREGISTERED_DENY_ONLY',
+   worker_exited:true,...shutdown,provider:'UNREGISTERED_DENY_ONLY',
    provider_requests_measured:false,agent_model_response:false,
    model_modified:false,simulation_executed:false,grader_executed:false,
    bridge_or_container_deployed:false,execution_allowed:false});

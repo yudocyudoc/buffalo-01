@@ -1,0 +1,159 @@
+name: Buffalo R2 original Merlin process (manual, no inference)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact approved checkout SHA
+        required: true
+        type: string
+      approval:
+        description: Enter ONE_PRIVATE_ORIGINAL_MERLIN_PROCESS_NO_INFERENCE
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-r1-private-one-shot
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_PRIVATE_ORIGINAL_MERLIN_PROCESS_NO_INFERENCE' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 115
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source and offline contracts
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test infra/buffalo-r2/*.test.mjs
+      - name: Verify preapplied R2 schema and unused R2 probe and historical R1 v2 pass before publication
+        timeout-minutes: 3
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/buffalo-r2/manual.mjs preflight
+      - name: Build and inspect original process image before publication
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/buffalo-r2"
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          BASE="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
+          case "$BASE" in node@sha256:*) ;; *) exit 1 ;; esac
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
+            --build-arg "NODE_BASE_IMAGE=$BASE" --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --metadata-file "$RUNNER_TEMP/buffalo-r2/build.json" \
+            -f infra/buffalo-r2/Dockerfile -t "buffalo-original-worker-r2:$GITHUB_SHA" .
+          docker image inspect "buffalo-original-worker-r2:$GITHUB_SHA" > "$RUNNER_TEMP/r2-local-inspect.json"
+          docker image save "buffalo-original-worker-r2:$GITHUB_SHA" -o "$RUNNER_TEMP/r2-local.tar"
+          LOCAL="$(node infra/buffalo-origin/oci-config-digest.mjs "$RUNNER_TEMP/r2-local.tar")"
+          echo "R2_LOCAL_CONFIG=$LOCAL" >> "$GITHUB_ENV"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            "buffalo-original-worker-r2:$GITHUB_SHA" sh -ec 'test -x /usr/bin/bwrap; test -f /app/agent/AgentWorker.js; test -d /app/node_modules; test ! -e /app/.env; test ! -e /app/.git'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            "buffalo-original-worker-r2:$GITHUB_SHA" /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-context \
+            | grep -Fx R2_LAUNCH_CONTEXT_VERIFIED
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            "buffalo-original-worker-r2:$GITHUB_SHA" /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-image | grep -Fx R2_IMAGE_IMPORTS_MODEL_CONFIG_VERIFIED
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "buffalo-original-worker-r2:$GITHUB_SHA"
+          rc=$?
+          set -e
+          test "$rc" -eq 78
+      - name: Publish and independently pull exact image
+        timeout-minutes: 15
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_CONTAINERS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          npx --yes wrangler@4.166.0 containers push "buffalo-original-worker-r2:$GITHUB_SHA"
+          REF="registry.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID/buffalo-original-worker-r2:$GITHUB_SHA"
+          docker pull "$REF"
+          docker image inspect "$REF" > "$RUNNER_TEMP/r2-remote-inspect.json"
+          docker image save "$REF" -o "$RUNNER_TEMP/r2-remote.tar"
+          export R2_REMOTE_CONFIG="$(node infra/buffalo-origin/oci-config-digest.mjs "$RUNNER_TEMP/r2-remote.tar")"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
+          const e=process.env,t=e.RUNNER_TEMP;
+          const build=JSON.parse(readFileSync(t+'/buffalo-r2/build.json','utf8'));
+          const local=JSON.parse(readFileSync(t+'/r2-local-inspect.json','utf8'))[0];
+          const remote=JSON.parse(readFileSync(t+'/r2-remote-inspect.json','utf8'))[0];
+          const digest=build['containerimage.digest']??build['containerimage.descriptor']?.digest;
+          assert.match(digest,/^sha256:[a-f0-9]{64}$/);
+          const ref='registry.cloudflare.com/'+e.CLOUDFLARE_ACCOUNT_ID+'/buffalo-original-worker-r2@'+digest;
+          assert(remote.RepoDigests.includes(ref));
+          assert.equal(e.R2_LOCAL_CONFIG,e.R2_REMOTE_CONFIG);
+          assert.match(e.R2_LOCAL_CONFIG,/^sha256:[a-f0-9]{64}$/);
+          assert.notEqual(e.R2_LOCAL_CONFIG,digest);
+          for(const x of [local,remote]){
+            assert.equal(x.Config.User,'node');
+            assert.equal(x.Config.Labels['org.opencontainers.image.revision'],e.GITHUB_SHA);
+            assert(x.Config.Env.includes('BUFFALO_IMAGE_SOURCE_SHA='+e.GITHUB_SHA));
+          }
+          appendFileSync(e.GITHUB_ENV,'R2_REGISTRY_REF='+ref+'\n');
+          writeFileSync(t+'/buffalo-r2/registry.json',JSON.stringify({source_commit:e.GITHUB_SHA,ref,config_digest:e.R2_REMOTE_CONFIG,manifest_digest:digest},null,2));
+          NODE
+      - name: Prepare and dry-run exact private configurations
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/buffalo-r2/manual.mjs configs
+          for mode in disabled armed; do
+            npx --yes wrangler@4.166.0 deploy --dry-run --config "infra/buffalo-r2/wrangler.r2-$mode.json" --outdir "$RUNNER_TEMP/r2-dry-$mode"
+          done
+      - name: Create disabled private Worker and verify baseline
+        timeout-minutes: 5
+        id: create
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo 'cleanup=true' >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.166.0 deploy --config infra/buffalo-r2/wrangler.r2-disabled.json
+          node infra/buffalo-r2/manual.mjs disabled-check
+      - name: Arm temporary cron
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/buffalo-r2/manual.mjs arm
+          npx --yes wrangler@4.166.0 deploy --config infra/buffalo-r2/wrangler.r2-armed.json
+      - name: Observe actual D1 terminal result (PASS or BLOCK is evidence)
+        timeout-minutes: 27
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/buffalo-r2/manual.mjs observe
+      - name: Always restore disabled configuration
+        timeout-minutes: 5
+        if: ${{ always() && steps.create.outputs.cleanup == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/buffalo-r2/wrangler.r2-disabled.json
+      - name: Always verify independent cleanup
+        timeout-minutes: 18
+        if: ${{ always() && steps.create.outputs.cleanup == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/buffalo-r2/manual.mjs cleanup
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffalo-r2-manual-${{ github.run_id }}
+          path: ${{ runner.temp }}/buffalo-r2/*.json
+          retention-days: 7
+          if-no-files-found: warn

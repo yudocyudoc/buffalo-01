@@ -13,7 +13,7 @@ export const MERLIN_PROCESS_GATE_SCHEMA='BUFFALO_STAGE3B8_OFFLINE_PROCESS_GATE_V
 const LIMIT=262144;
 const SHA40=/^[a-f0-9]{40}$/;
 const SHA64=/^[a-f0-9]{64}$/;
-const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const SESSION_ID=/^sess_[0-9a-f]{32}$/;
 const initKeys=new Set(['type','clientProduct','clientVersion','mode','model','tools',
  'supportsArrays','supportsModules','supportsSubTypes']);
 const selectKeys=new Set(['type','sessionId','agentId','provider']);
@@ -54,7 +54,7 @@ export class OriginalMerlinProcessGate{
   if(parsed.error)return denied(parsed.error);
   const m=parsed.value;
   if(this.state==='AWAIT_CREATED'&&m.type==='session_created'&&
-     UUID.test(m.sessionId??'')){
+     SESSION_ID.test(m.sessionId??'')){
    this.sessionId=m.sessionId;
    this.state='AWAIT_INIT';
   }else if(this.state==='AWAIT_READY'&&m.type==='session_ready'&&

@@ -3,7 +3,7 @@ import {on,once} from 'node:events';
 import {WebSocket} from 'ws';
 
 export async function session({mode,key,model,agent,edit=false,save}){
-  const ws=new WebSocket('ws://127.0.0.1:8080/api/v1');
+  const ws=new WebSocket('ws://127.0.0.1:8793/api/v1');
   const frames=on(ws,'message',{signal:AbortSignal.timeout(45000),close:['close']});
   let id,updated=false,confirmed=false;
   const send=(type,body={})=>ws.send(JSON.stringify({type,sessionId:id,...body}));

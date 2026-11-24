@@ -17,15 +17,16 @@ export async function completion(request,ai,reserve){
   const wire={messages:body.messages,...(tools.length?{tools}:{}),max_completion_tokens:2048,
     stream:false,chat_template_kwargs:{enable_thinking:false}};
   if(new TextEncoder().encode(JSON.stringify(wire)).length>131072)return reject(413);
-  if(!await reserve())return reject(429);
+  if(!await reserve())return reject(403);
   // Charge the reservation before the binding call, including ambiguous failures.
   let result;
-  try{result=await ai.run(GEMMA,wire);}catch{return reject(502);}
+  // The original SDK retries 5xx responses. An ambiguous paid invocation is terminal.
+  try{result=await ai.run(GEMMA,wire);}catch{return reject(422);}
   const c=result?.choices?.[0], m=c?.message, u=result?.usage;
   if(!acceptedGemmaModel(result?.model) || result.choices?.length!==1 || m?.role!=='assistant' ||
     !Number.isSafeInteger(u?.prompt_tokens) || u.prompt_tokens<=0 ||
     !Number.isSafeInteger(u?.completion_tokens) || u.completion_tokens<=0 || u.completion_tokens>2048 ||
-    m.function_call)return reject(422);
+    m.function_call || (m.content!=null && (typeof m.content!=='string'||m.content.length>16000)))return reject(422);
   const calls=m.tool_calls??[];
   if(!Array.isArray(calls))return reject(422);
   if(c.finish_reason==='tool_calls'){

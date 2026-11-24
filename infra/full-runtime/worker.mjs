@@ -54,18 +54,21 @@ export class ProjectRuntime extends DurableObject {
     }
     throw Error('ORIGINAL_APP_STARTUP_TIMEOUT');
   }
+  async applicationPort(project){
+    // Coalesce concurrent cold starts. A running container stays on the fast path.
+    if(this.ready && this.ctx.container.running)return this.ctx.container.getTcpPort(8080);
+    this.starting??=this.prepare(project).finally(()=>{this.starting=null;});
+    const port=await this.starting;
+    this.ready=true;
+    return port;
+  }
   async fetch(request){
     const url=new URL(request.url);
     if(url.pathname==='/project/model')return projectModel(request,this.ctx.storage);
     if(!this.env.APP_AUTH_KEY)return new Response(null,{status:503});
-    const project=request.headers.get('x-buffalo-project');
-    // Coalesce concurrent cold starts. A running container stays on the fast path.
     let port;
-    if(this.ready && this.ctx.container.running)port=this.ctx.container.getTcpPort(8080);
-    else{
-      this.starting??=this.prepare(project).finally(()=>{this.starting=null;});
-      try{port=await this.starting;this.ready=true;}catch{this.ready=false;return new Response(null,{status:503});}
-    }
+    try{port=await this.applicationPort(request.headers.get('x-buffalo-project'));}
+    catch{this.ready=false;return new Response(null,{status:503});}
     url.protocol='http:';url.host='container';url.port='';
     const origin=new Request(url,request);origin.headers.delete('x-buffalo-project');
     return port.fetch(origin);

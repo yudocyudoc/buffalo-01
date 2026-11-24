@@ -16,17 +16,23 @@ import {session} from './test-session.mjs';
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
 const {build}=deps('esbuild');
-const script=(await build({entryPoints:['infra/full-runtime/worker.mjs'],bundle:true,write:false,
+// Only swap the platform's TCP-port acquisition for an actual local TCP listener.
+const testModule=`import {ProjectRuntime} from './infra/full-runtime/worker.mjs';
+export {FullApplication,default} from './infra/full-runtime/worker.mjs';
+export class LocalProject extends ProjectRuntime {
+  async applicationPort(){return {fetch(r){const u=new URL(r.url);u.host='127.0.0.1:8080';return fetch(new Request(u,r));}};}
+}`;
+const script=(await build({stdin:{contents:testModule,resolveDir:process.cwd()},bundle:true,write:false,
   format:'esm',target:'es2022',external:['cloudflare:workers']})).outputFiles[0].text;
 const disk=await mkdtemp(join(tmpdir(),'buffalo-full-test-'));
-const options={...convertV4MiniflareOptions({cf:false,workers:[
+const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793,workers:[
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
-    script:'export default {fetch(r,e){return e.FULL.fetch(r)}}'},
+    script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true'},durableObjects:{PROJECTS:{className:'ProjectRuntime',useSQLite:true}}}
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture'},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk};
 let mf,child,exited,calls=0;
-const key=randomUUID(),base='http://127.0.0.1:8080';
+const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
 const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...options,
   headers:{'x-buffalo-project':'example',...options.headers}});

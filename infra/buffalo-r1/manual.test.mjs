@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {configs,requireEmptySchema} from './manual.mjs';
+import {configs,requireUnusedProbe} from './manual.mjs';
+import {ID,MODE} from './receipt.mjs';
 import {ARM_WINDOW_MS,OBSERVE_GRACE_MS,CLEANUP_WAIT_MS,EXPIRED,armExpiry,validArmExpiry,observationDeadline} from './timing.mjs';
 const template=JSON.parse(readFileSync(new URL('./wrangler.template.json',import.meta.url),'utf8'));
 const sha='a'.repeat(40),ref='registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/buffalo-namespace-r1@sha256:'+'b'.repeat(64);
@@ -20,13 +21,20 @@ test('arm covers propagation and next tick; observation and cleanup separate',()
  assert(!validArmExpiry(armExpiry(now+60000),now));
  assert.equal(observationDeadline(expires),Date.parse(expires)+OBSERVE_GRACE_MS);
 });
-test('preflight rejects absent or nonempty schema',async()=>{
+test('preflight allows historical terminal evidence but blocks v2 replay and open claims',async()=>{
  let calls=0;
- await assert.rejects(requireEmptySchema(async()=>{calls++;return []}),/R1_SCHEMA_MUST_BE_PREAPPLIED_SEPARATELY/);
+ await assert.rejects(requireUnusedProbe(async()=>{calls++;return []}),/R1_SCHEMA_MUST_BE_PREAPPLIED_SEPARATELY/);
  assert.equal(calls,1);
- const read=n=>async sql=>sql.includes('sqlite_master')?[{name:'buffalo_stage3b8r1_receipts'}]:[{n}];
- await assert.rejects(requireEmptySchema(read(1)),/R1_PRIOR_EVIDENCE_NO_REPLAY/);
- await requireEmptySchema(read(0));
+ const previous={probe_id:'one-shot-private-bwrap-r1-v1',status:'R1_REMOTE_MINIMAL_BLOCKED'};
+ const read=rows=>async(sql,params)=>{
+  if(sql.includes('sqlite_master'))return [{name:'buffalo_stage3b8r1_receipts'}];
+  assert.match(sql,/WHERE probe_id=\? OR status=\?/);
+  assert.deepEqual(params,[ID,'CLAIMED']);
+  return [{n:rows.filter(row=>row.probe_id===params[0]||row.status===params[1]).length}];
+ };
+ await requireUnusedProbe(read([previous]));
+ await assert.rejects(requireUnusedProbe(read([{...previous,probe_id:ID}])),/R1_PRIOR_EVIDENCE_NO_REPLAY/);
+ await assert.rejects(requireUnusedProbe(read([{...previous,status:'CLAIMED'}])),/R1_PRIOR_EVIDENCE_NO_REPLAY/);
 });
 test('workflow requires schema before publish; no DDL; arm after disabled check',()=>{
  const w=readFileSync(new URL('../../.github/workflows/buffalo-stage3b8r1-private-manual.yml',import.meta.url),'utf8');
@@ -34,5 +42,6 @@ test('workflow requires schema before publish; no DDL; arm after disabled check'
  assert(w.indexOf('manual.mjs preflight')<w.indexOf('containers push'));
  assert(w.indexOf('manual.mjs disabled-check')<w.indexOf('manual.mjs arm'));
  assert(w.indexOf('manual.mjs arm')<w.indexOf('manual.mjs observe'));
+ assert(w.includes("inputs.approval == '"+MODE+"'"));
  assert(w.includes('timeout-minutes: 100'));assert(w.includes('timeout-minutes: 27'));assert(w.includes('timeout-minutes: 18'));
 });

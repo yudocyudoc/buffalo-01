@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
-import {ID,MODE,SCHEMA,FLAGS,boundedReceipt} from './receipt.mjs';
-import {startProbeServer} from './server.mjs';
+import {createHash} from 'node:crypto';
+import {ID,MODE,SCHEMA,FLAGS,R1_ARGS,boundedReceipt} from './receipt.mjs';
+import {probeR1,startProbeServer} from './server.mjs';
 import {runOneShot,cleanupAlarm,deny} from './one-shot.mjs';
 
 const commit='a'.repeat(40),digest='sha256:'+'b'.repeat(64),key='c'.repeat(64);
@@ -10,10 +11,40 @@ const run='c135fb33-1234-4123-8123-123456789012';
 const proof={schema:SCHEMA,probe_id:ID,source_commit:commit,run_id:run,flags_sha256:FLAGS,
  status:'MINIMAL_BWRAP_PASS',reason_code:'NONE',stderr_signature:'NONE',exit_code:0,
  stderr_sha256:'d'.repeat(64),agent_executed:false,inference_executed:false,
- raw_stderr_in_receipt:false,sandbox_relaxations:false};
+ raw_stderr_in_receipt:false,sandbox_relaxations:false,launch_context_verified:true};
 const blocked={...proof,status:'MINIMAL_BWRAP_BLOCKED',reason_code:'NAMESPACE_CREATION_DENIED',
  stderr_signature:'NO_PERMISSIONS_TO_CREATE_NEW_NAMESPACE',exit_code:1};
 const opts={sleep:async()=>{},randomUUID:()=>run,randomKey:()=>key};
+
+test('v2 binds the dynamic loader directories read-only and fingerprints its own flags',()=>{
+ assert.deepEqual(R1_ARGS.slice(0,9),['--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64']);
+ assert.equal(createHash('sha256').update(JSON.stringify(R1_ARGS)).digest('hex'),FLAGS);
+ assert.throws(()=>boundedReceipt({...proof,launch_context_verified:false},commit,run),/R1_FALSE_PASS/);
+ assert.throws(()=>boundedReceipt({...proof,probe_id:'one-shot-private-bwrap-r1-v1'},commit,run),/R1_RECEIPT_INVALID/);
+});
+
+test('v2 invokes only the launcher and distinguishes its guard from the bwrap diagnostic',{
+ skip:process.platform!=='linux'
+},()=>{
+ const env={GITHUB_SHA:commit,ALLOW_UNSANDBOXED_FALLBACK:'false'};
+ const attempt=(status,stdout,stderr)=>probeR1({commit,env,spawn:(bin,args,options)=>{
+  assert.equal(bin,'/bin/sh');assert.match(args[0],/launch-bwrap\.sh$/);
+  assert.deepEqual(args.slice(1),R1_ARGS);
+  assert.deepEqual(Object.keys(options.env).sort(),['HOME','LANG','PATH']);
+  return {status,stdout,stderr,signal:null,error:null};
+ }});
+ const convert=x=>boundedReceipt({...x,schema:SCHEMA,probe_id:ID,run_id:run},commit,run);
+ const marker='R1_BWRAP_LAUNCH_CONTEXT_VERIFIED\n';
+ assert.equal(convert(attempt(0,marker,'')).launch_context_verified,true);
+ assert.throws(()=>convert(attempt(0,'','')),/R1_FALSE_PASS/);
+ const cap=convert(attempt(1,marker,'bwrap: Unexpected capabilities but not setuid, old file caps config?\n'));
+ assert.equal(cap.reason_code,'UNEXPECTED_BWRAP_CAPABILITIES');
+ assert.equal(cap.launch_context_verified,true);
+ const guard=convert(attempt(77,'','R1_BWRAP_LAUNCH_CONTEXT_REJECTED\n'));
+ assert.equal(guard.reason_code,'BWRAP_LAUNCH_CONTEXT_FAILED');
+ assert.equal(guard.launch_context_verified,false);
+});
+
 function fixture({response=proof,throwPost=false,throwDestroy=false,dbFail=false,failUpdateOnce=false,loseUpdateAck=false,badRunningImage=false}={}){
  const events=[],rows=new Map(),data=new Map();
  let alarm=false,starts=0,posts=0,stops=0;
@@ -84,6 +115,18 @@ test('unavailable D1 blocks start before allocating resources',async()=>{
  await assert.rejects(runOneShot(f.ctx,f.env,opts),/DB unavailable/);
  assert.equal(f.counts().starts,0);
 });
+test('v2 leaves the original R1 record and DO claim intact',async()=>{
+ const f=fixture();
+ const v1='one-shot-private-bwrap-r1-v1';
+ const previous={probe_id:v1,run_id:'dcb2c513-661d-4fd3-aff1-68ffc72c0dc1',status:'R1_REMOTE_MINIMAL_BLOCKED'};
+ f.rows.set(v1,{status:previous.status,receipt:previous});
+ f.data.set('r1-namespace-claim-v1',previous);
+ await cleanupAlarm(f.ctx,f.env);
+ assert.equal(f.counts().stops,0);
+ assert.equal((await runOneShot(f.ctx,f.env,opts)).status,'R1_REMOTE_MINIMAL_PASS');
+ assert.deepEqual(f.rows.get(v1).receipt,previous);
+ assert.deepEqual(f.data.get('r1-namespace-claim-v1'),previous);
+});
 test('ambiguous POST failure is not retried; cleanup still runs',async()=>{
  const f=fixture({throwPost:true});
  assert.equal((await runOneShot(f.ctx,f.env,opts)).status,'R1_RUNTIME_FAILURE');
@@ -108,7 +151,7 @@ test('receipt rejects fabricated success, wrong source and arbitrary diagnostic'
 test('watchdog stops interrupted attempt without replaying it',async()=>{
  const f=fixture();
  const claim={probe_id:ID,run_id:run,status:'CLAIMED'};
- f.data.set('r1-namespace-claim-v1',claim);f.rows.set(ID,{status:'CLAIMED',receipt:claim});
+ f.data.set(ID,claim);f.rows.set(ID,{status:'CLAIMED',receipt:claim});
  f.ctx.container.running=true;
  await cleanupAlarm(f.ctx,f.env);
  assert.equal(f.rows.get(ID).status,'R1_INTERRUPTED_NO_RETRY');
@@ -143,12 +186,12 @@ test('expired or excessive arming window prevents any allocation',async()=>{
 test('terminal UPDATE failure: watchdog reconciles exact stored result without replay',async()=>{
  const f=fixture({failUpdateOnce:true});
  await assert.rejects(runOneShot(f.ctx,f.env,opts),/transient UPDATE failure/);
- const terminal=structuredClone(f.data.get('r1-namespace-claim-v1'));
+ const terminal=structuredClone(f.data.get(ID));
  assert.equal(terminal.status,'R1_REMOTE_MINIMAL_PASS');
  assert.equal(f.rows.get(ID).status,'CLAIMED');assert.equal(f.counts().alarm,true);
  await cleanupAlarm(f.ctx,{...f.env,R1_MODE:'DISABLED'});
  assert.deepEqual(f.rows.get(ID).receipt,terminal);
- assert.deepEqual(f.data.get('r1-namespace-claim-v1'),terminal);
+ assert.deepEqual(f.data.get(ID),terminal);
  assert.deepEqual(f.counts(),{starts:1,posts:1,stops:1,alarm:false});
  await cleanupAlarm(f.ctx,f.env);assert.deepEqual(f.rows.get(ID).receipt,terminal);
  assert.equal((await runOneShot(f.ctx,f.env,opts)).status,'R1_ALREADY_CLAIMED_NO_RETRY');
@@ -157,7 +200,7 @@ test('terminal UPDATE failure: watchdog reconciles exact stored result without r
 test('lost UPDATE acknowledgement: identical terminal is idempotent',async()=>{
  const f=fixture({loseUpdateAck:true,response:blocked});
  await assert.rejects(runOneShot(f.ctx,f.env,opts),/lost UPDATE acknowledgement/);
- const terminal=structuredClone(f.data.get('r1-namespace-claim-v1'));
+ const terminal=structuredClone(f.data.get(ID));
  assert.equal(terminal.status,'R1_REMOTE_MINIMAL_BLOCKED');
  await cleanupAlarm(f.ctx,f.env);
  assert.deepEqual(f.rows.get(ID).receipt,terminal);
@@ -166,12 +209,12 @@ test('lost UPDATE acknowledgement: identical terminal is idempotent',async()=>{
 test('conflicting terminal receipt is never overwritten',async()=>{
  const f=fixture({failUpdateOnce:true});
  await assert.rejects(runOneShot(f.ctx,f.env,opts),/transient UPDATE failure/);
- const terminal=f.data.get('r1-namespace-claim-v1');
+ const terminal=f.data.get(ID);
  const conflict={...terminal,phase:'CONFLICT'};
  f.rows.set(ID,{status:conflict.status,receipt:conflict});
  await assert.rejects(cleanupAlarm(f.ctx,f.env),/R1_D1_TERMINAL_CONFLICT_OR_MISSING/);
  assert.deepEqual(f.rows.get(ID).receipt,conflict);
- assert.deepEqual(f.data.get('r1-namespace-claim-v1'),terminal);
+ assert.deepEqual(f.data.get(ID),terminal);
  assert.equal(f.counts().posts,1);
 });
 test('watchdog recovery never promotes cleanup failure to PASS',async()=>{

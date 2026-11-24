@@ -29,10 +29,10 @@ async function oldBaseline(){
   assert.deepEqual(settings.bindings.map(b=>b.name).sort(),expected.sort());
  }
 }
-async function appsZero(allowR1){
+async function appsZero(){
  const [apps,usage]=await Promise.all([api('/containers/applications'),api('/containers/usage')]);
  assert(Array.isArray(apps));assert.equal(apps.filter(a=>a.name===OLD).length,1);
- assert(apps.every(a=>a.name===OLD||(allowR1&&a.name===NAME)),'UNEXPECTED_APPLICATION');
+ assert(apps.every(a=>a.name===OLD||a.name===NAME),'UNEXPECTED_APPLICATION');
  assert(apps.filter(a=>a.name===NAME).length<=1);
  for(const a of apps){
   assert.equal(a.health?.instances?.active,0);assert.equal(a.health?.instances?.starting,0);
@@ -40,11 +40,20 @@ async function appsZero(allowR1){
  assert.equal(usage.usage?.instances,0);
  return apps.find(a=>a.name===NAME);
 }
-export async function requireEmptySchema(read){
+export async function requireUnusedProbe(read){
  const tables=await read("SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b8r1_receipts'");
  assert.deepEqual(tables.map(t=>t.name),['buffalo_stage3b8r1_receipts'],'R1_SCHEMA_MUST_BE_PREAPPLIED_SEPARATELY');
- const rows=await read('SELECT COUNT(*) AS n FROM buffalo_stage3b8r1_receipts');
+ const rows=await read('SELECT COUNT(*) AS n FROM buffalo_stage3b8r1_receipts WHERE probe_id=? OR status=?',[ID,'CLAIMED']);
  assert.equal(rows.length,1);assert.equal(rows[0].n,0,'R1_PRIOR_EVIDENCE_NO_REPLAY');
+}
+async function requireDisabledApp(app){
+ assert(app,'R1_APPLICATION_NOT_FOUND');
+ const [sub,schedules,secrets,settings]=await Promise.all(['subdomain','schedules','secrets','settings'].map(s=>api('/workers/scripts/'+NAME+'/'+s)));
+ assert.equal(sub.enabled,false);assert.equal(sub.previews_enabled,false);assert.deepEqual(schedules.schedules,[]);assert.equal(secrets.length,0);
+ assert.deepEqual(settings.bindings.map(b=>b.name).sort(),['DB','R1_CONTAINER','R1_EXPECTED_SHA','R1_EXPIRES_AT','R1_IMAGE_DIGEST','R1_MODE'].sort());
+ assert.equal(settings.bindings.find(b=>b.name==='R1_MODE')?.text,'DISABLED');
+ const active=await api('/containers/applications/'+app.id+'/instances-v2?state=active&per_page=100');
+ assert.deepEqual(active,[]);
 }
 export function configs(template,commit,ref,expires=EXPIRED){
  assert(validCommit(commit));assert.match(ref,new RegExp('^registry\\.cloudflare\\.com/'+ACCOUNT+'/buffalo-namespace-r1@sha256:[a-f0-9]{64}$'));
@@ -62,16 +71,16 @@ async function main(){
  const phase=process.argv[2];
  assert.equal(env.CLOUDFLARE_ACCOUNT_ID,ACCOUNT);assert(env.CLOUDFLARE_API_TOKEN);
  if(phase==='preflight'){
-  await oldBaseline();await appsZero(false);
+  await oldBaseline();const app=await appsZero();
   const workers=await api('/workers/scripts');
-  assert(Array.isArray(workers));assert(!workers.some(w=>w.id===NAME||w.name===NAME),'R1_WORKER_ALREADY_EXISTS');
-  await requireEmptySchema(query);
-  save('preflight',{status:'R1_FRESH_BASELINE',schema_preapplied:true,table_empty:true});
- }else if(phase==='schema-check'){
-  await requireEmptySchema(query);
+  assert(Array.isArray(workers));
+  assert.equal(workers.some(w=>w.id===NAME||w.name===NAME),Boolean(app),'R1_PARTIAL_RESOURCES');
+  if(app)await requireDisabledApp(app);
+  await requireUnusedProbe(query);
+  save('preflight',{status:'R1_PROBE_UNUSED',probe_id:ID,schema_preapplied:true,existing_app_disabled:Boolean(app)});
  }else if(phase==='configs'||phase==='arm'){
   const template=JSON.parse(readFileSync('infra/buffalo-r1/wrangler.template.json','utf8'));
-  if(phase==='arm')await requireEmptySchema(query);
+  if(phase==='arm')await requireUnusedProbe(query);
   const expires=phase==='arm'?armExpiry():EXPIRED;
   const {disabled,armed}=configs(template,env.GITHUB_SHA,env.R1_REGISTRY_REF,expires);
   if(phase==='configs')writeFileSync('infra/buffalo-r1/wrangler.r1-disabled.json',JSON.stringify(disabled,null,2));
@@ -81,13 +90,7 @@ async function main(){
   const deadline=Date.now()+(phase==='cleanup'?CLEANUP_WAIT_MS:120000);
   for(;;){
    try{
-    const [sub,schedules,secrets,settings]=await Promise.all(['subdomain','schedules','secrets','settings'].map(s=>api('/workers/scripts/'+NAME+'/'+s)));
-    assert.equal(sub.enabled,false);assert.equal(sub.previews_enabled,false);assert.deepEqual(schedules.schedules,[]);assert.equal(secrets.length,0);
-    assert.deepEqual(settings.bindings.map(b=>b.name).sort(),['DB','R1_CONTAINER','R1_EXPECTED_SHA','R1_EXPIRES_AT','R1_IMAGE_DIGEST','R1_MODE'].sort());
-    assert.equal(settings.bindings.find(b=>b.name==='R1_MODE')?.text,'DISABLED');
-    await oldBaseline();const app=await appsZero(true);assert(app);
-    const active=await api('/containers/applications/'+app.id+'/instances-v2?state=active&per_page=100');
-    assert.deepEqual(active,[]);
+    await oldBaseline();const app=await appsZero();await requireDisabledApp(app);
     save(phase,{status:'ZERO_ACTIVE_AND_DISABLED',application_id:app.id});break;
    }catch(e){if(Date.now()>=deadline)throw e;await pause(5000)}
   }

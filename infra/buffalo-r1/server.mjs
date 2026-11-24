@@ -1,12 +1,24 @@
 import {createServer} from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
-import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {probeMinimal} from '../buffalo-origin/stage3b8r-bwrap-minimal.mjs';
-import {ID,MODE,SCHEMA,validKey,validRun,validCommit,boundedReceipt} from './receipt.mjs';
+import {ID,MODE,SCHEMA,R1_ARGS,validKey,validRun,validCommit,boundedReceipt} from './receipt.mjs';
+
+const launcher=fileURLToPath(new URL('./launch-bwrap.sh',import.meta.url));
+export function probeR1({commit,env,spawn=spawnSync}){
+ let verified=false;
+ const result=probeMinimal({commit,env,args:R1_ARGS,spawn:(_bin,args,options)=>{
+  const child=spawn('/bin/sh',[launcher,...args],options);
+  verified=child.stdout==='R1_BWRAP_LAUNCH_CONTEXT_VERIFIED\n';
+  return child;
+ }});
+ return {...result,launch_context_verified:verified};
+}
 
 // The image source SHA is baked into the OCI image. The controller passes
 // expected identity separately. It cannot override the baked variable.
-export function startProbeServer({env=process.env,probe=probeMinimal,port=8080,host='0.0.0.0'}={}){
+export function startProbeServer({env=process.env,probe=probeR1,port=8080,host='0.0.0.0'}={}){
  const commit=env.BUFFALO_IMAGE_SOURCE_SHA,run=env.R1_RUN_ID,key=env.R1_KEY;
  if(env.R1_MODE!==MODE||!validCommit(commit)||commit!==env.R1_EXPECTED_SHA||
     !validRun(run)||!validKey(key)||env.ALLOW_UNSANDBOXED_FALLBACK!=='false')

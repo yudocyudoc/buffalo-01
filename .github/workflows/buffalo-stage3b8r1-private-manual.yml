@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       approval:
-        description: Enter ONE_PRIVATE_NAMESPACE_PROBE_NO_AGENT_NO_INFERENCE
+        description: Enter ONE_PRIVATE_NAMESPACE_PROBE_V2_NO_AGENT_NO_INFERENCE
         required: true
         type: string
 permissions:
@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   probe:
-    if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_PRIVATE_NAMESPACE_PROBE_NO_AGENT_NO_INFERENCE' && github.run_attempt == 1 }}
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_PRIVATE_NAMESPACE_PROBE_V2_NO_AGENT_NO_INFERENCE' && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 100
     env:
@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node --test infra/buffalo-r1/*.test.mjs infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs
-      - name: Require preapplied empty R1 schema BEFORE publication
+      - name: Verify preapplied R1 schema and unused v2 probe before publication
         timeout-minutes: 3
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
@@ -60,6 +60,9 @@ jobs:
           echo "R1_LOCAL_CONFIG=$LOCAL" >> "$GITHUB_ENV"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             "buffalo-namespace-r1:$GITHUB_SHA" sh -ec 'test -x /usr/bin/bwrap; test ! -e /app/agent; test ! -e /app/node_modules'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            "buffalo-namespace-r1:$GITHUB_SHA" /bin/sh ./launch-bwrap.sh --version \
+            | grep -Fx R1_BWRAP_LAUNCH_CONTEXT_VERIFIED
           set +e
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "buffalo-namespace-r1:$GITHUB_SHA"
           rc=$?

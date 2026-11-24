@@ -61,7 +61,7 @@ export class OriginalMerlinProcessGate{
      m.sessionId===this.sessionId){
    this.state='READY_FOR_SELECT';
   }else if(this.state==='AWAIT_SELECTED'&&m.type==='agent_selected'&&
-     m.sessionId===this.sessionId&&m.agentId==='merlin'&&m.currentProvider==='cloudflare'){
+     m.sessionId===this.sessionId&&m.agentId==='merlin'&&m.currentProvider==='anthropic'){
    this.state='SELECTED_NO_CHAT';
   }else if(this.state==='SELECTED_NO_CHAT'&&m.type==='agent_text'&&
      m.sessionId===this.sessionId&&m.isThinking===false&&
@@ -94,7 +94,7 @@ export class OriginalMerlinProcessGate{
   }
   if(m.type==='select_agent'&&this.state==='READY_FOR_SELECT'){
    if(Object.keys(m).some(k=>!selectKeys.has(k))||
-      m.sessionId!==this.sessionId||m.agentId!=='merlin'||m.provider!=='cloudflare')
+      m.sessionId!==this.sessionId||m.agentId!=='merlin'||m.provider!=='anthropic')
     return denied('AGENT_SELECTION_NOT_AUTHORIZED');
    this.state='AWAIT_SELECTED';this.inbound++;
    return allowed(frame);

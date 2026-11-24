@@ -14,11 +14,11 @@ const oldWorkers=['buffalo-private-origin-router-lab','buffalo-original-ws-bridg
 const folder='infra/private-merlin/',out=process.env.RUNNER_TEMP+'/private-merlin-r';
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const save=(name,x)=>{mkdirSync(out,{recursive:true});writeFileSync(out+'/'+name+'.json',JSON.stringify(x,null,2)+'\n')};
-async function api(path,method='GET',body){
+export async function api(path,method='GET',body){
  const r=await fetch(root+path,{method,headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000)});
  assert(r.ok,'CF_HTTP_'+r.status+' '+path);const x=await r.json();assert.equal(x.success,true);return x.result;
 }
-async function query(sql,params=[]){
+export async function query(sql,params=[]){
  const x=await api('/d1/database/'+DB+'/query','POST',{sql,params});assert.equal(x[0]?.success,true);return x[0].results;
 }
 async function privateWorker(name,expect){
@@ -27,7 +27,7 @@ async function privateWorker(name,expect){
  for(const [k,v] of Object.entries(expect))assert.equal(settings.bindings.find(b=>b.name===k)?.text,v,name+' '+k);
  return settings;
 }
-async function baseline(expectNew=false){
+export async function baseline(expectNew=false){
  const [apps,usage,workers]=await Promise.all([api('/containers/applications'),api('/containers/usage'),api('/workers/scripts')]);
  assert.equal(usage.usage?.instances,0);
  assert.deepEqual(apps.map(a=>a.name).sort(),[...oldApps,...(expectNew?[appName]:[])].sort());

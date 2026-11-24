@@ -6,6 +6,7 @@ on:
       - 'agent/**'
       - '.github/workflows/private-merlin-offline.yml'
       - '.github/workflows/private-merlin-r-manual.yml'
+      - '.github/workflows/private-merlin-i-manual.yml'
 permissions:
   contents: read
 jobs:
@@ -67,4 +68,5 @@ jobs:
             mount --bind "$hosts" /etc/hosts
             runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs R
             runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs I
+            runuser -u runner -- env MERLIN_TEST_MODEL=@cf/google/gemma-4-26b-a4b-it "$MERLIN_NODE" infra/private-merlin/offline-native.mjs I
             runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-arena.mjs'

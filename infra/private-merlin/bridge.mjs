@@ -1,5 +1,6 @@
 import {DurableObject,WorkerEntrypoint} from 'cloudflare:workers';
 import {checkTaskKey} from './protocol.mjs';
+import {durableStage,readDurableTask} from './binding-gateway.mjs';
 import {enqueue,readTask,runTask} from './task.mjs';
 
 export class MerlinTask extends DurableObject {
@@ -12,9 +13,12 @@ export class ArenaMerlin extends WorkerEntrypoint {
   #task(key){
     checkTaskKey(key);
     // One durable attempt per protocol stage, including after a config redeploy.
-    return this.env.TASKS.getByName('arena-merlin-v1-'+key.phase);
+    return this.env.TASKS.getByName('arena-merlin-v1-'+durableStage(this.env,key.phase));
   }
   submit(input){return this.#task(input).submit(input);}
-  read(key){return this.#task(key).read(key);}
+  read(key){
+    checkTaskKey(key);
+    return readDurableTask(this.env,key);
+  }
 }
 export default {fetch:()=>new Response(null,{status:404})};

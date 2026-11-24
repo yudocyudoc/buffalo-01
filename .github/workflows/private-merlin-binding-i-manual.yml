@@ -1,0 +1,119 @@
+name: Buffalo 3B-8/I native Workers AI binding Gemma (manual, one inference)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact approved orchestration checkout SHA (image remains the R SHA)
+        required: true
+        type: string
+      approval:
+        description: Enter ONE_PRIVATE_ARENA_MERLIN_I_GEMMA_BINDING_ONE_POST
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-r1-private-one-shot
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_PRIVATE_ARENA_MERLIN_I_GEMMA_BINDING_ONE_POST' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unchanged R runtime and exact source
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code a09ab52d832b84efbe6b8e522e85d32dcde6bc1a HEAD -- agent config.js package.json package-lock.json infra/private-merlin/task.mjs infra/private-merlin/socket.mjs infra/private-merlin/protocol.mjs infra/private-merlin/gateway.mjs infra/private-merlin/provider.mjs infra/private-merlin/origin.mjs infra/private-merlin/Dockerfile infra/private-merlin/wrangler.router.template.json infra/private-merlin/wrangler.bridge.jsonc infra/private-merlin/wrangler.r-operator.template.json infra/private-merlin/r-operator.mjs
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test infra/private-merlin/*.test.mjs
+          node infra/buffalo-origin/generate-probe-model.mjs
+      - name: Verify exact R PASS, preserved I failure, unused binding I and disabled infrastructure
+        timeout-minutes: 3
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/private-merlin/manual-binding-i.mjs preflight
+      - name: Dry-run exact private configs without changing the R image
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/private-merlin/manual-binding-i.mjs configs
+          for kind in router bridge operator; do
+            for mode in disabled armed; do
+              npx --yes wrangler@4.166.0 deploy --dry-run --config "infra/private-merlin/wrangler.binding-i-$kind-$mode.json" --outdir "$RUNNER_TEMP/i-dry-$kind-$mode"
+            done
+          done
+      - name: Arm I grant on router only
+        id: arm
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/private-merlin/manual-binding-i.mjs arm
+          echo 'cleanup=true' >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.166.0 deploy --config infra/private-merlin/wrangler.binding-i-router-armed.json
+      - name: Verify native AI binding only on router and no secret
+        timeout-minutes: 3
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/private-merlin/manual-binding-i.mjs binding-check
+      - name: Arm bridge and activate private operator cron last
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          for kind in bridge operator; do
+            npx --yes wrangler@4.166.0 deploy --config "infra/private-merlin/wrangler.binding-i-$kind-armed.json"
+          done
+      - name: Read real I terminal receipt and reported usage
+        timeout-minutes: 27
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/private-merlin/manual-binding-i.mjs observe
+      - name: Always restore R operator disabled
+        if: ${{ always() && steps.arm.outputs.cleanup == 'true' }}
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/private-merlin/wrangler.binding-i-operator-disabled.json
+      - name: Always disarm bridge
+        if: ${{ always() && steps.arm.outputs.cleanup == 'true' }}
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/private-merlin/wrangler.binding-i-bridge-disabled.json
+      - name: Always disarm router
+        if: ${{ always() && steps.arm.outputs.cleanup == 'true' }}
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/private-merlin/wrangler.binding-i-router-disabled.json
+      - name: Always verify zero active containers, grants and AI binding
+        if: ${{ always() && steps.arm.outputs.cleanup == 'true' }}
+        timeout-minutes: 18
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/private-merlin/manual-binding-i.mjs cleanup
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: private-merlin-binding-i-manual-${{ github.run_id }}
+          path: ${{ runner.temp }}/private-merlin-binding-i/*.json
+          retention-days: 7
+          if-no-files-found: warn

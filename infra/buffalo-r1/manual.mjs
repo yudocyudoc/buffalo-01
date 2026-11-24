@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {ID,MODE,boundedReceipt,validCommit} from './receipt.mjs';
+import {EXPIRED,armExpiry,observationDeadline,CLEANUP_WAIT_MS} from './timing.mjs';
 const NAME='buffalo-namespace-r1-private-lab',OLD='buffalo-private-origin-lab';
 const ACCOUNT='e0cb52526a69c0f48f001901a5b9a640',DB='d1e23807-b076-4c36-8785-7b423fc41614';
 const root='https://api.cloudflare.com/client/v4/accounts/'+ACCOUNT;
@@ -39,7 +40,13 @@ async function appsZero(allowR1){
  assert.equal(usage.usage?.instances,0);
  return apps.find(a=>a.name===NAME);
 }
-export function configs(template,commit,ref,expires){
+export async function requireEmptySchema(read){
+ const tables=await read("SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b8r1_receipts'");
+ assert.deepEqual(tables.map(t=>t.name),['buffalo_stage3b8r1_receipts'],'R1_SCHEMA_MUST_BE_PREAPPLIED_SEPARATELY');
+ const rows=await read('SELECT COUNT(*) AS n FROM buffalo_stage3b8r1_receipts');
+ assert.equal(rows.length,1);assert.equal(rows[0].n,0,'R1_PRIOR_EVIDENCE_NO_REPLAY');
+}
+export function configs(template,commit,ref,expires=EXPIRED){
  assert(validCommit(commit));assert.match(ref,new RegExp('^registry\\.cloudflare\\.com/'+ACCOUNT+'/buffalo-namespace-r1@sha256:[a-f0-9]{64}$'));
  assert(Number.isFinite(Date.parse(expires)));
  assert.equal(template.name,NAME);assert.equal(template.vars.R1_MODE,'DISABLED');
@@ -47,8 +54,8 @@ export function configs(template,commit,ref,expires){
  assert.deepEqual(template.triggers.crons,[]);assert(!template.routes&&!template.services&&!template.ai);
  const disabled=structuredClone(template);
  disabled.containers[0].images.base.image=ref;
- disabled.vars={R1_MODE:'DISABLED',R1_EXPECTED_SHA:commit,R1_IMAGE_DIGEST:ref.split('@')[1],R1_EXPIRES_AT:expires};
- const armed=structuredClone(disabled);armed.vars.R1_MODE=MODE;armed.triggers.crons=['* * * * *'];
+ disabled.vars={R1_MODE:'DISABLED',R1_EXPECTED_SHA:commit,R1_IMAGE_DIGEST:ref.split('@')[1],R1_EXPIRES_AT:EXPIRED};
+ const armed=structuredClone(disabled);armed.vars.R1_MODE=MODE;armed.vars.R1_EXPIRES_AT=expires;armed.triggers.crons=['* * * * *'];
  return {disabled,armed};
 }
 async function main(){
@@ -58,17 +65,20 @@ async function main(){
   await oldBaseline();await appsZero(false);
   const workers=await api('/workers/scripts');
   assert(Array.isArray(workers));assert(!workers.some(w=>w.id===NAME||w.name===NAME),'R1_WORKER_ALREADY_EXISTS');
-  const tables=await query("SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b8r1_receipts'");
-  if(tables.length)assert.equal((await query('SELECT COUNT(*) AS n FROM buffalo_stage3b8r1_receipts'))[0].n,0);
-  save('preflight',{status:'R1_FRESH_BASELINE',table_exists:tables.length===1});
+  await requireEmptySchema(query);
+  save('preflight',{status:'R1_FRESH_BASELINE',schema_preapplied:true,table_empty:true});
  }else if(phase==='schema-check'){
-  assert.equal((await query('SELECT COUNT(*) AS n FROM buffalo_stage3b8r1_receipts'))[0].n,0);
- }else if(phase==='configs'){
+  await requireEmptySchema(query);
+ }else if(phase==='configs'||phase==='arm'){
   const template=JSON.parse(readFileSync('infra/buffalo-r1/wrangler.template.json','utf8'));
-  const {disabled,armed}=configs(template,env.GITHUB_SHA,env.R1_REGISTRY_REF,new Date(Date.now()+12*60000).toISOString());
-  for(const [name,x] of Object.entries({disabled,armed}))writeFileSync('infra/buffalo-r1/wrangler.r1-'+name+'.json',JSON.stringify(x,null,2));
+  if(phase==='arm')await requireEmptySchema(query);
+  const expires=phase==='arm'?armExpiry():EXPIRED;
+  const {disabled,armed}=configs(template,env.GITHUB_SHA,env.R1_REGISTRY_REF,expires);
+  if(phase==='configs')writeFileSync('infra/buffalo-r1/wrangler.r1-disabled.json',JSON.stringify(disabled,null,2));
+  writeFileSync('infra/buffalo-r1/wrangler.r1-armed.json',JSON.stringify(armed,null,2));
+  if(phase==='arm')save('arm-window',{expires_at:expires,observation_deadline:new Date(observationDeadline(expires)).toISOString()});
  }else if(phase==='disabled-check'||phase==='cleanup'){
-  const deadline=Date.now()+120000;
+  const deadline=Date.now()+(phase==='cleanup'?CLEANUP_WAIT_MS:120000);
   for(;;){
    try{
     const [sub,schedules,secrets,settings]=await Promise.all(['subdomain','schedules','secrets','settings'].map(s=>api('/workers/scripts/'+NAME+'/'+s)));
@@ -82,7 +92,8 @@ async function main(){
    }catch(e){if(Date.now()>=deadline)throw e;await pause(5000)}
   }
  }else if(phase==='observe'){
-  const deadline=Date.now()+10*60000;
+  const armed=JSON.parse(readFileSync('infra/buffalo-r1/wrangler.r1-armed.json','utf8'));
+  const deadline=observationDeadline(armed.vars.R1_EXPIRES_AT);
   while(Date.now()<deadline){
    const rows=await query('SELECT status,receipt_json FROM buffalo_stage3b8r1_receipts WHERE probe_id=?',[ID]);
    if(rows.length===1&&rows[0].status!=='CLAIMED'){

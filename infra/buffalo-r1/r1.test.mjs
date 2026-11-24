@@ -14,7 +14,7 @@ const proof={schema:SCHEMA,probe_id:ID,source_commit:commit,run_id:run,flags_sha
 const blocked={...proof,status:'MINIMAL_BWRAP_BLOCKED',reason_code:'NAMESPACE_CREATION_DENIED',
  stderr_signature:'NO_PERMISSIONS_TO_CREATE_NEW_NAMESPACE',exit_code:1};
 const opts={sleep:async()=>{},randomUUID:()=>run,randomKey:()=>key};
-function fixture({response=proof,throwPost=false,throwDestroy=false,dbFail=false,badRunningImage=false}={}){
+function fixture({response=proof,throwPost=false,throwDestroy=false,dbFail=false,failUpdateOnce=false,loseUpdateAck=false,badRunningImage=false}={}){
  const events=[],rows=new Map(),data=new Map();
  let alarm=false,starts=0,posts=0,stops=0;
  const storage={get:async k=>data.get(k),put:async(k,v)=>{data.set(k,v);events.push('storage:'+v.status)},
@@ -33,14 +33,18 @@ function fixture({response=proof,throwPost=false,throwDestroy=false,dbFail=false
    return Response.json(response);
   }}},
   async destroy(){stops++;events.push('destroy');if(throwDestroy)throw Error('not stopped');this.running=false}};
- const DB={prepare(sql){return {bind(...args){return {async run(){
+ const DB={prepare(sql){return {bind(...args){return {async first(){
+  const row=rows.get(args[0]);return row?{run_id:row.receipt.run_id,status:row.status,receipt_json:JSON.stringify(row.receipt)}:null;
+ },async run(){
   if(dbFail)throw Error('DB unavailable');
   if(sql.startsWith('INSERT')){
    if(rows.has(args[0]))throw Error('duplicate');
    rows.set(args[0],{status:args[2],receipt:JSON.parse(args[3])});events.push('d1:CLAIMED');
   }else{
+   if(failUpdateOnce){failUpdateOnce=false;throw Error('transient UPDATE failure')}
    const row=rows.get(args[2]);if(!row||row.status!==args[4]||row.receipt.run_id!==args[3])return {meta:{changes:0}};
    rows.set(args[2],{status:args[0],receipt:JSON.parse(args[1])});events.push('d1:'+args[0]);
+   if(loseUpdateAck){loseUpdateAck=false;throw Error('lost UPDATE acknowledgement')}
   }
   return {meta:{changes:1}};
  }}}}}};
@@ -131,7 +135,51 @@ test('real loopback HTTP rejects unauthenticated requests and replay; mocked pro
 });
 
 test('expired or excessive arming window prevents any allocation',async()=>{
- const f=fixture();for(const ms of [-1000,16*60000]){
+ const f=fixture();for(const ms of [-1000,23*60000]){
  assert.equal((await runOneShot(f.ctx,{...f.env,R1_EXPIRES_AT:new Date(Date.now()+ms).toISOString()},opts)).status,'R1_DISABLED');
  }assert.equal(f.counts().starts,0);
+});
+
+test('terminal UPDATE failure: watchdog reconciles exact stored result without replay',async()=>{
+ const f=fixture({failUpdateOnce:true});
+ await assert.rejects(runOneShot(f.ctx,f.env,opts),/transient UPDATE failure/);
+ const terminal=structuredClone(f.data.get('r1-namespace-claim-v1'));
+ assert.equal(terminal.status,'R1_REMOTE_MINIMAL_PASS');
+ assert.equal(f.rows.get(ID).status,'CLAIMED');assert.equal(f.counts().alarm,true);
+ await cleanupAlarm(f.ctx,{...f.env,R1_MODE:'DISABLED'});
+ assert.deepEqual(f.rows.get(ID).receipt,terminal);
+ assert.deepEqual(f.data.get('r1-namespace-claim-v1'),terminal);
+ assert.deepEqual(f.counts(),{starts:1,posts:1,stops:1,alarm:false});
+ await cleanupAlarm(f.ctx,f.env);assert.deepEqual(f.rows.get(ID).receipt,terminal);
+ assert.equal((await runOneShot(f.ctx,f.env,opts)).status,'R1_ALREADY_CLAIMED_NO_RETRY');
+ assert.equal(f.counts().posts,1);
+});
+test('lost UPDATE acknowledgement: identical terminal is idempotent',async()=>{
+ const f=fixture({loseUpdateAck:true,response:blocked});
+ await assert.rejects(runOneShot(f.ctx,f.env,opts),/lost UPDATE acknowledgement/);
+ const terminal=structuredClone(f.data.get('r1-namespace-claim-v1'));
+ assert.equal(terminal.status,'R1_REMOTE_MINIMAL_BLOCKED');
+ await cleanupAlarm(f.ctx,f.env);
+ assert.deepEqual(f.rows.get(ID).receipt,terminal);
+ assert.deepEqual(f.counts(),{starts:1,posts:1,stops:1,alarm:false});
+});
+test('conflicting terminal receipt is never overwritten',async()=>{
+ const f=fixture({failUpdateOnce:true});
+ await assert.rejects(runOneShot(f.ctx,f.env,opts),/transient UPDATE failure/);
+ const terminal=f.data.get('r1-namespace-claim-v1');
+ const conflict={...terminal,phase:'CONFLICT'};
+ f.rows.set(ID,{status:conflict.status,receipt:conflict});
+ await assert.rejects(cleanupAlarm(f.ctx,f.env),/R1_D1_TERMINAL_CONFLICT_OR_MISSING/);
+ assert.deepEqual(f.rows.get(ID).receipt,conflict);
+ assert.deepEqual(f.data.get('r1-namespace-claim-v1'),terminal);
+ assert.equal(f.counts().posts,1);
+});
+test('watchdog recovery never promotes cleanup failure to PASS',async()=>{
+ const f=fixture({throwDestroy:true});
+ const terminal=await runOneShot(f.ctx,f.env,opts);
+ f.ctx.container.destroy=async()=>{f.ctx.container.running=false};
+ await cleanupAlarm(f.ctx,f.env);
+ assert.equal(terminal.status,'R1_CLEANUP_UNCONFIRMED');
+ assert.deepEqual(f.rows.get(ID).receipt,terminal);
+ assert.equal(f.counts().alarm,false);assert.equal(f.counts().posts,1);
 });

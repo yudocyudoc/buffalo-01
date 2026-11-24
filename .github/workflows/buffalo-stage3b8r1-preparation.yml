@@ -4,6 +4,7 @@ on:
     paths:
       - 'infra/buffalo-r1/**'
       - '.github/workflows/buffalo-stage3b8r1-preparation.yml'
+      - '.github/workflows/buffalo-stage3b8r1-private-manual.yml'
       - 'infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs'
 permissions:
   contents: read
@@ -21,7 +22,7 @@ jobs:
       - name: Test R1 contracts (mock Container, actual loopback HTTP)
         run: |
           node --check infra/buffalo-r1/controller.mjs
-          node --test infra/buffalo-r1/r1.test.mjs
+          node --test infra/buffalo-r1/*.test.mjs
           node --test infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs
       - name: Verify default disabled configuration
         run: |

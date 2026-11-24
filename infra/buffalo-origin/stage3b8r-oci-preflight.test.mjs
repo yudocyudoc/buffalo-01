@@ -10,7 +10,7 @@ const model='57fed6310be45c10c263aecb796eeb72f993b318c5bc770013ff35e014cb4f39';
 const goodMin={
  schema:MINIMAL_SCHEMA,source_commit:sha,
  flags_sha256:hash(JSON.stringify(MINIMAL_ARGS)),
- status:'MINIMAL_BWRAP_PASS',reason_code:'NONE',
+ status:'MINIMAL_BWRAP_PASS',reason_code:'NONE',stderr_signature:'NONE',
  exit_code:0,stderr_sha256:hash(''),
  network_disabled:true,sandbox_relaxations:false,agent_executed:false,
  inference_executed:false,raw_stderr_in_receipt:false
@@ -54,12 +54,13 @@ test('genuine two-process PASS also requires separate minimal bwrap PASS',()=>{
 });
 test('minimal kernel namespace denial blocks agent and WS, records exact code',()=>{
  const r=mk(direct,ws,{...goodMin,status:'MINIMAL_BWRAP_BLOCKED',
-  reason_code:'NAMESPACE_CREATION_DENIED',exit_code:1});
+  reason_code:'NAMESPACE_CREATION_DENIED',stderr_signature:'CREATING_NAMESPACE_FAILED',exit_code:1});
  r.direct={exitCode:99,log:'SKIPPED_AFTER_MINIMAL_FAILURE\n'};
  r.ws={exitCode:99,log:'SKIPPED_AFTER_MINIMAL_FAILURE\n'};
  const x=classifyR0(r);
  assert.equal(x.status,'OCI_MINIMAL_BWRAP_BLOCKED');
  assert.equal(x.cause_code,'NAMESPACE_CREATION_DENIED');
+ assert.equal(x.minimal_probe_stderr_signature,'CREATING_NAMESPACE_FAILED');
  assert.equal(x.ready_for_private_execution,false);
  assert.equal(x.phase,'MINIMAL_NAMESPACE');
 });
@@ -126,7 +127,7 @@ test('cannot skip real probes after minimal PASS or run after minimal DENY',()=>
  r.direct={exitCode:99,log:'SKIPPED_AFTER_MINIMAL_FAILURE\n'};
  r.ws={exitCode:99,log:'SKIPPED_AFTER_MINIMAL_FAILURE\n'};
  assert.throws(()=>classifyR0(r),/3B8R0_DIRECT_FAILURE_DID_NOT_SKIP_WS/);
- const denied={...goodMin,status:'MINIMAL_BWRAP_BLOCKED',reason_code:'PERMISSION_DENIED_UNSPECIFIED',exit_code:1};
+ const denied={...goodMin,status:'MINIMAL_BWRAP_BLOCKED',reason_code:'PERMISSION_DENIED_UNSPECIFIED',stderr_signature:'OPERATION_NOT_PERMITTED',exit_code:1};
  r=mk(direct,ws,denied);
  assert.throws(()=>classifyR0(r),/3B8R0_MINIMAL_DENIAL_DID_NOT_SKIP_AGENT/);
 });

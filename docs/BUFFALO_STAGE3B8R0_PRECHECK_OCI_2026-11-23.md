@@ -60,3 +60,20 @@ En `agent/WorkerSpawner.js`, el camino **Linux sin ejecutable `bwrap`** puede ca
 **No relajar Docker con `--privileged`, `SYS_ADMIN`, `setuid` ni una ruta de fork para conseguir un resultado verde.** En caso de restricción de namespaces, hay que diagnosticar viabilidad de Cloudflare de manera independiente o decidir una arquitectura de aislamiento distinta mediante otro protocolo.
 
 **Identidad de resultados:** el primer run bloqueado sigue como observación histórica; este addendum no reescribe ni sustituye sus recibos. Cualquier resultado posterior corresponde al nuevo SHA, workflow run y recibos propios.
+
+## Addenda R0-D2 — confirmación del bloqueo de namespace (24 noviembre 2026 UTC)
+
+**Run nuevo:** [45310592177](https://github.com/yudocyudoc/buffalo-01/actions/runs/45310592177) (head de PR probada por GitHub como merge sintético `1ad5c0b065689f5706466138a621369d4e9b9ee4`). `pure-r0=success`; el Docker OCI se construyó; el job `local-oci=failure` por **bloqueo de seguridad esperado**, no por fallos de tests de lógica.
+
+**Prueba primaria:** `stage3b8r-bwrap-minimal.mjs` ejecutó la invocación mínima de `bwrap` con los mismos flags de Docker (`--network none`, rootfs de solo lectura, `--cap-drop ALL`, `no-new-privileges`, `USER node`, tmpfs limitado). El subproceso `bwrap` terminó con **código 1** y entregó:
+
+- `status=MINIMAL_BWRAP_BLOCKED`;
+- `reason_code=NAMESPACE_CREATION_DENIED`;
+- `stderr_signature=NO_PERMISSIONS_TO_CREATE_NEW_NAMESPACE` (firma saneada de texto propio de bubblewrap, no stderr bruto);
+- `stderr_sha256=f584d723d6016799815da1fe797c1cb4d40b556ab350e3d7b78d3d12d7febf46`, **idéntico** al recibido en el run anterior 45310187713, que aún clasificaba la frase como `BWRAP_PROCESS_FAILED_OTHER`.
+
+**Cierre epistemológico:** este error es del intento **mínimo de crear namespace bajo Docker local del runner**, sin código Buffalo. Su causa observable es denegación de permisos de creación de namespace en ese entorno específico. No demuestra que el `AgentWorker` original tenga un defecto, ni que Cloudflare Containers aplique exactamente los mismos controles. La sonda directa del agente y el WebSocket **se omitieron deliberadamente**, con `ready_for_private_execution=false`.
+
+[Artifact de dos recibos y hashes](https://github.com/yudocyudoc/buffalo-01/actions/runs/45310592177/artifacts/14883286720), ZIP SHA-256 `23ba7f44dc227dddcb2469ac93f8c11dbfdf22847a19c5fdb06b983a5cfb883e` (retención temporal de CI). GitHub corroboró la publicación y digest del ZIP; no se afirma inspección independiente de los bytes descargados.
+
+**Decisión:** mantener PR #67 abierto como Draft, y **3B-8/R bloqueado**. No elevar privilegios, no permitir `fork` sin aislamiento, no reutilizar 3B-7, no activar cron, Container, D1 ni grants. El siguiente experimento remoto, si se autoriza después, debe comenzar con una sonda **mínima y privada** de viabilidad de namespace en Cloudflare, separada de Merlin y con coste/claim/restauración propios. Antes de cualquier arranque real de Merlin debe cerrarse la ruta del `WorkerSpawner` que puede crear fork sin `bwrap` incluso con `ALLOW_UNSANDBOXED_FALLBACK=false`.

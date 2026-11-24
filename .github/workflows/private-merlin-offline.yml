@@ -26,6 +26,13 @@ jobs:
         run: |
           set -eu
           export MERLIN_NODE="$(command -v node)"
-          sudo --preserve-env=MERLIN_NODE,GITHUB_SHA unshare --net sh -ec '
+          sudo --preserve-env=MERLIN_NODE,GITHUB_SHA unshare --net --mount --propagation private sh -ec '
             ip link set lo up
-            exec runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs'
+            sysctl -qw net.ipv4.ip_unprivileged_port_start=0
+            hosts=$(mktemp)
+            cat /etc/hosts > "$hosts"
+            echo "127.0.0.1 merlin-provider.internal" >> "$hosts"
+            chmod 644 "$hosts"
+            mount --bind "$hosts" /etc/hosts
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs R
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs I'

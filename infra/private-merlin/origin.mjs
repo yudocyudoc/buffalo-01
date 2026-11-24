@@ -3,12 +3,12 @@ import {EventEmitter} from 'node:events';
 import {existsSync,mkdtempSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {randomUUID,timingSafeEqual} from 'node:crypto';
+import {createHash,randomUUID,timingSafeEqual} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {WebSocketServer} from 'ws';
 import config from '../../config.js';
 import {verifyLaunchContext} from '../buffalo-r2/driver.mjs';
-import {MODEL,CONFIG_HASH,DENIED,Turn,digest,requireThat} from './protocol.mjs';
+import {MODEL,CONFIG_HASH,DENIED,Turn,requireThat} from './protocol.mjs';
 
 const {MERLIN_PHASE:phase, MERLIN_KEY:key, MERLIN_SOURCE:source, MERLIN_EXPIRES:until} = process.env;
 requireThat(['R','I'].includes(phase) && /^[a-f0-9]{64}$/.test(key) && /^[a-f0-9]{40}$/.test(source)
@@ -33,6 +33,7 @@ const root = mkdtempSync(join(tmpdir(),'merlin-ws-'));
 const sessions = new SessionManager({disableCleanup:true,tempBasePath:root});
 const turn = new Turn(phase,model);
 const proof = {source_commit:source,agent_config_sha256:configSha,spawn_calls:0,worker_frames:[]};
+const hash = value => createHash('sha256').update(value).digest('hex');
 const nativeSpawn = WorkerSpawner.spawn.bind(WorkerSpawner);
 let admitted=false, pending=null, temp;
 WorkerSpawner.spawn = async (...args) => {
@@ -40,8 +41,15 @@ WorkerSpawner.spawn = async (...args) => {
   const w = await nativeSpawn(...args);
   if (!(w instanceof IpcWorker)) { w.kill('SIGKILL'); throw Error('SANDBOX_REQUIRED'); }
   temp=args[1];
+  const send=w.send.bind(w);
+  w.send=message=>{
+    const result=send(message);
+    if(message.type==='shutdown')proof.shutdown_ipc_sent=true;
+    return result;
+  };
   w.on('message',m=>{
     if (m.type==='to_client') proof.worker_frames.push(m.message.type);
+    if (m.type==='to_client' && m.message.type==='agent_text') proof.output_sha256=hash(m.message.content);
     if (m.type==='worker_error') proof.worker_error=true;
   });
   w.once('exit',(code,signal)=>{proof.exit={code,signal};});
@@ -77,7 +85,7 @@ class OriginalSocket extends EventEmitter {
       const frame=JSON.parse(data);
       pending=turn.onNative(frame);
       if(frame.type==='agent_complete') {
-        proof.model_sha256_at_completionPromise = digest(JSON.stringify(JSON.parse(readFileSync(join(temp,'model.sdjson'),'utf8'))));
+        proof.model_sha256 = hash(JSON.stringify(JSON.parse(readFileSync(join(temp,'model.sdjson'),'utf8'))));
       }
       this.raw.send(data);
     } catch { this.raw.close(1008,'ORIGIN_FRAME_DENIED'); }
@@ -94,13 +102,11 @@ const server=createServer(async(req,res)=>{
   if(req.method!=='GET'||req.url!=='/proof'||!validKey(req)){res.writeHead(404).end();return;}
   try {
     requireThat(turn.state==='disconnect' && !pending && proof.exit?.code===0 && proof.exit.signal===null &&
-      proof.spawn_calls===1 && !proof.worker_error && temp && !existsSync(temp),'TEARDOWN_NOT_VERIFIED');
-    const modelHash=await proof.model_sha256_at_completionPromise;
-    requireThat(modelHash===MODEL,'MODEL_CHANGED');
+      proof.spawn_calls===1 && proof.shutdown_ipc_sent && !proof.worker_error && temp && !existsSync(temp),'TEARDOWN_NOT_VERIFIED');
+    requireThat(proof.model_sha256===MODEL,'MODEL_CHANGED');
     await proxy.stop();
     res.setHeader('content-type','application/json');
-    res.end(JSON.stringify({source_commit:source,agent_config_sha256:configSha,model_sha256:modelHash,
-      spawn_calls:proof.spawn_calls,exit:proof.exit,worker_frames:proof.worker_frames,session_id:turn.session}));
+    res.end(JSON.stringify({...proof,session_id:turn.session}));
   } catch {res.writeHead(409).end();}
 });
 const wss=new WebSocketServer({noServer:true,maxPayload:262144});

@@ -1,5 +1,5 @@
 import {DurableObject,WorkerEntrypoint} from 'cloudflare:workers';
-import {CONFIG_HASH,MODEL,checkInput,grant,requireThat,elapsedLimit} from './protocol.mjs';
+import {CONFIG_HASH,MODEL,checkInput,digest,grant,requireThat,elapsedLimit} from './protocol.mjs';
 import {boundedJSON,providerRequest} from './gateway.mjs';
 
 const deny=()=>new Response(null,{status:404});
@@ -53,7 +53,8 @@ export class MerlinOrigin extends DurableObject {
     const g=grant(this.env,task.phase);
     const container=this.ctx.container;
     const image=container.images.base;
-    requireThat(g.task_id===task.task_id && image.endsWith('@'+g.image_digest),'UNAPPROVED_IMAGE_OR_TASK');
+    requireThat(g.task_id===task.task_id && task.source_commit===g.source_commit &&
+      task.image_digest===g.image_digest && image.endsWith('@'+g.image_digest),'UNAPPROVED_IMAGE_OR_TASK');
     const deadline=Math.min(Date.now()+elapsedLimit,g.expires);
     await this.ctx.storage.transaction(async tx=>{
       requireThat(!(await tx.get('run')),'ONE_SHOT_ALREADY_CLAIMED');
@@ -99,6 +100,7 @@ export class MerlinOrigin extends DurableObject {
     if(!run||run.status!=='RUNNING')return this.result();
     const container=this.ctx.container;
     let proof=null;
+    const outputHash=typeof transcript?.output==='string'?await digest(transcript.output):null;
     try{
       if(transcript && this.key && Date.now()<run.deadline){
         const res=await container.getTcpPort(8080).fetch('http://container/proof',{
@@ -116,11 +118,13 @@ export class MerlinOrigin extends DurableObject {
         const expected=['get_current_model',s.phase==='R'?'error':'agent_text','agent_complete'];
         const frames=['session_created','session_ready','agent_selected','agent_text',...expected];
         const valid=proof && proof.source_commit===s.source_commit && proof.agent_config_sha256===CONFIG_HASH &&
-          proof.model_sha256===MODEL && proof.spawn_calls===1 && proof.exit?.code===0 && proof.exit.signal===null &&
+          proof.model_sha256===MODEL && proof.spawn_calls===1 && proof.shutdown_ipc_sent===true &&
+          proof.exit?.code===0 && proof.exit.signal===null &&
           proof.session_id===transcript.session_id && JSON.stringify(transcript.frames)===JSON.stringify(frames) &&
           JSON.stringify(proof.worker_frames)===JSON.stringify(expected);
         const ok=valid && (s.phase==='R'?s.egress_attempts===0 && s.posts===0:
-          s.posts===1 && s.egress_attempts===1 && s.usage && s.finish_reason==='stop' && transcript.output);
+          s.posts===1 && s.egress_attempts===1 && s.usage && s.finish_reason==='stop' && outputHash &&
+          proof.output_sha256===outputHash);
         const status=ok?(s.phase==='R'?'ORIGINAL_AGENT_PROCESS_BOUNDARY_PASS_NO_INFERENCE':'REAL_MERLIN_TURN_COMPLETED'):'RUNTIME_FAILURE';
         await tx.put('run',{...s,status,proof,container_stopped:true,frames:transcript?.frames??[],
           output:ok && s.phase==='I'?transcript.output:null});

@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {once} from 'node:events';
+import {once,EventEmitter} from 'node:events';
+import {shutdownOriginalWorker} from '../../scripts/full-integration/original-merlin-shutdown.mjs';
+import {ID as R1_ID,SCHEMA as R1_SCHEMA,FLAGS as R1_FLAGS} from '../buffalo-r1/receipt.mjs';
 import {readFileSync} from 'node:fs';
 import {ID,MODE,SCHEMA,MODEL,boundedReceipt} from './receipt.mjs';
 import {verifyLaunchContext} from './driver.mjs';
 import {probeR2,startProbeServer} from './server.mjs';
 import {runOneShot,cleanupAlarm} from './one-shot.mjs';
-import {requireUnusedProbe,configs} from './manual.mjs';
+import {requireUnusedProbe,requireR1Pass,configs} from './manual.mjs';
 const sha='a'.repeat(40),digest='sha256:'+'b'.repeat(64),key='c'.repeat(64),run='c135fb33-1234-4123-8123-123456789012';
 const evidence={schema:'BUFFALO_STAGE3B8_ORIGINAL_MERLIN_PROCESS_OFFLINE_V1',status:'ORIGINAL_MERLIN_WORKER_OFFLINE_PROVIDER_DENIED_PASS',
  checkout_commit:sha,agent:'merlin',scenario:'dialysisClinic',initial_model_sha256:MODEL,agent_config_sha256:'d'.repeat(64),
  provider:'UNREGISTERED_DENY_ONLY',ipc_barriers:2,model_sync_requests:1,genuine_terminal_error:'CONVERSATION_ERROR',terminal_status:'awaiting_user',
- original_worker_spawner:true,original_agent_worker:true,bwrap_ipc_worker:true,worker_exited:true,launch_context_verified:true,proxy_stopped:true,session_directory_removed:true,
+ original_worker_spawner:true,original_agent_worker:true,bwrap_ipc_worker:true,worker_exited:true,shutdown_ipc_sent:true,worker_exit_code:0,worker_exit_signal:null,launch_context_verified:true,proxy_stopped:true,session_directory_removed:true,
  agent_model_response:false,model_modified:false,simulation_executed:false,grader_executed:false,provider_requests_measured:false,inference_authorized:false};
 const pass={schema:SCHEMA,probe_id:ID,source_commit:sha,run_id:run,status:'ORIGINAL_PROCESS_PASS',reason_code:'NONE',exit_code:0,
  process_log_sha256:'e'.repeat(64),raw_log_in_receipt:false,provider_requests_measured:false,inference_authorized:false,evidence};
@@ -23,7 +25,7 @@ test('launch context rejects root, caps and missing no-new-privs',()=>{
 });
 test('positive receipt requires original process, IPC, denied provider, model integrity and cleanup',()=>{
  assert.equal(boundedReceipt(pass,sha,run).status,'ORIGINAL_PROCESS_PASS');
- for(const e of [{worker_exited:false},{proxy_stopped:false},{ipc_barriers:1},{model_modified:true},{launch_context_verified:false},{agent_model_response:true}])assert.throws(()=>boundedReceipt({...pass,evidence:{...evidence,...e}},sha,run),/R2_FALSE_PASS/);
+ for(const e of [{worker_exited:false},{shutdown_ipc_sent:false},{worker_exit_code:137},{worker_exit_signal:'SIGKILL'},{proxy_stopped:false},{ipc_barriers:1},{model_modified:true},{launch_context_verified:false},{agent_model_response:true}])assert.throws(()=>boundedReceipt({...pass,evidence:{...evidence,...e}},sha,run),/R2_FALSE_PASS/);
  assert.throws(()=>boundedReceipt({...pass,probe_id:'one-shot-private-bwrap-r1-v2'},sha,run));
 });
 test('fixed process invocation with allowlisted env and no raw log',()=>{
@@ -75,9 +77,44 @@ test('blocked result not promoted; persistence recovery never reruns',async()=>{
  assert.equal(f.rows.get(ID).status,'R2_REMOTE_ORIGINAL_PROCESS_BLOCKED');assert.deepEqual(f.counts(),{starts:1,posts:1,stops:1,alarm:false});
 });
 test('preflight requires prior R1 PASS and no R2 or open claim',async()=>{
- const read=(n,ok=true)=>async(sql,params)=>sql.includes('sqlite_master')?[{name:'buffalo_stage3b8r1_receipts'}]:sql.includes('receipt_json')?(ok?[{status:'R1_REMOTE_MINIMAL_PASS',receipt_json:JSON.stringify({probe:{launch_context_verified:true,exit_code:0}})}]:[]):[{n}];
+ const read=(n,ok=true)=>async(sql,params)=>sql.includes('sqlite_master')?[{name:'buffalo_stage3b8r1_receipts'}]:sql.includes('receipt_json')?(ok?[historicalRow()]:[]):[{n}];
  await requireUnusedProbe(read(0));await assert.rejects(requireUnusedProbe(read(0,false)),/R2_R1_PASS_REQUIRED/);await assert.rejects(requireUnusedProbe(read(1)),/R2_PRIOR_EVIDENCE_NO_REPLAY/);
  const template=JSON.parse(readFileSync(new URL('./wrangler.template.json',import.meta.url),'utf8'));
  const ref='registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/buffalo-original-worker-r2@'+digest;
  const x=configs(template,sha,ref);assert.deepEqual(x.disabled.triggers.crons,[]);assert.equal(x.disabled.vars.R2_MODE,'DISABLED');
+});
+
+function historicalRow(){
+ const source_commit='90456e5b9eb908c0d2b46dbf7d4069cf8686b234',run_id='6855431e-41d7-4dd7-a9b4-e67fb4ad392f';
+ const receipt={probe_id:R1_ID,run_id,source_commit,image_digest:'sha256:290741fcfdc7682fb99ed7bc6f473bcb5a5b8ea9d60a1ef54279c7f121010fed',
+ status:'R1_REMOTE_MINIMAL_PASS',phase:'PROBE_RECEIPT',claimed_at:'2026-11-24T06:21:55.996Z',finished_at:'2026-11-24T06:22:02.893Z',
+ container_start_attempted:true,destroy_acknowledged:true,container_inspect_null:true,internet_enabled_config:false,provider_requests_measured:false,agent_execution_authorized:false,
+ probe:{schema:R1_SCHEMA,probe_id:R1_ID,run_id,source_commit,flags_sha256:R1_FLAGS,status:'MINIMAL_BWRAP_PASS',reason_code:'NONE',stderr_signature:'NONE',
+ stderr_sha256:'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',launch_context_verified:true,exit_code:0,agent_executed:false,inference_executed:false,raw_stderr_in_receipt:false,sandbox_relaxations:false,egress_independently_measured:false}};
+ return {probe_id:R1_ID,run_id,status:receipt.status,receipt_json:JSON.stringify(receipt)};
+}
+test('historical admission rejects truncated, wrong run/image/flags and unconfirmed closure',()=>{
+ const row=historicalRow();assert.equal(requireR1Pass(row).status,'MINIMAL_BWRAP_PASS');
+ assert.throws(()=>requireR1Pass({...row,receipt_json:JSON.stringify({probe:{launch_context_verified:true,exit_code:0}})}));
+ assert.throws(()=>requireR1Pass({...row,run_id:run}));
+ for(const change of [r=>{r.image_digest=digest},r=>{r.probe.flags_sha256=key},r=>{r.destroy_acknowledged=false},r=>{r.container_inspect_null=false},r=>{r.probe.sandbox_relaxations=true},r=>{r.probe.run_id=run}]){
+  const p=JSON.parse(row.receipt_json);change(p);assert.throws(()=>requireR1Pass({...row,receipt_json:JSON.stringify(p)}));
+ }
+});
+function mockWorker(onSend){
+ const w=new EventEmitter();w.connected=true;w.send=m=>{assert.deepEqual(m,{type:'shutdown'});onSend(w)};
+ w.kill=()=>{throw Error('positive path must never force kill')};return w;
+}
+test('IPC shutdown awaits actual normal supervisor exit, not send completion',async()=>{
+ let done=false;const w=mockWorker(()=>{});const p=shutdownOriginalWorker(w).then(x=>{done=true;return x});
+ await Promise.resolve();assert.equal(done,false);w.emit('exit',0,null);
+ assert.deepEqual(await p,{shutdown_ipc_sent:true,worker_exit_code:0,worker_exit_signal:null});assert.equal(w.listenerCount('exit'),0);
+});
+test('signal, nonzero, timeout or disconnected worker cannot certify shutdown',async()=>{
+ for(const [code,signal] of [[null,'SIGKILL'],[137,null],[1,null]]){
+  await assert.rejects(shutdownOriginalWorker(mockWorker(w=>w.emit('exit',code,signal))),/3B8_SHUTDOWN_NOT_NORMAL/);
+ }
+ const w=mockWorker(()=>{});await assert.rejects(shutdownOriginalWorker(w,5),/3B8_SHUTDOWN_TIMEOUT/);
+ assert.equal(w.listenerCount('exit'),0);assert.equal(w.listenerCount('error'),0);
+ w.connected=false;await assert.rejects(shutdownOriginalWorker(w),/3B8_SHUTDOWN_ALREADY_DISCONNECTED/);
 });

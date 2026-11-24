@@ -5,6 +5,7 @@ on:
       - 'scripts/full-integration/original-merlin-process-gate.mjs'
       - 'scripts/full-integration/original-merlin-process-gate.test.mjs'
       - 'scripts/full-integration/original-merlin-worker-boundary.mjs'
+      - 'scripts/full-integration/original-merlin-shutdown.mjs'
       - 'scripts/full-integration/original-merlin-worker-boundary.test.mjs'
       - 'scripts/full-integration/original-merlin-websocket-process-offline.mjs'
       - '.github/workflows/buffalo-stage3b8-offline.yml'
@@ -73,6 +74,9 @@ jobs:
           assert.equal(r.bwrap_ipc_worker,true);
           assert.equal(r.original_agent_worker,true);
           assert.equal(r.worker_exited,true);
+          assert.equal(r.shutdown_ipc_sent,true);
+          assert.equal(r.worker_exit_code,0);
+          assert.equal(r.worker_exit_signal,null);
           assert.equal(r.genuine_terminal_error,'CONVERSATION_ERROR');
           assert.equal(r.terminal_status,'awaiting_user');
           assert.equal(r.provider_requests_measured,false);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {ID,MODE,boundedReceipt,validCommit} from './receipt.mjs';
+import {ID as R1_ID,boundedReceipt as validateR1} from '../buffalo-r1/receipt.mjs';
 import {EXPIRED,armExpiry,observationDeadline,CLEANUP_WAIT_MS} from '../buffalo-r1/timing.mjs';
 const NAME='buffalo-original-worker-r2-private-lab',OLD='buffalo-private-origin-lab',R1='buffalo-namespace-r1-private-lab';
 const ACCOUNT='e0cb52526a69c0f48f001901a5b9a640',DB='d1e23807-b076-4c36-8785-7b423fc41614';
@@ -43,12 +44,29 @@ async function appsZero(){
  assert.equal(usage.usage?.instances,0);
  return apps.find(a=>a.name===NAME);
 }
+// Pin the independently observed R1 v2 execution; no self-asserted identity.
+const R1_SOURCE='90456e5b9eb908c0d2b46dbf7d4069cf8686b234';
+const R1_RUN='6855431e-41d7-4dd7-a9b4-e67fb4ad392f';
+const R1_IMAGE='sha256:290741fcfdc7682fb99ed7bc6f473bcb5a5b8ea9d60a1ef54279c7f121010fed';
+export function requireR1Pass(row){
+ assert.equal(row?.probe_id,R1_ID,'R2_R1_IDENTITY');assert.equal(row.run_id,R1_RUN,'R2_R1_RUN');
+ assert.equal(row.status,'R1_REMOTE_MINIMAL_PASS');
+ const r=JSON.parse(row.receipt_json);
+ assert.equal(r.probe_id,R1_ID);assert.equal(r.run_id,R1_RUN);assert.equal(r.source_commit,R1_SOURCE);
+ assert.equal(r.image_digest,R1_IMAGE);assert.equal(r.status,row.status);assert.equal(r.phase,'PROBE_RECEIPT');
+ const p=validateR1(r.probe,R1_SOURCE,R1_RUN);
+ assert.equal(p.status,'MINIMAL_BWRAP_PASS');assert.equal(p.launch_context_verified,true);
+ assert.equal(r.probe.egress_independently_measured,false);
+ for(const k of ['container_start_attempted','destroy_acknowledged','container_inspect_null'])assert.equal(r[k],true,k);
+ for(const k of ['internet_enabled_config','provider_requests_measured','agent_execution_authorized'])assert.equal(r[k],false,k);
+ assert(Number.isFinite(Date.parse(r.claimed_at))&&Number.isFinite(Date.parse(r.finished_at))&&Date.parse(r.finished_at)>=Date.parse(r.claimed_at));
+ return p;
+}
 export async function requireUnusedProbe(read){
  const tables=await read("SELECT name FROM sqlite_master WHERE type='table' AND name='buffalo_stage3b8r1_receipts'");
  assert.deepEqual(tables.map(t=>t.name),['buffalo_stage3b8r1_receipts'],'R2_SCHEMA_MUST_BE_PREAPPLIED_SEPARATELY');
- const prior=await read('SELECT status,receipt_json FROM buffalo_stage3b8r1_receipts WHERE probe_id=?',['one-shot-private-bwrap-r1-v2']);
- assert.equal(prior.length,1,'R2_R1_PASS_REQUIRED');assert.equal(prior[0].status,'R1_REMOTE_MINIMAL_PASS');
- const priorReceipt=JSON.parse(prior[0].receipt_json);assert.equal(priorReceipt.probe?.launch_context_verified,true);assert.equal(priorReceipt.probe?.exit_code,0);
+ const prior=await read('SELECT probe_id,run_id,status,receipt_json FROM buffalo_stage3b8r1_receipts WHERE probe_id=?',[R1_ID]);
+ assert.equal(prior.length,1,'R2_R1_PASS_REQUIRED');requireR1Pass(prior[0]);
  const rows=await read('SELECT COUNT(*) AS n FROM buffalo_stage3b8r1_receipts WHERE probe_id=? OR status=?',[ID,'CLAIMED']);
  assert.equal(rows.length,1);assert.equal(rows[0].n,0,'R2_PRIOR_EVIDENCE_NO_REPLAY');
 }

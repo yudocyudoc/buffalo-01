@@ -63,6 +63,8 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             "buffalo-original-worker-r2:$GITHUB_SHA" /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-context \
             | grep -Fx R2_LAUNCH_CONTEXT_VERIFIED
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            "buffalo-original-worker-r2:$GITHUB_SHA" /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-image | grep -Fx R2_IMAGE_IMPORTS_MODEL_CONFIG_VERIFIED
           set +e
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "buffalo-original-worker-r2:$GITHUB_SHA"
           rc=$?

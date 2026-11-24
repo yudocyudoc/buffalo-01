@@ -6,6 +6,7 @@ on:
       - 'scripts/full-integration/original-merlin-process-gate.test.mjs'
       - 'scripts/full-integration/original-merlin-worker-boundary.mjs'
       - 'scripts/full-integration/original-merlin-worker-boundary.test.mjs'
+      - 'scripts/full-integration/original-merlin-websocket-process-offline.mjs'
       - '.github/workflows/buffalo-stage3b8-offline.yml'
 permissions:
   contents: read
@@ -82,9 +83,45 @@ jobs:
           writeFileSync(process.argv[3],JSON.stringify(r,null,2)+'\n',{flag:'wx',mode:0o600});
           console.log('PASS ORIGINAL AGENTWORKER SANDBOXED OFFLINE, NO INFERENCE; NOT A BRIDGE RUN');
           NODE
+      - name: Verify real original WebSocketHandler → WorkerSpawner → AgentWorker (no chat)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/full-integration/original-merlin-websocket-process-offline.mjs \
+            --commit "$GITHUB_SHA" > "$RUNNER_TEMP/buffalo-3b8-ws-stdout.txt"
+          node --input-type=module - "$RUNNER_TEMP/buffalo-3b8-ws-stdout.txt" "$RUNNER_TEMP/buffalo-3b8-ws-proof.json" <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const prefix='BUFFALO_3B8_WS_PROCESS_EVIDENCE=';
+          const lines=readFileSync(process.argv[2],'utf8').split('\n').filter(x=>x.startsWith(prefix));
+          assert.equal(lines.length,1);
+          const r=JSON.parse(lines[0].slice(prefix.length));
+          assert.equal(r.schema,'BUFFALO_STAGE3B8_ORIGINAL_WS_PROCESS_OFFLINE_V1');
+          assert.equal(r.status,'ORIGINAL_MERLIN_WS_PROCESS_OFFLINE_PASS');
+          assert.equal(r.checkout_commit,process.env.GITHUB_SHA);
+          assert.equal(r.handler_original,true);
+          assert.equal(r.spawner_delegated_original,true);
+          assert.equal(r.worker_original,true);
+          assert.equal(r.worker_sandbox_bwrap,true);
+          assert.equal(r.real_ipc_barrier,true);
+          assert.equal(r.worker_spawn_calls,1);
+          assert.equal(r.worker_reaped,true);
+          assert(r.original_frames.includes('session_created'));
+          assert(r.original_frames.includes('session_ready'));
+          assert(r.original_frames.includes('agent_selected'));
+          assert.equal(r.original_frames.includes('agent_complete'),false);
+          assert.equal(r.agent_turn_executed,false);
+          assert.equal(r.provider_requests_measured,false);
+          assert.equal(r.cloudflare_deployed,false);
+          assert.equal(r.execution_allowed,false);
+          writeFileSync(process.argv[3],JSON.stringify(r,null,2)+'\n',{flag:'wx',mode:0o600});
+          console.log('PASS ORIGINAL WS / MERLIN WORKER REAL PROCESS; NO CHAT OR INFERENCE');
+          NODE
       - uses: actions/upload-artifact@v4
         with:
           name: buffalo-stage3b8-offline-${{ github.run_id }}
-          path: ${{ runner.temp }}/buffalo-3b8-proof.json
+          path: |
+            ${{ runner.temp }}/buffalo-3b8-proof.json
+            ${{ runner.temp }}/buffalo-3b8-ws-proof.json
           retention-days: 7
           if-no-files-found: error

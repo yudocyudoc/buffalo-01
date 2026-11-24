@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {OriginalMerlinProcessGate,MERLIN_PROCESS_GATE_SCHEMA} from './original-merlin-process-gate.mjs';
 
 const commit='a'.repeat(40);
-const sessionId='123e4567-e89b-42d3-a456-426614174222';
+const sessionId='sess_1234567890abcdef1234567890abcdef';
 const model={variables:[],relationships:[],title:'Fixture only — not a real DEV model'};
 const modelSha256=createHash('sha256').update(JSON.stringify(model)).digest('hex');
 const auth='non-secret-ci-authentication-3b8-0000000000';
@@ -76,7 +76,7 @@ test('rejects injected auth, client id, tool registration, history and altered m
  }
 });
 test('rejects cross-session, substitute agent/provider, extra fields and duplicate select',()=>{
- const cases=[{sessionId:'123e4567-e89b-42d3-a456-426614174333'},
+ const cases=[{sessionId:'sess_abcdef1234567890abcdef1234567890'},
   {agentId:'socrates'},{provider:'openai'},{agentConfig:'fake'},
   {intelligence:'expensive'},{clientId:'injected'}];
  for(const change of cases){const g=toReady(gate());

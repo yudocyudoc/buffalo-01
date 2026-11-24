@@ -4,7 +4,7 @@ import {deny,validConfig,runOneShot,cleanupAlarm} from './one-shot.mjs';
 export class BuffaloNamespaceProbe extends DurableObject {
  fetch(){return deny()}
  async runOnce(){return runOneShot(this.ctx,this.env)}
- async alarm(){await cleanupAlarm(this.ctx)}
+ async alarm(){await cleanupAlarm(this.ctx,this.env)}
 }
 export default {
  fetch(){return deny()},

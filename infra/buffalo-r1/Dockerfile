@@ -8,8 +8,8 @@ RUN echo "$BUFFALO_IMAGE_SOURCE_SHA" | grep -Eq '^[a-f0-9]{40}$' \
  && rm -rf /var/lib/apt/lists/* \
  && test -x /usr/bin/bwrap
 ENV BUFFALO_IMAGE_SOURCE_SHA=${BUFFALO_IMAGE_SOURCE_SHA} ALLOW_UNSANDBOXED_FALLBACK=false NODE_ENV=production
-WORKDIR /app
-COPY --chown=node:node infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs ./stage3b8r-bwrap-minimal.mjs
+WORKDIR /app/infra/buffalo-r1
+COPY --chown=node:node infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs ../buffalo-origin/stage3b8r-bwrap-minimal.mjs
 COPY --chown=node:node infra/buffalo-r1/receipt.mjs infra/buffalo-r1/server.mjs ./
 USER node
 EXPOSE 8080

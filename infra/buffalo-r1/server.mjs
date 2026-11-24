@@ -1,7 +1,7 @@
 import {createServer} from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {probeMinimal} from './stage3b8r-bwrap-minimal.mjs';
+import {probeMinimal} from '../buffalo-origin/stage3b8r-bwrap-minimal.mjs';
 import {ID,MODE,SCHEMA,validKey,validRun,validCommit,boundedReceipt} from './receipt.mjs';
 
 // The image source SHA is baked into the OCI image. The controller passes

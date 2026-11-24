@@ -1,0 +1,66 @@
+name: Buffalo R1 private namespace probe preparation (NO deploy)
+on:
+  pull_request:
+    paths:
+      - 'infra/buffalo-r1/**'
+      - '.github/workflows/buffalo-stage3b8r1-preparation.yml'
+      - 'infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test R1 contracts (mock Container, actual loopback HTTP)
+        run: |
+          node --check infra/buffalo-r1/controller.mjs
+          node --test infra/buffalo-r1/r1.test.mjs
+          node --test infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs
+      - name: Verify default disabled configuration
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const x=JSON.parse(readFileSync('infra/buffalo-r1/wrangler.template.json','utf8'));
+          assert.equal(x.workers_dev,false);
+          assert.equal(x.preview_urls,false);
+          assert.deepEqual(x.triggers.crons,[]);
+          assert.equal(x.vars.R1_MODE,'DISABLED');
+          assert.equal(x.containers.length,1);
+          assert.equal(x.containers[0].images.base.image,'UNPUBLISHED_IMAGE_DIGEST_REQUIRED');
+          assert(!x.services && !x.routes && !x.ai);
+          NODE
+  image-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build minimal image locally only and verify it cannot boot unarmed
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          BASE="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
+          case "$BASE" in node@sha256:*) ;; *) exit 1 ;; esac
+          docker buildx build --platform linux/amd64 --load \
+            --build-arg "NODE_BASE_IMAGE=$BASE" --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            -f infra/buffalo-r1/Dockerfile -t buffalo-r1:local .
+          test "$(docker image inspect --format '{{.Config.User}}' buffalo-r1:local)" = node
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            buffalo-r1:local sh -ec 'test -x /usr/bin/bwrap; test ! -e /app/agent; test ! -e /app/node_modules; test ! -e /app/infra/buffalo-r1/node_modules'
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges buffalo-r1:local
+          rc=$?
+          set -e
+          test "$rc" -eq 78
+          echo 'LOCAL_IMAGE_BUILD_AND_UNARMED_DENIAL_ONLY_NO_CLOUDFLARE'

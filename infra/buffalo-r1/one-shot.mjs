@@ -18,6 +18,8 @@ export async function runOneShot(ctx,env,{sleep=pause,randomUUID=()=>crypto.rand
  if(!validConfig(env))return safe('R1_DISABLED');
  const container=ctx.container;
  if(!container?.images?.base||container.running)return safe('R1_CONTAINER_UNAVAILABLE_OR_RUNNING');
+ const image=container.images.base;
+ if(typeof image!=='string'||!image.endsWith('@'+env.R1_IMAGE_DIGEST))return safe('R1_IMAGE_DIGEST_MISMATCH');
  const commit=env.R1_EXPECTED_SHA,run=randomUUID(),key=randomKey();
  if(!validKey(key))throw Error('R1_BAD_KEY');
  const claim={probe_id:ID,run_id:run,source_commit:commit,image_digest:env.R1_IMAGE_DIGEST,
@@ -36,7 +38,7 @@ export async function runOneShot(ctx,env,{sleep=pause,randomUUID=()=>crypto.rand
  let attempted=false;
  try{
   attempted=true;
-  container.start({image:container.images.base,instance:'lite',enableInternet:false,
+  container.start({image,instance:'lite',enableInternet:false,
    env:{R1_MODE:MODE,R1_EXPECTED_SHA:commit,R1_RUN_ID:run,R1_KEY:key,
     ALLOW_UNSANDBOXED_FALLBACK:'false'}});
   await container.setInactivityTimeout(60000);
@@ -52,6 +54,9 @@ export async function runOneShot(ctx,env,{sleep=pause,randomUUID=()=>crypto.rand
    await sleep(200);
   }
   if(!ready)throw Error('R1_HEALTH_TIMEOUT');
+  result.phase='IMAGE_INSPECT';
+  const info=await container.inspect();
+  if(info?.image!==image)throw Error('R1_RUNNING_IMAGE_MISMATCH');
   result.phase='PROBE';
   // Exactly ONE POST. No retry, even on ambiguous network failure.
   const response=await port.fetch('http://container/probe',{method:'POST',
@@ -69,24 +74,42 @@ export async function runOneShot(ctx,env,{sleep=pause,randomUUID=()=>crypto.rand
  finally{
   result={...result,container_start_attempted:attempted,internet_enabled_config:false,
    provider_requests_measured:false,agent_execution_authorized:false,
-   destroy_acknowledged:false,finished_at:new Date().toISOString()};
+   destroy_acknowledged:false,container_inspect_null:false,finished_at:new Date().toISOString()};
   try{
    await container.destroy();
    result.destroy_acknowledged=true;
+   result.container_inspect_null=(await container.inspect())===null;
+   if(!result.container_inspect_null)result.status='R1_CLEANUP_UNCONFIRMED';
   }catch{result.status='R1_CLEANUP_UNCONFIRMED'}
   // Persist evidence even when cleanup did not confirm. Never delete claim.
-  await ctx.storage.put(CLAIM,result);
+  const saved=await ctx.storage.transaction(async tx=>{
+   const current=await tx.get(CLAIM);
+   if(current?.status!=='CLAIMED'||current.run_id!==run)return false;
+   await tx.put(CLAIM,result);return true;
+  });
+  if(!saved)throw Error('R1_TERMINAL_ALREADY_RECORDED');
   await record(env.DB,result);
-  if(result.destroy_acknowledged)await ctx.storage.deleteAlarm();
+  if(result.destroy_acknowledged&&result.container_inspect_null)await ctx.storage.deleteAlarm();
   console.log('BUFFALO_R1_RECEIPT='+JSON.stringify(result));
  }
  return result;
 }
-export async function cleanupAlarm(ctx){
+export async function cleanupAlarm(ctx,env){
  // Recovery only. NEVER starts a container or replays a probe.
- if(ctx.container?.running)await ctx.container.destroy();
  const claim=await ctx.storage.get(CLAIM);
- if(claim?.status==='CLAIMED'){
-  await ctx.storage.put(CLAIM,{...claim,status:'R1_INTERRUPTED_NO_RETRY',watchdog_ran:true});
+ if(!claim)return;
+ if(ctx.container?.running)await ctx.container.destroy();
+ const stopped=(await ctx.container.inspect())===null;
+ if(!stopped)throw Error('R1_WATCHDOG_CONTAINER_NOT_STOPPED');
+ if(claim.status==='CLAIMED'){
+  const result={...claim,status:'R1_INTERRUPTED_NO_RETRY',watchdog_ran:true,
+   probe:null,container_inspect_null:true,agent_execution_authorized:false};
+  const saved=await ctx.storage.transaction(async tx=>{
+   const current=await tx.get(CLAIM);
+   if(current?.status!=='CLAIMED'||current.run_id!==claim.run_id)return false;
+   await tx.put(CLAIM,result);return true;
+  });
+  if(saved){await record(env.DB,result);console.log('BUFFALO_R1_RECEIPT='+JSON.stringify(result))}
  }
+ // Preserve any prior terminal result, including cleanup failures.
 }

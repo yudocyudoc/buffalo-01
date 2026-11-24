@@ -1,0 +1,81 @@
+name: Gemma native binding response contract (manual, one tiny inference)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact approved checkout SHA
+        required: true
+        type: string
+      approval:
+        description: ONE_GEMMA_BINDING_CONTRACT_32_TOKENS
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-r1-private-one-shot
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_GEMMA_BINDING_CONTRACT_32_TOKENS' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source and offline probe tests
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test infra/private-merlin/gemma-contract-probe.test.mjs
+      - name: Verify prior failure, unused probe, zero active and dry-run configs
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/private-merlin/manual-gemma-contract.mjs preflight
+          for mode in disabled armed; do
+            npx --yes wrangler@4.166.0 deploy --dry-run --config "infra/private-merlin/wrangler.gemma-contract-$mode.json" --outdir "$RUNNER_TEMP/gemma-dry-$mode"
+          done
+      - name: Temporarily arm existing private operator
+        id: arm
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/private-merlin/manual-gemma-contract.mjs arm
+          echo 'cleanup=true' >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.166.0 deploy --config infra/private-merlin/wrangler.gemma-contract-armed.json
+      - name: Capture actual binding response (not a Merlin PASS)
+        timeout-minutes: 25
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/private-merlin/manual-gemma-contract.mjs observe
+      - name: Always restore original operator, without AI binding or cron
+        if: ${{ always() && steps.arm.outputs.cleanup == 'true' }}
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/private-merlin/wrangler.gemma-contract-disabled.json
+      - name: Always verify independent cleanup
+        if: ${{ always() && steps.arm.outputs.cleanup == 'true' }}
+        timeout-minutes: 18
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/private-merlin/manual-gemma-contract.mjs cleanup
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gemma-contract-${{ github.run_id }}
+          path: ${{ runner.temp }}/gemma-contract/*.json
+          retention-days: 7
+          if-no-files-found: warn

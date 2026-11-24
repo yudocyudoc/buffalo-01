@@ -6,7 +6,11 @@ export const GEMMA='@cf/google/gemma-4-26b-a4b-it';
 export function durableStage(env,phase){
  return phase==='I'&&env.MERLIN_I_TRANSPORT===BINDING_TRANSPORT?'I-binding-v2':phase;
 }
-const safeErrorCode=e=>Number.isSafeInteger(e?.code)&&e.code>=0&&e.code<=9999999?e.code:null;
+const safeErrorCode=e=>{
+ const code=e?.code??e?.errors?.[0]?.code;
+ const n=typeof code==='string'&&/^\d{1,7}$/.test(code)?Number(code):code;
+ return Number.isSafeInteger(n)&&n>=0&&n<=9999999?n:null;
+};
 const safeStatus=e=>Number.isSafeInteger(e?.status)&&e.status>=100&&e.status<=599?e.status:null;
 export async function bindingProviderRequest(storage,env,phase,request){
  let stage='INTERCEPT',reason='INTERCEPT_FAILURE',reserved=false;
@@ -37,7 +41,7 @@ export async function bindingProviderRequest(storage,env,phase,request){
   requireThat(body.model===GEMMA&&!body.stream&&body.messages?.length===2&&
    body.messages.every((m,i)=>m.role===(i===0?'system':'user')&&typeof m.content==='string')&&
    body.messages[1].content.includes(counter.sd_json),'INVALID_AGENT_PROMPT');
-  const wire={messages:body.messages.map(({role,content})=>({role,content})),max_completion_tokens:g.max_output_tokens,stream:false};
+  const wire={messages:body.messages.map(({role,content})=>({role,content})),max_completion_tokens:g.max_output_tokens,stream:false,chat_template_kwargs:{enable_thinking:false}};
   reason='INPUT_BUDGET';
   const bytes=new TextEncoder().encode(JSON.stringify({model:GEMMA,...wire})).length;
   requireThat(bytes<=g.max_input_bytes,'INPUT_BUDGET');
@@ -68,6 +72,8 @@ export async function bindingProviderRequest(storage,env,phase,request){
    !choice.message.tool_calls?.length&&!choice.message.function_call&&typeof choice.message.content==='string'&&
    choice.message.content.trim()&&choice.message.content.length<=16000,'INCOMPLETE_OR_NON_TEXT_PROVIDER_RESPONSE');
   stage='COMPLETE';reason='RESPONSE_COMMIT_FAILURE';
+  const current=await storage.get('run');
+  requireThat(current?.status==='RUNNING'&&current.task_id===g.task_id&&Date.now()<current.deadline&&Date.now()<g.expires,'RESPONSE_AFTER_DEADLINE');
   await note('OK',{request_bytes:bytes});
   return Response.json({model:GEMMA,choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:choice.message.content}}],usage});
  }catch(e){

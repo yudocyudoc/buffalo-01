@@ -85,3 +85,13 @@ export async function bindingProviderRequest(storage,env,phase,request){
   return new Response(null,{status:reserved?502:403});
  }
 }
+
+// A disabled Bridge must still read either historical I attempt. Only submit
+// selects the armed stage; this read-only lookup never allocates a task or alarm.
+export async function readDurableTask(env,key){
+ const primary=durableStage(env,key.phase);
+ const lookup=stage=>env.TASKS.getByName('arena-merlin-v1-'+stage).read(key);
+ const result=await lookup(primary);
+ if(result!==null||key.phase!=='I')return result;
+ return lookup(primary==='I'?'I-binding-v2':'I');
+}

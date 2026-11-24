@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MODEL,ENDPOINT} from './protocol.mjs';
-import {bindingProviderRequest,durableStage,BINDING_TRANSPORT,GEMMA} from './binding-gateway.mjs';
+import {bindingProviderRequest,durableStage,readDurableTask,BINDING_TRANSPORT,GEMMA} from './binding-gateway.mjs';
 const g={phase:'I',project_id:'arena-igc',task_id:'58532b8a-b25e-4b67-a90b-10db57da263b',source_commit:'a'.repeat(40),image_digest:'sha256:'+'b'.repeat(64),model_sha256:MODEL,max_posts:1,max_output_tokens:2048,max_input_bytes:131072,provider_model:GEMMA,expires:Date.now()+600000};
 const run=()=>({...g,approval:g,status:'RUNNING',posts:0,egress_attempts:0,sd_json:'{"x":1}',deadline:Date.now()+60000});
 const request=(extra={})=>new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'system',content:'Merlin'},{role:'user',content:'Model {"x":1}'}],tools:[{name:'forbidden'}],...extra})});
@@ -58,4 +58,19 @@ test('invalid response retains reported usage and finish reason; missing usage i
 test('distinct durable identities only for armed I binding; historical R and I names unchanged',()=>{
  assert.equal(durableStage({},'I'),'I');assert.equal(durableStage({MERLIN_I_TRANSPORT:BINDING_TRANSPORT},'I'),'I-binding-v2');
  assert.equal(durableStage({MERLIN_I_TRANSPORT:BINDING_TRANSPORT},'R'),'R');
+});
+
+test('read both I receipts after disarm; only read, never submit; R is unchanged',async()=>{
+ const old={task_id:'old',phase:'I',status:'RUNTIME_FAILURE'},next={task_id:'new',phase:'I',status:'REAL_MERLIN_TURN_COMPLETED'},r={task_id:'r',phase:'R',status:'PASS'};
+ const rows={'arena-merlin-v1-I':old,'arena-merlin-v1-I-binding-v2':next,'arena-merlin-v1-R':r};
+ const calls=[];
+ const env={TASKS:{getByName(name){calls.push(name);return {read:async key=>rows[name]?.task_id===key.task_id?rows[name]:null}}}};
+ assert.deepEqual(await readDurableTask(env,{phase:'I',task_id:'new'}),next);
+ assert.deepEqual(calls.splice(0),['arena-merlin-v1-I','arena-merlin-v1-I-binding-v2']);
+ assert.deepEqual(await readDurableTask(env,{phase:'I',task_id:'old'}),old);
+ assert.deepEqual(calls.splice(0),['arena-merlin-v1-I']);
+ assert.deepEqual(await readDurableTask({...env,MERLIN_I_TRANSPORT:BINDING_TRANSPORT},{phase:'I',task_id:'old'}),old);
+ assert.deepEqual(calls.splice(0),['arena-merlin-v1-I-binding-v2','arena-merlin-v1-I']);
+ assert.deepEqual(await readDurableTask(env,{phase:'R',task_id:'r'}),r);
+ assert.deepEqual(calls.splice(0),['arena-merlin-v1-R']);
 });

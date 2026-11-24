@@ -2,6 +2,8 @@ name: Buffalo Stage 3B-8/R0 LOCAL OCI sandbox gate (NO deploy, NO AI)
 on:
   pull_request:
     paths:
+      - 'agent/WorkerSpawner.js'
+      - 'tests/agent/WorkerSpawner.cooldown.test.js'
       - 'infra/buffalo-origin/Dockerfile.stage3b8r-probe'
       - 'infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs'
       - 'infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs'
@@ -27,6 +29,13 @@ jobs:
           node --test infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs
           node --check infra/buffalo-origin/stage3b8r-oci-preflight.mjs
           node --test infra/buffalo-origin/stage3b8r-oci-preflight.test.mjs
+      - name: Verify strict WorkerSpawner policy offline
+        run: |
+          npm ci --ignore-scripts
+          npm test -- --runInBand --runTestsByPath \
+            tests/agent/WorkerSpawner.cooldown.test.js \
+            tests/agent/WorkerSpawnerSandboxMasks.test.js \
+            tests/agent/WorkerSpawnerUtf8.test.js
   local-oci:
     runs-on: ubuntu-latest
     timeout-minutes: 30

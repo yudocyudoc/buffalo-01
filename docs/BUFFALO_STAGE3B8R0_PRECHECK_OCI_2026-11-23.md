@@ -36,7 +36,7 @@ Una respuesta positiva es **solo** evidencia de compatibilidad local OCI. Cloudf
 
 Antes de 3B-8/R real todavía faltan: crear un **nuevo origen Node privado** (no el servidor handshake-only 3B-7), nuevo gate de sesión seleccionado-only y prueba de IPC, protocolo DO/Worker privado, nueva imagen de servicio registrada **por digest remoto**, atestación del commit exacto desplegado, claim irrepetible y recibo independiente, readback de D1, control de egress, restore y autorización explícita del gasto de **un Container real**.
 
-Nunca reutilizar el claim `buffalo-probe-3b7-once` ni su flujo. El código original de Buffalo (agente, motor, WebSocket, evaluadores) permanece sin modificaciones. El proveedor `cloudflare` **no** está registrado en el WebSocket original; para selección sin inferencia se usa `anthropic`. Para el rechazo nativo del proveedor inexistente la sonda directa original sigue siendo la evidencia, no el WebSocket.
+Nunca reutilizar el claim `buffalo-probe-3b7-once` ni su flujo. Las sondas ejecutan el agente, motor y WebSocket originales. El proveedor `cloudflare` **no** está registrado en el WebSocket original; para selección sin inferencia se usa `anthropic`. Para el rechazo nativo del proveedor inexistente la sonda directa original sigue siendo la evidencia, no el WebSocket.
 
 ## Regla de cierre
 
@@ -55,7 +55,7 @@ Cualquiera de los estados bloqueados conserva `ready_for_private_execution=false
 
 ### Hallazgo de seguridad adicional: fallback del WorkerSpawner original
 
-En `agent/WorkerSpawner.js`, el camino **Linux sin ejecutable `bwrap`** puede caer a un `fork` sin sandbox incluso con `ALLOW_UNSANDBOXED_FALLBACK=false`. Ese entorno está fuera de los supuestos probados en 3B-8/P. **Queda expresamente bloqueada la autorización de R real** hasta que una compuerta ejecutable del servidor rechace la falta de `bwrap` **antes de cada spawn** y evite de forma demostrable todo proceso de agente sin aislamiento (incluida la carrera de desaparición de `bwrap`). No basta con una variable de entorno ni con comprobar `bwrap --version`.
+La implementación anterior de `WorkerSpawner` permitía un `fork` sin sandbox si faltaba `bwrap`, incluso con `ALLOW_UNSANDBOXED_FALLBACK=false`. En modo estricto, `spawn()` ahora exige Linux y `bwrap` antes de iniciar el proxy de credenciales. Si falla el arranque de `bwrap` después de localizarlo, limpia el socket IPC del intento y rechaza el spawn al agotar los reintentos. La ruta privada debe iniciar con `ALLOW_UNSANDBOXED_FALLBACK=false`.
 
 **No relajar Docker con `--privileged`, `SYS_ADMIN`, `setuid` ni una ruta de fork para conseguir un resultado verde.** En caso de restricción de namespaces, hay que diagnosticar viabilidad de Cloudflare de manera independiente o decidir una arquitectura de aislamiento distinta mediante otro protocolo.
 
@@ -76,4 +76,4 @@ En `agent/WorkerSpawner.js`, el camino **Linux sin ejecutable `bwrap`** puede ca
 
 [Artifact de dos recibos y hashes](https://github.com/yudocyudoc/buffalo-01/actions/runs/45310592177/artifacts/14883286720), ZIP SHA-256 `23ba7f44dc227dddcb2469ac93f8c11dbfdf22847a19c5fdb06b983a5cfb883e` (retención temporal de CI). GitHub corroboró la publicación y digest del ZIP; no se afirma inspección independiente de los bytes descargados.
 
-**Decisión:** mantener PR #67 abierto como Draft, y **3B-8/R bloqueado**. No elevar privilegios, no permitir `fork` sin aislamiento, no reutilizar 3B-7, no activar cron, Container, D1 ni grants. El siguiente experimento remoto, si se autoriza después, debe comenzar con una sonda **mínima y privada** de viabilidad de namespace en Cloudflare, separada de Merlin y con coste/claim/restauración propios. Antes de cualquier arranque real de Merlin debe cerrarse la ruta del `WorkerSpawner` que puede crear fork sin `bwrap` incluso con `ALLOW_UNSANDBOXED_FALLBACK=false`.
+**Decisión:** mantener PR #67 abierto como Draft, y **3B-8/R bloqueado**. No elevar privilegios, no permitir `fork` sin aislamiento, no reutilizar 3B-7, no activar cron, Container, D1 ni grants. El siguiente experimento remoto, si se autoriza después, debe comenzar con una sonda **mínima y privada** de viabilidad de namespace en Cloudflare, separada de Merlin y con coste/claim/restauración propios.

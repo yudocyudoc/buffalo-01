@@ -16,6 +16,7 @@
 
 import { describe, it, expect, jest, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import { mkdirSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
@@ -38,7 +39,7 @@ jest.unstable_mockModule('child_process', () => ({
   default: { spawn: mockSpawn, fork: mockFork, execSync: mockExecSync },
 }));
 
-let WorkerSpawner, SandboxUnavailableError;
+let WorkerSpawner, SandboxUnavailableError, IpcWorker;
 
 // A fake bwrap process that exits early (non-zero) so the IPC socket never
 // connects. Emits 'exit' on a 0ms timer so it fires after spawn() has wired up
@@ -53,10 +54,11 @@ function makeFailingProc() {
 }
 
 const tempDirs = [];
+const testTempRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
 function makeTempDir() {
   // Short path under /tmp keeps the Unix-socket path well under the ~104-char
   // sun_path limit (os.tmpdir() on macOS is long enough to overflow it).
-  const dir = join('/tmp', `sdcd-${randomBytes(6).toString('hex')}`);
+  const dir = join(testTempRoot, `sdcd-${randomBytes(6).toString('hex')}`);
   mkdirSync(dir, { recursive: true });
   tempDirs.push(dir);
   return dir;
@@ -79,11 +81,32 @@ async function settle(promise) {
   return guarded;
 }
 
+async function withStrictSpawner(run) {
+  const env = jest.replaceProperty(process, 'env', {
+    ...process.env, ALLOW_UNSANDBOXED_FALLBACK: 'false',
+  });
+  try {
+    await jest.isolateModulesAsync(async () => {
+      await run(await import('../../agent/WorkerSpawner.js'));
+    });
+  } finally {
+    env.restore();
+  }
+}
+
+function mockIpcListen(workerClass, close = jest.fn()) {
+  return jest.spyOn(workerClass, 'listen').mockImplementation(async (socketPath) => {
+    const server = new EventEmitter();
+    server.close = close;
+    return new workerClass(server, socketPath);
+  });
+}
+
 beforeAll(async () => {
   // #allowUnsandboxedFallback is captured at module-eval time, so this must be
   // cleared before the import: we want hard-fail (throw) mode, not fork fallback.
   delete process.env.ALLOW_UNSANDBOXED_FALLBACK;
-  ({ WorkerSpawner, SandboxUnavailableError } = await import('../../agent/WorkerSpawner.js'));
+  ({ WorkerSpawner, SandboxUnavailableError, IpcWorker } = await import('../../agent/WorkerSpawner.js'));
 });
 
 // Even on the failing-bwrap path, spawn() reaches credentialProxy.start() before
@@ -96,6 +119,7 @@ afterAll(async () => {
 
 describe('WorkerSpawner bwrap cooldown (self-healing, not a permanent latch)', () => {
   let originalPlatform;
+  let windowsListener;
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -104,10 +128,12 @@ describe('WorkerSpawner bwrap cooldown (self-healing, not a permanent latch)', (
     mockSpawn.mockImplementation(() => makeFailingProc());
     mockFork.mockReset();
     originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    windowsListener = process.platform === 'win32' ? mockIpcListen(IpcWorker) : undefined;
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
   });
 
   afterEach(() => {
+    windowsListener?.mockRestore();
     Object.defineProperty(process, 'platform', originalPlatform);
     jest.useRealTimers();
     for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -167,5 +193,50 @@ describe('WorkerSpawner bwrap cooldown (self-healing, not a permanent latch)', (
     mockSpawn.mockImplementation(() => makeFailingProc());
     await settle(WorkerSpawner.spawn('next', makeTempDir()));
     expect(mockSpawn).toHaveBeenCalled();
+  }, 20_000);
+
+  it.each(['linux', 'win32'])('strict mode rejects missing sandbox on %s before any agent process', async (platform) => {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    if (platform === 'linux') mockExecSync.mockImplementationOnce(() => { throw new Error('not found'); });
+
+    await withStrictSpawner(async ({ WorkerSpawner: spawner, SandboxUnavailableError: unavailable }) => {
+      const { default: proxy } = await import('../../agent/utilities/CredentialProxy.js');
+      const start = jest.spyOn(proxy, 'start');
+      try {
+        await expect(spawner.spawn('missing-sandbox', makeTempDir())).rejects.toBeInstanceOf(unavailable);
+        expect(start).not.toHaveBeenCalled();
+        expect(mockSpawn).not.toHaveBeenCalled();
+        expect(mockFork).not.toHaveBeenCalled();
+      } finally {
+        start.mockRestore();
+        await proxy.stop();
+      }
+    });
+  });
+
+  it('strict mode rejects if bwrap disappears after lookup and closes each IPC socket', async () => {
+    mockSpawn.mockImplementation(() => {
+      const proc = new EventEmitter();
+      const error = Object.assign(new Error('spawn bwrap ENOENT'), { code: 'ENOENT' });
+      setTimeout(() => proc.emit('error', error), 0);
+      return proc;
+    });
+
+    await withStrictSpawner(async ({ WorkerSpawner: spawner, SandboxUnavailableError: unavailable, IpcWorker }) => {
+      const { default: proxy } = await import('../../agent/utilities/CredentialProxy.js');
+      const close = jest.fn();
+      const listen = mockIpcListen(IpcWorker, close);
+      try {
+        const result = await settle(spawner.spawn('missing-after-lookup', makeTempDir()));
+        expect(result.ok).toBe(false);
+        expect(result.error).toBeInstanceOf(unavailable);
+        expect(mockSpawn).toHaveBeenCalledTimes(3);
+        expect(close).toHaveBeenCalledTimes(3);
+        expect(mockFork).not.toHaveBeenCalled();
+      } finally {
+        listen.mockRestore();
+        await proxy.stop();
+      }
+    });
   }, 20_000);
 });

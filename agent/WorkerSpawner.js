@@ -14,11 +14,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = dirname(__dirname);  // sd-ai root (parent of agent/)
 
 /**
- * Thrown by spawn() when the sandbox cannot be created and no fallback is
- * permitted (bwrap broken + ALLOW_UNSANDBOXED_FALLBACK unset). This condition
- * is permanent for the lifetime of the process — retrying always fails
- * identically — so callers should treat it as fatal and close the connection
- * rather than return a retryable error that invites a client hot-loop.
+ * Thrown by spawn() when a usable sandbox is required and unavailable.
+ * Callers should close the connection to prevent a client retry loop.
  */
 export class SandboxUnavailableError extends Error {
   constructor(message) {
@@ -212,6 +209,7 @@ export class IpcWorker extends EventEmitter {
    * proc.on('exit') owns the cleanup.
    */
   dispose() {
+    this.#connected = false;
     this.#socket?.destroy();
     try { this.#server.close(); } catch { /* already closing */ }
     try { unlinkSync(this.#socketPath); } catch { /* already gone */ }
@@ -220,7 +218,16 @@ export class IpcWorker extends EventEmitter {
   /** Wire up the sandboxed process after the socket is already listening. */
   attach(proc) {
     this.#proc = proc;
-    proc.on('error', (err) => this.emit('error', err));
+    proc.on('error', (err) => {
+      // A failed exec has no PID and emits no exit event. Wake the startup
+      // waiter and remove this attempt's socket before retrying.
+      if (proc.pid === undefined) {
+        this.dispose();
+        this.emit('exit', err.code ?? null, null);
+        return;
+      }
+      this.emit('error', err);
+    });
     proc.on('exit', (code, signal) => {
       this.#connected = false;
       this.#socket?.destroy();
@@ -265,9 +272,9 @@ export class WorkerSpawner {
   static #BWRAP_COOLDOWN_MS = 60_000;
   static #bwrapBrokenUntil = 0;
   static #bwrapCurrentlyBroken() { return Date.now() < WorkerSpawner.#bwrapBrokenUntil; }
-  // Set ALLOW_UNSANDBOXED_FALLBACK=true to allow unsandboxed fork workers when
-  // bwrap fails at runtime.  Defaults to false so a sandbox failure is a hard
-  // error rather than a silent security regression.
+  // Explicit false requires bwrap. An unset value preserves the local
+  // development fallback on platforms where bwrap is absent.
+  static #requireSandbox = process.env.ALLOW_UNSANDBOXED_FALLBACK === 'false';
   static #allowUnsandboxedFallback = process.env.ALLOW_UNSANDBOXED_FALLBACK === 'true';
 
   // `which` shells out via execSync — ~5-30ms each on Linux — and the answer
@@ -449,6 +456,11 @@ export class WorkerSpawner {
    * same .send() / on('message') / .connected interface used by WebSocket.js.
    */
   static async spawn(sessionId, sessionTempDir) {
+    const bwrapBin = process.platform === 'linux' ? WorkerSpawner.#findBinary('bwrap') : null;
+    if (WorkerSpawner.#requireSandbox && !bwrapBin) {
+      throw new SandboxUnavailableError('A Linux bwrap sandbox is required to start an agent worker');
+    }
+
     // Minted once per spawn(), not per bwrap attempt: the retry loop would
     // otherwise leave a live token behind for every attempt it burned. Revoked
     // when the worker exits, or below if no worker ever starts.
@@ -470,7 +482,6 @@ export class WorkerSpawner {
     };
 
     if (process.platform === 'linux') {
-      const bwrapBin = WorkerSpawner.#findBinary('bwrap');
       if (bwrapBin && !WorkerSpawner.#bwrapCurrentlyBroken()) {
         const MAX_ATTEMPTS = 3;
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -524,6 +535,7 @@ export class WorkerSpawner {
             // but bad options can. Tear down the listening server + socket file
             // so we don't leak FDs across retries.
             worker.dispose();
+            credentialProxy.revokeToken(anthropicSentinel);
             throw err;
           }
           if (proc.stderr) {
@@ -599,12 +611,12 @@ export class WorkerSpawner {
         }
         // All attempts failed — fall through to cooldown handling below.
       }
-      if (WorkerSpawner.#bwrapCurrentlyBroken()) {
+      if (WorkerSpawner.#requireSandbox || WorkerSpawner.#bwrapCurrentlyBroken()) {
         if (!WorkerSpawner.#allowUnsandboxedFallback) {
           // No worker will ever start, so nothing is left to fire the exit
           // handler that would normally retire this token.
           credentialProxy.revokeToken(anthropicSentinel);
-          throw new SandboxUnavailableError('bwrap sandbox is unavailable and ALLOW_UNSANDBOXED_FALLBACK is not set — refusing to spawn unsandboxed worker');
+          throw new SandboxUnavailableError('bwrap sandbox is unavailable and unsandboxed fallback is disabled');
         }
         logger.warn(`[worker:${sessionId}] bwrap sandbox unavailable — spawning unsandboxed worker`);
       } else {

@@ -20,13 +20,22 @@ jobs:
           node-version: '22'
       - run: node --test infra/private-merlin/private.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/checkout@v4
+        with:
+          repository: yudocyudoc/igc-modular
+          ref: b9d1845c376891ed59e50854f11e95e4b6d200fd
+          path: arena-client
+          persist-credentials: false
+      - name: Install exact local Workers runtime used by Wrangler 4.166.0
+        run: npm install --prefix "$RUNNER_TEMP/merlin-test-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
       - name: Native WebSocket in a network namespace with loopback only
         shell: bash
         run: |
           set -eu
           export MERLIN_NODE="$(command -v node)"
-          sudo --preserve-env=MERLIN_NODE,GITHUB_SHA unshare --net --mount --propagation private sh -ec '
+          export MERLIN_TEST_TOOLS="$RUNNER_TEMP/merlin-test-tools" MERLIN_ARENA_PATH="$PWD/arena-client"
+          sudo --preserve-env=MERLIN_NODE,GITHUB_SHA,MERLIN_TEST_TOOLS,MERLIN_ARENA_PATH unshare --net --mount --propagation private sh -ec '
             ip link set lo up
             sysctl -qw net.ipv4.ip_unprivileged_port_start=0
             hosts=$(mktemp)
@@ -35,4 +44,5 @@ jobs:
             chmod 644 "$hosts"
             mount --bind "$hosts" /etc/hosts
             runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs R
-            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs I'
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs I
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-arena.mjs'

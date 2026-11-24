@@ -44,7 +44,7 @@ function fixture({response=proof,throwPost=false,throwDestroy=false,dbFail=false
   }
   return {meta:{changes:1}};
  }}}}}};
- const ctx={storage,container},env={R1_MODE:MODE,R1_EXPECTED_SHA:commit,R1_IMAGE_DIGEST:digest,DB,
+ const ctx={storage,container},env={R1_MODE:MODE,R1_EXPECTED_SHA:commit,R1_IMAGE_DIGEST:digest,R1_EXPIRES_AT:new Date(Date.now()+600000).toISOString(),DB,
  R1_CONTAINER:{getByName(){throw Error('not a real binding')}}};
  return {ctx,env,events,rows,data,counts:()=>({starts,posts,stops,alarm})};
 }
@@ -128,4 +128,10 @@ test('real loopback HTTP rejects unauthenticated requests and replay; mocked pro
  const r=await fetch(url+'/probe',{method:'POST',headers:h});assert.equal(r.status,200);
  assert.equal((await r.json()).reason_code,'NAMESPACE_CREATION_DENIED');
  assert.equal((await fetch(url+'/probe',{method:'POST',headers:h})).status,409);assert.equal(calls,1);
+});
+
+test('expired or excessive arming window prevents any allocation',async()=>{
+ const f=fixture();for(const ms of [-1000,16*60000]){
+ assert.equal((await runOneShot(f.ctx,{...f.env,R1_EXPIRES_AT:new Date(Date.now()+ms).toISOString()},opts)).status,'R1_DISABLED');
+ }assert.equal(f.counts().starts,0);
 });

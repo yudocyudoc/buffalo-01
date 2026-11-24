@@ -23,3 +23,6 @@ Un Worker separado, sin ruta pública, llama por cron temporal a un DO fijo. Cla
 
 ## Evidencia de esta entrega
 CI local: unit tests con mocks de Container/D1/DO y HTTP loopback real con sonda inyectada. Build OCI local y default unarmed denial. No remoto, registro de imagen ni Cloudflare API mutante. No afirmar que mocks son la prueba R1. El fallo R0 no se cambia ni se reejecuta para esta rama.
+
+## Workflow manual propuesto
+`buffalo-stage3b8r1-private-manual.yml` exige main, SHA exacto, consentimiento literal y primer intento. Preflight de recursos nuevos; publica y compara manifest/config de imagen, dry-run, aplica solo tabla R1, despliega desarmado, verifica estado, arma cron temporal y lee D1. Restauración always y verificación independiente de cron, configuración, agregados e instancias activas. Ventana de armado expira en 12 minutos (no equivale a límite de facturación); claim no se borra. El workflow no se ha ejecutado remotamente. Ante cancelación abrupta, expiración impide nuevos starts y watchdog/inactividad limitan actividad; se requiere verificar y restaurar por operador si CI no completa cleanup. No se autoriza gasto por este documento.

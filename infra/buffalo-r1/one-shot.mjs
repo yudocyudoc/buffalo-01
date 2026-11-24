@@ -4,7 +4,9 @@ const deny=()=>new Response('Not Found',{status:404});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 export const validConfig=e=>e.R1_MODE===MODE&&validCommit(e.R1_EXPECTED_SHA)&&
  typeof e.R1_IMAGE_DIGEST==='string'&&/^sha256:[a-f0-9]{64}$/.test(e.R1_IMAGE_DIGEST)&&
- e.DB?.prepare&&e.R1_CONTAINER?.getByName;
+ e.DB?.prepare&&e.R1_CONTAINER?.getByName&&
+ typeof e.R1_EXPIRES_AT==='string'&&Number.isFinite(Date.parse(e.R1_EXPIRES_AT))&&
+ Date.parse(e.R1_EXPIRES_AT)>Date.now()&&Date.parse(e.R1_EXPIRES_AT)-Date.now()<=15*60_000;
 const safe=(state)=>({status:state,probe_id:ID});
 export {deny};
 async function record(db,r){
@@ -34,6 +36,7 @@ export async function runOneShot(ctx,env,{sleep=pause,randomUUID=()=>crypto.rand
   .bind(ID,run,'CLAIMED',JSON.stringify(claim)).run();
  if(initial?.meta?.changes!==1)throw Error('R1_D1_CLAIM_NOT_RECORDED');
  await ctx.storage.setAlarm(Date.now()+60000);
+ if(!validConfig(env))throw Error('R1_AUTHORIZATION_EXPIRED_BEFORE_START');
  let result={...claim,status:'R1_RUNTIME_FAILURE',probe:null,phase:'START'};
  let attempted=false;
  try{

@@ -5,6 +5,7 @@ on:
       - 'infra/private-merlin/**'
       - 'agent/**'
       - '.github/workflows/private-merlin-offline.yml'
+      - '.github/workflows/private-merlin-r-manual.yml'
 permissions:
   contents: read
 jobs:
@@ -37,7 +38,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test infra/private-merlin/private.test.mjs
+      - run: node --test infra/private-merlin/*.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - uses: actions/checkout@v4
         with:

@@ -67,6 +67,10 @@ export class MerlinOrigin extends DurableObject {
       const intercept=this.ctx.exports.Outbound({props:{phase:g.phase}});
       await container.interceptAllOutboundHttp(intercept);
       await container.interceptOutboundHttps('*',intercept);
+      await this.ctx.storage.transaction(async tx=>{
+        const s=await tx.get('run');requireThat(s?.status==='RUNNING','RUNTIME_NOT_RUNNING');
+        await tx.put('run',{...s,intercepts_registered:true,internet_enabled_config:false});
+      });
       this.key=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
       grant(this.env,task.phase);
       container.start({image,instance:'basic',enableInternet:false,env:{
@@ -123,7 +127,7 @@ export class MerlinOrigin extends DurableObject {
           proof.exit?.code===0 && proof.exit.signal===null &&
           proof.session_id===transcript.session_id && JSON.stringify(transcript.frames)===JSON.stringify(frames) &&
           JSON.stringify(proof.worker_frames)===JSON.stringify(expected);
-        const ok=valid && (s.phase==='R'?s.egress_attempts===0 && s.posts===0:
+        const ok=valid && (s.phase==='R'?s.egress_attempts===0 && s.posts===0 && s.intercepts_registered===true && s.internet_enabled_config===false:
           s.posts===1 && s.egress_attempts===1 && s.usage && s.finish_reason==='stop' && outputHash &&
           proof.output_sha256===outputHash);
         const status=ok?(s.phase==='R'?'ORIGINAL_AGENT_PROCESS_BOUNDARY_PASS_NO_INFERENCE':'REAL_MERLIN_TURN_COMPLETED'):'RUNTIME_FAILURE';

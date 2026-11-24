@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MODEL,ENDPOINT} from './protocol.mjs';
-import {bindingProviderRequest,durableStage,readDurableTask,BINDING_TRANSPORT,GEMMA} from './binding-gateway.mjs';
+import {bindingProviderRequest,durableStage,readDurableTask,BINDING_TRANSPORT,CORRECTED_TRANSPORT,GEMMA} from './binding-gateway.mjs';
+import captured from './fixtures/gemma-native-contract-45496578147.json' with {type:'json'};
+import {responsePredicates,passedPredicates} from './gemma-response.mjs';
 const g={phase:'I',project_id:'arena-igc',task_id:'58532b8a-b25e-4b67-a90b-10db57da263b',source_commit:'a'.repeat(40),image_digest:'sha256:'+'b'.repeat(64),model_sha256:MODEL,max_posts:1,max_output_tokens:2048,max_input_bytes:131072,provider_model:GEMMA,expires:Date.now()+600000};
 const run=()=>({...g,approval:g,status:'RUNNING',posts:0,egress_attempts:0,sd_json:'{"x":1}',deadline:Date.now()+60000});
 const request=(extra={})=>new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'system',content:'Merlin'},{role:'user',content:'Model {"x":1}'}],tools:[{name:'forbidden'}],...extra})});
@@ -73,4 +75,36 @@ test('read both I receipts after disarm; only read, never submit; R is unchanged
  assert.deepEqual(calls.splice(0),['arena-merlin-v1-I-binding-v2','arena-merlin-v1-I']);
  assert.deepEqual(await readDurableTask(env,{phase:'R',task_id:'r'}),r);
  assert.deepEqual(calls.splice(0),['arena-merlin-v1-R']);
+});
+
+test('actual Gemma capture rejects legacy exact-name check and passes corrected contract',async()=>{
+ assert.equal(captured.model,GEMMA+'-external');
+ assert.deepEqual(Object.entries(responsePredicates(captured,2048,false)).filter(([,v])=>!v).map(([k])=>k),['model_accepted']);
+ assert(passedPredicates(responsePredicates(captured,2048,true)));
+ const f=fixture(async()=>structuredClone(captured));
+ const out=await bindingProviderRequest(f.storage,{...f.env,MERLIN_I_TRANSPORT:CORRECTED_TRANSPORT},'I',request());
+ assert.equal(out.status,200);const body=await out.json();assert.equal(body.model,GEMMA);assert.equal(body.choices[0].message.content,'OK');
+ const d=f.read().provider_diagnostic;assert.equal(d.response_model,captured.model);assert.equal(d.neurons,captured.usage.neurons);
+ assert(passedPredicates(d.predicates));assert.deepEqual(d.failed_predicates,[]);assert.equal(f.calls(),1);
+});
+test('v3 keeps exact alias allowlist and rejects each malformed response with exact failed predicates',async()=>{
+ for(const [modify,expected] of [
+  [r=>{r.model=GEMMA+'-external-other'},['model_accepted']],
+  [r=>{r.usage.completion_tokens=2049},['completion_tokens_valid']],
+  [r=>{r.choices[0].finish_reason='length'},['stop']],
+  [r=>{r.choices[0].message.role='user'},['assistant_role']],
+  [r=>{r.choices[0].message.tool_calls=[{}]},['no_tool_calls']],
+  [r=>{r.choices[0].message.content=[]},['content_string','content_nonempty','content_bounded']]
+ ]){
+  const r=structuredClone(captured);modify(r);const f=fixture(async()=>r);
+  const out=await bindingProviderRequest(f.storage,{...f.env,MERLIN_I_TRANSPORT:CORRECTED_TRANSPORT},'I',request());
+  assert.equal(out.status,422);assert.deepEqual(f.read().provider_diagnostic.failed_predicates,expected);assert.equal(f.calls(),1);
+ }
+});
+test('v3 identity is distinct and read-only lookup recovers it after disarm',async()=>{
+ assert.equal(durableStage({MERLIN_I_TRANSPORT:CORRECTED_TRANSPORT},'I'),'I-binding-v3');
+ const calls=[];const row={task_id:'v3',phase:'I'};
+ const env={TASKS:{getByName(name){calls.push(name);return{read:async key=>name==='arena-merlin-v1-I-binding-v3'&&key.task_id===row.task_id?row:null}}}};
+ assert.deepEqual(await readDurableTask(env,row),row);
+ assert.deepEqual(calls,['arena-merlin-v1-I','arena-merlin-v1-I-binding-v2','arena-merlin-v1-I-binding-v3']);
 });

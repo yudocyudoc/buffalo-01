@@ -1,7 +1,7 @@
 import {DurableObject,WorkerEntrypoint} from 'cloudflare:workers';
 import {CONFIG_HASH,MODEL,checkInput,digest,grant,requireThat,elapsedLimit,verifyClaim} from './protocol.mjs';
 import {boundedJSON,providerRequest} from './gateway.mjs';
-import {bindingProviderRequest,durableStage,BINDING_TRANSPORT} from './binding-gateway.mjs';
+import {bindingProviderRequest,durableStage,isBindingTransport} from './binding-gateway.mjs';
 
 const deny=()=>new Response(null,{status:404});
 const stub=(env,phase)=>{
@@ -99,7 +99,7 @@ export class MerlinOrigin extends DurableObject {
   async outbound(request){
     const run=await this.ctx.storage.get('run');
     try{
-      if(run?.phase==='I'&&this.env.MERLIN_I_TRANSPORT===BINDING_TRANSPORT)
+      if(run?.phase==='I'&&isBindingTransport(this.env.MERLIN_I_TRANSPORT))
         return await bindingProviderRequest(this.ctx.storage,this.env,run.phase,request);
       return await providerRequest(this.ctx.storage,this.env,run?.phase,request);
     }

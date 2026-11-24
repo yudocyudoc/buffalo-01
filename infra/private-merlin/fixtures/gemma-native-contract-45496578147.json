@@ -1,0 +1,26 @@
+{
+  "id": "9da1436e23da47a19a4f6a3481aae10f",
+  "object": "chat.completion",
+  "created": 1795557941,
+  "model": "@cf/google/gemma-4-26b-a4b-it-external",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "OK"
+      },
+      "finish_reason": "stop",
+      "logprobs": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 28,
+    "completion_tokens": 2,
+    "total_tokens": 30,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "neurons": 0.30909091234207153
+  }
+}

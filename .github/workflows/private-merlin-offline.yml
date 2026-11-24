@@ -7,6 +7,7 @@ on:
       - '.github/workflows/private-merlin-offline.yml'
       - '.github/workflows/private-merlin-r-manual.yml'
       - '.github/workflows/private-merlin-i-manual.yml'
+      - '.github/workflows/private-merlin-binding-i-manual.yml'
 permissions:
   contents: read
 jobs:

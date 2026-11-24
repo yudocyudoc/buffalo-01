@@ -1,11 +1,12 @@
 import {DurableObject,WorkerEntrypoint} from 'cloudflare:workers';
 import {CONFIG_HASH,MODEL,checkInput,digest,grant,requireThat,elapsedLimit,verifyClaim} from './protocol.mjs';
 import {boundedJSON,providerRequest} from './gateway.mjs';
+import {bindingProviderRequest,durableStage,BINDING_TRANSPORT} from './binding-gateway.mjs';
 
 const deny=()=>new Response(null,{status:404});
 const stub=(env,phase)=>{
   requireThat(phase==='R'||phase==='I','INVALID_PHASE');
-  return env.ORIGINS.getByName('private-merlin-v1-'+phase);
+  return env.ORIGINS.getByName('private-merlin-v1-'+durableStage(env,phase));
 };
 export class Outbound extends WorkerEntrypoint {
   fetch(request){return stub(this.env,this.ctx.props.phase).outbound(request);}
@@ -97,7 +98,11 @@ export class MerlinOrigin extends DurableObject {
   }
   async outbound(request){
     const run=await this.ctx.storage.get('run');
-    try{return await providerRequest(this.ctx.storage,this.env,run?.phase,request);}
+    try{
+      if(run?.phase==='I'&&this.env.MERLIN_I_TRANSPORT===BINDING_TRANSPORT)
+        return await bindingProviderRequest(this.ctx.storage,this.env,run.phase,request);
+      return await providerRequest(this.ctx.storage,this.env,run?.phase,request);
+    }
     catch{return new Response(null,{status:403});}
   }
   async finish(transcript){

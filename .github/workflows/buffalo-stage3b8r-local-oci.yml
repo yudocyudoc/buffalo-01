@@ -1,0 +1,163 @@
+name: Buffalo Stage 3B-8/R0 LOCAL OCI sandbox gate (NO deploy, NO AI)
+on:
+  pull_request:
+    paths:
+      - 'agent/WorkerSpawner.js'
+      - 'tests/agent/WorkerSpawner.cooldown.test.js'
+      - 'infra/buffalo-origin/Dockerfile.stage3b8r-probe'
+      - 'infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs'
+      - 'infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs'
+      - 'infra/buffalo-origin/stage3b8r-oci-preflight.mjs'
+      - 'infra/buffalo-origin/stage3b8r-oci-preflight.test.mjs'
+      - '.github/workflows/buffalo-stage3b8r-local-oci.yml'
+permissions:
+  contents: read
+jobs:
+  pure-r0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pure proof and negative test contracts, no provider
+        run: |
+          node --check infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs
+          node --test infra/buffalo-origin/stage3b8r-bwrap-minimal.test.mjs
+          node --check infra/buffalo-origin/stage3b8r-oci-preflight.mjs
+          node --test infra/buffalo-origin/stage3b8r-oci-preflight.test.mjs
+      - name: Verify strict WorkerSpawner policy offline
+        run: |
+          npm ci --ignore-scripts
+          npm test -- --runInBand --runTestsByPath \
+            tests/agent/WorkerSpawner.cooldown.test.js \
+            tests/agent/WorkerSpawnerSandboxMasks.test.js \
+            tests/agent/WorkerSpawnerUtf8.test.js
+  local-oci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: pure-r0
+    env:
+      ALLOW_UNSANDBOXED_FALLBACK: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin base image by registry digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          BASE_REF="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
+          case "$BASE_REF" in node@sha256:*) ;; *) echo 'BASE_NOT_PINNED'; exit 1 ;; esac
+          echo "BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+      - name: Build separate, non-deployable OCI image with bwrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+            --build-arg "NODE_BASE_IMAGE=$BASE_REF" \
+            --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.base.name=$BASE_REF" \
+            --label "org.opencontainers.image.source=https://github.com/yudocyudoc/buffalo-01" \
+            --tag buffalo-stage3b8r:local-feasibility --load \
+            -f infra/buffalo-origin/Dockerfile.stage3b8r-probe .
+          test "$(docker image inspect --format '{{.Config.User}}' buffalo-stage3b8r:local-feasibility)" = node
+          docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            buffalo-stage3b8r:local-feasibility | grep -Fx "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA"
+          # The image has no callable server by default. It MUST fail closed.
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 64 \
+            --memory 512m --memory-swap 512m \
+            buffalo-stage3b8r:local-feasibility >/dev/null 2>&1
+          CODE=$?
+          set -e
+          test "$CODE" -eq 78
+      - name: Prove minimal bwrap namespace behavior with exact Docker restrictions
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE=buffalo-stage3b8r:local-feasibility
+          mkdir -p "$RUNNER_TEMP/3b8r"
+          # This step does NOT import Buffalo, invoke AgentWorker, or contact network.
+          # Same Docker flags, HOME, user and rootfs as the following agent probes.
+          set +e
+          timeout 25s docker run --rm --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 64 --memory 512m --memory-swap 512m \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            -e "GITHUB_SHA=$GITHUB_SHA" -e ALLOW_UNSANDBOXED_FALLBACK=false \
+            "$IMAGE" node infra/buffalo-origin/stage3b8r-bwrap-minimal.mjs \
+            --commit "$GITHUB_SHA" \
+            >"$RUNNER_TEMP/3b8r/minimal.log" 2>&1
+          MINIMAL=$?
+          set -e
+          printf '%s\n' "$MINIMAL" > "$RUNNER_TEMP/3b8r/minimal.exit"
+          # Minimal script emits sanitized receipt only; never print raw bwrap stderr.
+          grep '^BUFFALO_3B8R0_MINIMAL=' "$RUNNER_TEMP/3b8r/minimal.log" || true
+      - name: Run original Merlin probes only if minimal namespaces worked
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE=buffalo-stage3b8r:local-feasibility
+          MINIMAL="$(cat "$RUNNER_TEMP/3b8r/minimal.exit")"
+          if test "$MINIMAL" -eq 0; then
+            set +e
+            timeout 95s docker run --rm --network none --read-only \
+              --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 64 --memory 512m --memory-swap 512m \
+              --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+              -e "GITHUB_SHA=$GITHUB_SHA" -e ALLOW_UNSANDBOXED_FALLBACK=false \
+              "$IMAGE" node scripts/full-integration/original-merlin-worker-boundary.mjs \
+              --commit "$GITHUB_SHA" \
+              >"$RUNNER_TEMP/3b8r/direct.log" 2>&1
+            DIRECT=$?
+            set -e
+            printf '%s\n' "$DIRECT" > "$RUNNER_TEMP/3b8r/direct.exit"
+            if test "$DIRECT" -eq 0; then
+              set +e
+              timeout 95s docker run --rm --network none --read-only \
+                --cap-drop ALL --security-opt no-new-privileges \
+                --pids-limit 64 --memory 512m --memory-swap 512m \
+                --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+                -e "GITHUB_SHA=$GITHUB_SHA" -e ALLOW_UNSANDBOXED_FALLBACK=false \
+                "$IMAGE" node scripts/full-integration/original-merlin-websocket-process-offline.mjs \
+                --commit "$GITHUB_SHA" \
+                >"$RUNNER_TEMP/3b8r/ws.log" 2>&1
+              WS=$?
+              set -e
+              printf '%s\n' "$WS" > "$RUNNER_TEMP/3b8r/ws.exit"
+            else
+              printf '99\n' > "$RUNNER_TEMP/3b8r/ws.exit"
+              printf 'SKIPPED_AFTER_DIRECT_FAILURE\n' > "$RUNNER_TEMP/3b8r/ws.log"
+            fi
+          else
+            printf '99\n' > "$RUNNER_TEMP/3b8r/direct.exit"
+            printf 'SKIPPED_AFTER_MINIMAL_FAILURE\n' > "$RUNNER_TEMP/3b8r/direct.log"
+            printf '99\n' > "$RUNNER_TEMP/3b8r/ws.exit"
+            printf 'SKIPPED_AFTER_MINIMAL_FAILURE\n' > "$RUNNER_TEMP/3b8r/ws.log"
+          fi
+          # A completed build or a generic bwrap warning is never a PASS.
+          node infra/buffalo-origin/stage3b8r-oci-preflight.mjs \
+            --minimal-log "$RUNNER_TEMP/3b8r/minimal.log" \
+            --minimal-exit "$RUNNER_TEMP/3b8r/minimal.exit" \
+            --direct-log "$RUNNER_TEMP/3b8r/direct.log" \
+            --direct-exit "$RUNNER_TEMP/3b8r/direct.exit" \
+            --ws-log "$RUNNER_TEMP/3b8r/ws.log" \
+            --ws-exit "$RUNNER_TEMP/3b8r/ws.exit" \
+            --source-sha "$GITHUB_SHA" --image-sha "$GITHUB_SHA" \
+            --output "$RUNNER_TEMP/3b8r/receipt.json"
+      - name: Retain sanitized local-only classification, including an honest BLOCK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffalo-stage3b8r-local-oci-${{ github.run_id }}
+          path: ${{ runner.temp }}/3b8r/receipt.json
+          retention-days: 7
+          if-no-files-found: warn

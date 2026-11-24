@@ -33,6 +33,6 @@ if(process.argv[1]?.endsWith('/driver.mjs')){
   try{verifyLaunchContext(readFileSync('/proc/self/status','utf8'));console.log('R2_LAUNCH_CONTEXT_VERIFIED')}catch{process.exitCode=77}
  }else if(process.argv.length===2){
   try{const result=await drive();console.log('BUFFALO_R2_PROCESS='+JSON.stringify(result))}
-  catch(e){console.error('BUFFALO_R2_DRIVER_FAILED '+(String(e?.message).includes('R2_LAUNCH_CONTEXT_FAILED')?'LAUNCH_CONTEXT_FAILED':'ORIGINAL_PROCESS_FAILED'));process.exitCode=1}
+  catch(e){const m=String(e?.message??'');const code=m.includes('R2_LAUNCH_CONTEXT_FAILED')?'LAUNCH_CONTEXT_FAILED':m.includes('3B8_REAL_WORKER_IPC_TIMEOUT')?'ORIGINAL_IPC_TIMEOUT':/bwrap sandbox is unavailable/i.test(m)?'ORIGINAL_WORKER_START_FAILED':'ORIGINAL_PROCESS_FAILED';console.error('BUFFALO_R2_DRIVER_FAILED '+code);process.exitCode=1}
  }else process.exitCode=78;
 }

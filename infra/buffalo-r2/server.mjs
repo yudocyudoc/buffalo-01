@@ -18,8 +18,8 @@ export function probeR2({commit,spawn=spawnSync}){
  let reason='ORIGINAL_PROCESS_FAILED';
  if(child.error?.code==='ETIMEDOUT')reason='ORIGINAL_PROCESS_TIMEOUT';
  else if(/LAUNCH_CONTEXT_FAILED|^setpriv:/m.test(stderr))reason='LAUNCH_CONTEXT_FAILED';
- else if(/3B8_REAL_WORKER_IPC_TIMEOUT/.test(log))reason='ORIGINAL_IPC_TIMEOUT';
- else if(/bwrap sandbox is unavailable|bwrap exited early/i.test(log))reason='ORIGINAL_WORKER_START_FAILED';
+ else if(/3B8_REAL_WORKER_IPC_TIMEOUT|BUFFALO_R2_DRIVER_FAILED ORIGINAL_IPC_TIMEOUT/.test(log))reason='ORIGINAL_IPC_TIMEOUT';
+ else if(/bwrap sandbox is unavailable|bwrap exited early|BUFFALO_R2_DRIVER_FAILED ORIGINAL_WORKER_START_FAILED/i.test(log))reason='ORIGINAL_WORKER_START_FAILED';
  else if(child.status===0)reason='INVALID_PROCESS_RECEIPT';
  return {...base,status:'ORIGINAL_PROCESS_BLOCKED',reason_code:reason,exit_code:Number.isInteger(child.status)&&child.status>0?child.status:1,evidence:null};
 }
@@ -46,9 +46,8 @@ export function startProbeServer({env=process.env,probe=probeR2,port=8080,host='
   used=true; // before synchronous bounded original process launch, never retry after failure
   try{
    const p=probe({commit});
-   const receipt=boundedReceipt({...p,schema:SCHEMA,run_id:run,probe_id:ID},commit,run);
-   // The R0 receipt's network_disabled field is intentionally NOT forwarded:
-   // in R2 enableInternet:false is controller configuration, not measured egress.
+   const receipt=boundedReceipt({...p,schema:SCHEMA,source_commit:commit,run_id:run,probe_id:ID},commit,run);
+   // Transport returns only the bounded receipt, never child stdout/stderr.
    end(200,JSON.stringify(receipt));
   }catch{end(500,JSON.stringify({error:'R2_PROBE_FAILED'}))}
  });

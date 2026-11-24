@@ -38,7 +38,7 @@ test('fixed process invocation with allowlisted env and no raw log',()=>{
 });
 test('disabled origin denies; private one shot, body denied and replay rejected',async t=>{
  assert.throws(()=>startProbeServer({env:{}}),/R2_ORIGIN_NOT_ARMED/);
- let calls=0;const s=startProbeServer({host:'127.0.0.1',port:0,env:{R2_MODE:MODE,BUFFALO_IMAGE_SOURCE_SHA:sha,R2_EXPECTED_SHA:sha,R2_RUN_ID:run,R2_KEY:key,ALLOW_UNSANDBOXED_FALLBACK:'false'},probe:()=>{calls++;return pass}});
+ let calls=0;const s=startProbeServer({host:'127.0.0.1',port:0,env:{R2_MODE:MODE,BUFFALO_IMAGE_SOURCE_SHA:sha,R2_EXPECTED_SHA:sha,R2_RUN_ID:run,R2_KEY:key,ALLOW_UNSANDBOXED_FALLBACK:'false'},probe:()=>{calls++;const {schema,source_commit,run_id,probe_id,...payload}=pass;return payload}});
  t.after(()=>{s.closeAllConnections();return new Promise(r=>s.close(r))});if(!s.listening)await once(s,'listening');
  const u='http://127.0.0.1:'+s.address().port;const headers={'x-buffalo-r2-key':key};
  assert.equal((await fetch(u+'/probe',{method:'POST'})).status,404);

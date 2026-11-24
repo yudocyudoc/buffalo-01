@@ -86,7 +86,7 @@ async function main(){
   save('preflight',{status:'R2_PROBE_UNUSED',probe_id:ID,schema_preapplied:true,existing_app_disabled:Boolean(app)});
  }else if(phase==='configs'||phase==='arm'){
   const template=JSON.parse(readFileSync('infra/buffalo-r2/wrangler.template.json','utf8'));
-  if(phase==='arm')await requireUnusedProbe(query);
+  if(phase==='arm'){await requireUnusedProbe(query);await oldBaseline();await requireDisabledApp(await appsZero());}
   const expires=phase==='arm'?armExpiry():EXPIRED;
   const {disabled,armed}=configs(template,env.GITHUB_SHA,env.R2_REGISTRY_REF,expires);
   if(phase==='configs')writeFileSync('infra/buffalo-r2/wrangler.r2-disabled.json',JSON.stringify(disabled,null,2));

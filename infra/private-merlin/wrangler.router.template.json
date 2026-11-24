@@ -1,0 +1,45 @@
+{
+  "name": "buffalo-merlin-private-router",
+  "main": "router.mjs",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": []
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ORIGINS",
+        "class_name": "MerlinOrigin"
+      }
+    ]
+  },
+  "exports": {
+    "MerlinOrigin": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "containers": [
+    {
+      "name": "buffalo-merlin-private-origin",
+      "class_name": "MerlinOrigin",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "UNPUBLISHED_IMAGE_DIGEST_REQUIRED"
+        }
+      }
+    }
+  ],
+  "vars": {
+    "MERLIN_GRANT": "null"
+  }
+}

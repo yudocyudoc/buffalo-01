@@ -15,7 +15,8 @@ const key=randomBytes(32).toString('hex');
 const source=process.env.GITHUB_SHA,deadline=Date.now()+90000;
 const phase=process.argv[2]??'R';
 assert(['R','I'].includes(phase));
-const providerModel=MODEL_IDS[0];
+const providerModel=process.env.MERLIN_TEST_MODEL??MODEL_IDS[0];
+assert(MODEL_IDS.includes(providerModel));
 const fixture='Offline transport fixture from the local provider.';
 let requests=0, proxy;
 if(phase==='I'){

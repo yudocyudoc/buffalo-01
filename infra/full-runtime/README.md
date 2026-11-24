@@ -1,0 +1,17 @@
+# Buffalo Full original application runtime
+
+The container starts upstream `app.js` with Express and WebSocket sharing port 8080. A non-root entrypoint drops inherited capabilities, verifies the Linux launch context, and requires authenticated sessions and bubblewrap. It uses the existing private provider bootstrap only when Workers AI is explicitly configured. Private 3B-8 retains its own image and receipts.
+
+## Private client integration
+
+Configure a trusted client-facing Worker to use a service binding to the named `FullApplication` entrypoint. That caller must authenticate the user, authorize the project and **overwrite** the `x-buffalo-project` header with its own verified project slug. Each project maps to one Container and SQLite-backed Durable Object. The default public handler returns 404. The private binding preserves original HTTP methods, paths and WebSocket frames. Use the original application authentication key in the REST header or session initialization. The router needs the `APP_AUTH_KEY` secret and an explicitly enabled runtime to start a container.
+
+The project owner can save the exact client-accepted SD-JSON with `PUT /project/model`. Use `If-None-Match: *` to create and the last returned quoted ETag in `If-Match` to update. A stale revision receives 412. `GET /project/model` returns the latest model and ETag even with the container stopped. The current checkpoint limit is 1 MiB. A compatible client can save the accepted model before answering Buffalo's `update_model` request and supply the recovered version in a new `initialize_session`. Model checkpoints do not contain conversation history or tool output.
+
+## Coverage
+
+The build compiles the original Go causal-chains binary and installs production Node dependencies. CI records the catalog reported by the running image, checks the original `predprey` REST generation, and separately selects all five agent configurations in their declared modes using Linux bubblewrap. The image has no Docker daemon, causal-decoder ML stack, Python simulation or visualization environment. A catalog entry alone does not establish that an engine's dependencies or inference path work.
+
+The editing transport passes the original agent's tool schemas and conversation messages to a native Workers AI binding and returns correlated tool calls or final text. This increment admits model reading, granular variable edits and client updates. General engine inference through LLMWrapper, other tool families, and arbitrary provider routes need separate coverage. The template has no AI binding or live limits. An operator must explicitly supply the digest-pinned image, an AI binding named `AI`, a single authorized `AI_PROJECT`, an absolute `AI_EXPIRES_AT` and a cumulative integer `AI_MAX_CALLS` before an inference run. The counter is durable across container restarts. Per invocation limits are 131072 serialized input bytes and 2048 output tokens. Requests that reach the provider consume a reservation even on failure.
+
+The offline native test runs the real parent, sandboxed child, edit tool, WebSocket client and SQLite storage. Only the provider response is scripted. It restarts both the application and local workerd and reopens the edited project. The image test runs REST inside Docker with networking disabled. These checks do not deploy a Worker or measure Gemma's remote ability to choose and execute the edit.

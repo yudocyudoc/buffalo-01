@@ -1,0 +1,59 @@
+name: Buffalo Full original application offline
+on:
+  pull_request:
+    paths:
+      - 'infra/full-runtime/**'
+      - '.github/workflows/buffalo-full-runtime.yml'
+      - 'app.js'
+      - 'agent/**'
+      - 'routes/**'
+      - 'engines/**'
+      - 'config.js'
+      - 'package*.json'
+permissions:
+  contents: read
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and start the production image with Internet disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f infra/full-runtime/Dockerfile -t buffalo-full:offline .
+          docker run --detach --name full --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges -e AUTHENTICATION_KEY=ci-only buffalo-full:offline
+          trap 'docker logs --tail 30 full; docker rm -f full' EXIT
+          test "$(docker inspect --format '{{.Config.User}}' full)" = node
+          docker exec full node infra/full-runtime/test-rest.mjs
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm install --prefix "$RUNNER_TEMP/full-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
+      - name: Original REST, sessions and confirmed model edit with a local binding fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools"
+          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS unshare --net --mount --propagation private sh -ec '
+            ip link set lo up
+            sysctl -qw net.ipv4.ip_unprivileged_port_start=0
+            hosts=$(mktemp)
+            cat /etc/hosts > "$hosts"
+            echo "127.0.0.1 merlin-provider.internal" >> "$hosts"
+            chmod 644 "$hosts"
+            mount --bind "$hosts" /etc/hosts
+            exec runuser -u runner -- "$FULL_NODE" infra/full-runtime/offline.mjs'

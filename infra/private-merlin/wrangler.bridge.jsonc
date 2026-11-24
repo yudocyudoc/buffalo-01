@@ -1,0 +1,40 @@
+{
+  "name": "buffalo-merlin-private-bridge",
+  "main": "bridge.mjs",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": []
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TASKS",
+        "class_name": "MerlinTask"
+      }
+    ]
+  },
+  "exports": {
+    "MerlinTask": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "services": [
+    {
+      "binding": "ROUTER",
+      "service": "buffalo-merlin-private-router",
+      "entrypoint": "Router"
+    }
+  ],
+  "vars": {
+    "MERLIN_GRANT": "null"
+  }
+}

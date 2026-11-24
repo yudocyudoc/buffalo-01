@@ -1,0 +1,70 @@
+name: Private Merlin and Arena offline
+on:
+  pull_request:
+    paths:
+      - 'infra/private-merlin/**'
+      - 'agent/**'
+      - '.github/workflows/private-merlin-offline.yml'
+      - '.github/workflows/private-merlin-r-manual.yml'
+permissions:
+  contents: read
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the actual private origin image and verify its unarmed entry point
+        shell: bash
+        run: |
+          set -eu
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          base=$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)
+          docker build --build-arg "NODE_BASE_IMAGE=$base" --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            -f infra/private-merlin/Dockerfile -t merlin-private:offline .
+          test "$(docker inspect --format '{{.Config.User}}' merlin-private:offline)" = node
+          if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            merlin-private:offline > "$RUNNER_TEMP/unarmed.log" 2>&1; then exit 1; fi
+          grep -F 'Error: UNARMED' "$RUNNER_TEMP/unarmed.log"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            merlin-private:offline /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- node infra/buffalo-r2/driver.mjs --check-image | grep -Fx R2_IMAGE_IMPORTS_MODEL_CONFIG_VERIFIED
+  private-merlin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test infra/private-merlin/*.test.mjs
+      - uses: actions/checkout@v4
+        with:
+          repository: yudocyudoc/igc-modular
+          ref: b9d1845c376891ed59e50854f11e95e4b6d200fd
+          path: arena-client
+          persist-credentials: false
+      - name: Install exact local Workers runtime used by Wrangler 4.166.0
+        run: npm install --prefix "$RUNNER_TEMP/merlin-test-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
+      - name: Native WebSocket in a network namespace with loopback only
+        shell: bash
+        run: |
+          set -eu
+          export MERLIN_NODE="$(command -v node)"
+          export MERLIN_TEST_TOOLS="$RUNNER_TEMP/merlin-test-tools" MERLIN_ARENA_PATH="$PWD/arena-client"
+          sudo --preserve-env=MERLIN_NODE,GITHUB_SHA,MERLIN_TEST_TOOLS,MERLIN_ARENA_PATH unshare --net --mount --propagation private sh -ec '
+            ip link set lo up
+            sysctl -qw net.ipv4.ip_unprivileged_port_start=0
+            hosts=$(mktemp)
+            cat /etc/hosts > "$hosts"
+            echo "127.0.0.1 merlin-provider.internal" >> "$hosts"
+            chmod 644 "$hosts"
+            mount --bind "$hosts" /etc/hosts
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs R
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-native.mjs I
+            runuser -u runner -- "$MERLIN_NODE" infra/private-merlin/offline-arena.mjs'

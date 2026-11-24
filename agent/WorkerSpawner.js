@@ -499,6 +499,12 @@ export class WorkerSpawner {
           // stealing.
           const workerEnv = {
             ...anthropicEnv,
+            // The private first-turn image registers a single SDK provider before
+            // AgentWorker imports its registry. Never inherit arbitrary NODE_OPTIONS.
+            ...(process.env.BUFFALO_PRIVATE_MERLIN_MODEL && WorkerSpawner.#requireSandbox ? {
+              BUFFALO_PRIVATE_MERLIN_MODEL: process.env.BUFFALO_PRIVATE_MERLIN_MODEL,
+              NODE_OPTIONS: '--import=/app/infra/private-merlin/provider.mjs'
+            } : {}),
             TOKEN_REPORTER_URL: process.env.TOKEN_REPORTER_URL,
             SESSION_ID: sessionId,
             SESSION_TEMP_DIR: WorkerSpawner.CONTAINER_SESSION_PATH,

@@ -19,13 +19,18 @@ const sha=s=>createHash('sha256').update(s).digest('hex');
 const allowedCodes=new Set([
  'BWRAP_NOT_FOUND','NAMESPACE_CREATION_DENIED','MOUNT_OPERATION_DENIED',
  'PERMISSION_DENIED_UNSPECIFIED','COMMAND_UNAVAILABLE','BWRAP_TIMEOUT',
- 'BWRAP_PROCESS_FAILED_OTHER'
+ 'BWRAP_PROCESS_FAILED_OTHER','UNEXPECTED_BWRAP_CAPABILITIES','BWRAP_LAUNCH_CONTEXT_FAILED'
 ]);
 /**
  * Controlled signatures of bwrap's OWN fixed-argument diagnostics; no raw
  * stderr, arbitrary words, filenames or environment contents are emitted.
  */
 const SIGNATURES=Object.freeze([
+ {rx:/^bwrap: Unexpected capabilities but not setuid, old file caps config\?$/m,
+  signature:'UNEXPECTED_CAPABILITIES_IN_NONROOT_BWRAP',reason:'UNEXPECTED_BWRAP_CAPABILITIES'},
+ {rx:/^R1_BWRAP_LAUNCH_CONTEXT_REJECTED$/m,
+  signature:'LAUNCH_CONTEXT_REJECTED',reason:'BWRAP_LAUNCH_CONTEXT_FAILED'},
+ {rx:/^setpriv:/m,signature:'SETPRIV_FAILED',reason:'BWRAP_LAUNCH_CONTEXT_FAILED'},
  {rx:/no permissions to create new namespace/i,
   signature:'NO_PERMISSIONS_TO_CREATE_NEW_NAMESPACE',reason:'NAMESPACE_CREATION_DENIED'},
  {rx:/creating new namespace failed|cannot create.*namespace|failed to unshare.*namespace/i,
@@ -60,10 +65,10 @@ export function sanitizeBwrapDiagnostic({stderr='',error=null,status=null,signal
 export function diagnoseBwrap(result={}) {
  return sanitizeBwrapDiagnostic(result).reason;
 }
-export function validateMinimalReceipt(x,expectedSha){
+export function validateMinimalReceipt(x,expectedSha,args=MINIMAL_ARGS){
  if(!x||typeof x!=='object'||Array.isArray(x)||
     x.schema!==MINIMAL_SCHEMA||x.source_commit!==expectedSha||
-    x.flags_sha256!==sha(JSON.stringify(MINIMAL_ARGS))||
+    x.flags_sha256!==sha(JSON.stringify(args))||
     x.network_disabled!==true||x.sandbox_relaxations===true||
     x.agent_executed!==false||x.inference_executed!==false||
     x.raw_stderr_in_receipt!==false||
@@ -81,19 +86,19 @@ export function validateMinimalReceipt(x,expectedSha){
  }else throw Error('3B8R0_MINIMAL_STATUS_INVALID');
  return x;
 }
-export function probeMinimal({commit,spawn=spawnSync,env=process.env}={}){
+export function probeMinimal({commit,spawn=spawnSync,env=process.env,args=MINIMAL_ARGS}={}){
  if(!/^[a-f0-9]{40}$/.test(commit??'')||commit!==env.GITHUB_SHA)
   throw Error('3B8R0_SOURCE_IDENTITY_REQUIRED');
  if(process.platform!=='linux'||env.ALLOW_UNSANDBOXED_FALLBACK!=='false')
   throw Error('3B8R0_STRICT_LINUX_SANDBOX_REQUIRED');
- const res=spawn('bwrap',MINIMAL_ARGS,{encoding:'utf8',timeout:8000,
+ const res=spawn('bwrap',args,{encoding:'utf8',timeout:8000,
    maxBuffer:16384,env:{PATH:'/usr/bin:/bin',HOME:'/tmp',LANG:'C'}});
  const code=Number.isInteger(res.status)?res.status:res.error?.code==='ENOENT'?127:124;
  const ok=code===0&&!res.signal&&!res.error;
  const diagnostic=ok?{reason:'NONE',signature:'NONE'}:sanitizeBwrapDiagnostic(res);
  const data={
   schema:MINIMAL_SCHEMA,source_commit:commit,
-  flags_sha256:sha(JSON.stringify(MINIMAL_ARGS)),
+  flags_sha256:sha(JSON.stringify(args)),
   status:ok?'MINIMAL_BWRAP_PASS':'MINIMAL_BWRAP_BLOCKED',
   reason_code:diagnostic.reason,stderr_signature:diagnostic.signature,
   exit_code:code,stderr_sha256:sha(String(res.stderr??'')),
@@ -101,7 +106,7 @@ export function probeMinimal({commit,spawn=spawnSync,env=process.env}={}){
   agent_executed:false,inference_executed:false,
   raw_stderr_in_receipt:false
  };
- validateMinimalReceipt(data,commit);
+ validateMinimalReceipt(data,commit,args);
  return data;
 }
 if(process.argv[1]?.endsWith('/stage3b8r-bwrap-minimal.mjs')){

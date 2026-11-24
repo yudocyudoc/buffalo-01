@@ -1,6 +1,6 @@
 import {ID,MODE,validCommit,validKey,boundedReceipt} from './receipt.mjs';
 import {validArmExpiry} from './timing.mjs';
-const CLAIM='r1-namespace-claim-v1';
+const CLAIM=ID;
 const deny=()=>new Response('Not Found',{status:404});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 export const validConfig=e=>e.R1_MODE===MODE&&validCommit(e.R1_EXPECTED_SHA)&&

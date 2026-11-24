@@ -23,7 +23,13 @@ export function grant(env, phase) {
       Number.isInteger(g.max_input_bytes) && g.max_input_bytes > 0 && g.max_input_bytes <= 131072,
       'MISSING_INFERENCE_LIMITS');
   }
-  return g;
+  return {phase,task_id:g.task_id,project_id:PROJECT,model_sha256:MODEL,source_commit:g.source_commit,
+    image_digest:g.image_digest,expires:g.expires,...(phase==='I'?{provider_model:g.provider_model,
+      max_posts:g.max_posts,max_input_bytes:g.max_input_bytes,max_output_tokens:g.max_output_tokens}:{})};
+}
+
+export function verifyClaim(approved,claimed){
+  requireThat(claimed && Object.keys(approved).every(k=>approved[k]===claimed[k]),'GRANT_CHANGED');
 }
 
 export function checkTaskKey(key) {

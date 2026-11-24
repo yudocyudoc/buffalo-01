@@ -1,5 +1,5 @@
 import {DurableObject,WorkerEntrypoint} from 'cloudflare:workers';
-import {CONFIG_HASH,MODEL,checkInput,digest,grant,requireThat,elapsedLimit} from './protocol.mjs';
+import {CONFIG_HASH,MODEL,checkInput,digest,grant,requireThat,elapsedLimit,verifyClaim} from './protocol.mjs';
 import {boundedJSON,providerRequest} from './gateway.mjs';
 
 const deny=()=>new Response(null,{status:404});
@@ -52,6 +52,7 @@ export class MerlinOrigin extends DurableObject {
     await checkInput(task);
     const g=grant(this.env,task.phase);
     const container=this.ctx.container;
+    verifyClaim(g,task.approval);
     const image=container.images.base;
     requireThat(g.task_id===task.task_id && task.source_commit===g.source_commit &&
       task.image_digest===g.image_digest && image.endsWith('@'+g.image_digest),'UNAPPROVED_IMAGE_OR_TASK');
@@ -59,7 +60,7 @@ export class MerlinOrigin extends DurableObject {
     await this.ctx.storage.transaction(async tx=>{
       requireThat(!(await tx.get('run')),'ONE_SHOT_ALREADY_CLAIMED');
       await tx.put('run',{phase:g.phase,task_id:g.task_id,source_commit:g.source_commit,image_digest:g.image_digest,
-        sd_json:task.sd_json,status:'RUNNING',posts:0,egress_attempts:0,deadline});
+        approval:g,sd_json:task.sd_json,status:'RUNNING',posts:0,egress_attempts:0,deadline});
       await tx.setAlarm(deadline+5000);
     });
     try {

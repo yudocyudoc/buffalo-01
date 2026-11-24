@@ -48,7 +48,7 @@ test('absent, expired, wrong phase and missing budget grants fail closed',()=>{
     assert.throws(()=>grant({MERLIN_GRANT:JSON.stringify(bad)},'I'));
   }
 });
-const run=()=>({...g,status:'RUNNING',posts:0,egress_attempts:0,sd_json:'{"x":1}',deadline:Date.now()+100000});
+const run=()=>({...g,approval:g,status:'RUNNING',posts:0,egress_attempts:0,sd_json:'{"x":1}',deadline:Date.now()+100000});
 const request=()=>new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:g.provider_model,
   messages:[{role:'system',content:'Merlin'},{role:'user',content:'Model {"x":1}'}],tools:[{}]})});
 test('two concurrent provider attempts reserve exactly one POST and remove all tool capabilities',async()=>{
@@ -68,6 +68,12 @@ test('R intercept records and blocks even a valid-looking paid request',async()=
   const db=storage({run:{...run(),phase:'R'}});
   assert.equal((await providerRequest(db,{},'R',request(),()=>assert.fail())).status,403);
   assert.equal((await db.get('run')).egress_attempts,1);assert.equal((await db.get('run')).posts,0);
+});
+test('increasing a limit after claiming the task cannot authorize a POST',async()=>{
+  const db=storage({run:run()});
+  await assert.rejects(providerRequest(db,{...env,MERLIN_GRANT:JSON.stringify({...g,max_output_tokens:200})},
+    'I',request(),()=>assert.fail()),/GRANT_CHANGED/);
+  assert.equal((await db.get('run')).posts,0);
 });
 test('provider tool calls and truncation stay terminal and consume their reservation',async()=>{
   for(const choice of [{finish_reason:'length',message:{role:'assistant',content:'cut'}},

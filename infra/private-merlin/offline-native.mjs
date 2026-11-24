@@ -22,7 +22,7 @@ if(phase==='I'){
   const g={phase,task_id:crypto.randomUUID(),project_id:'arena-igc',source_commit:source,
     image_digest:'sha256:'+'0'.repeat(64),model_sha256:MODEL,expires:deadline,
     provider_model:providerModel,max_posts:1,max_input_bytes:131072,max_output_tokens:128};
-  let row={...g,status:'RUNNING',deadline,sd_json:JSON.stringify(model),posts:0,egress_attempts:0};
+  let row={...g,approval:g,status:'RUNNING',deadline,sd_json:JSON.stringify(model),posts:0,egress_attempts:0};
   const storage={transaction:fn=>fn(storage),get:async()=>row,put:async(_k,data)=>{row=data;}};
   proxy=createServer(async(req,res)=>{
     try{

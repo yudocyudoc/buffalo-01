@@ -14,7 +14,7 @@ import {groups} from '../../evals/categories/policyImplementation.js';
 import {MODEL} from './protocol.mjs';
 
 const deps=createRequire(join(process.env.MERLIN_TEST_TOOLS,'entry.cjs'));
-const {Miniflare}=deps('miniflare');
+const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
 const {build}=deps('esbuild');
 const arena=resolve(process.env.MERLIN_ARENA_PATH);
 const root=await mkdtemp(join(tmpdir(),'merlin-arena-e2e-'));
@@ -46,7 +46,7 @@ try{
   }
   assert(ready,'private origin startup');
   const common={modules:true,compatibilityDate:'2026-11-19'};
-  const options={host:'127.0.0.1',port:8791,durableObjectsPersist:join(root,'storage'),workers:[
+  const options={...convertV4MiniflareOptions({host:'127.0.0.1',port:8791,cf:false,workers:[
     {...common,name:'arena',script:await bundle(join(arena,'infra/private-merlin/client.mjs')),
       serviceBindings:{MERLIN:{name:'bridge',entrypoint:'ArenaMerlin'}}},
     {...common,name:'bridge',script:await bundle('infra/private-merlin/bridge.mjs'),
@@ -70,7 +70,7 @@ try{
         }
       }
       export default {fetch(){return new Response(null,{status:404});}};`}
-  ]};
+  ]}),resourcePersistencePath:join(root,'storage')};
   mf=new Miniflare(options);await mf.ready;
   assert.equal((await cli('submit','--model',modelPath)).status,'QUEUED');
   let result;

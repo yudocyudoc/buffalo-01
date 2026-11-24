@@ -8,6 +8,25 @@ on:
 permissions:
   contents: read
 jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the actual private origin image and verify its unarmed entry point
+        shell: bash
+        run: |
+          set -eu
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          base=$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)
+          docker build --build-arg "NODE_BASE_IMAGE=$base" --build-arg "BUFFALO_IMAGE_SOURCE_SHA=$GITHUB_SHA" \
+            -f infra/private-merlin/Dockerfile -t merlin-private:offline .
+          test "$(docker inspect --format '{{.Config.User}}' merlin-private:offline)" = node
+          if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            merlin-private:offline > "$RUNNER_TEMP/unarmed.log" 2>&1; then exit 1; fi
+          grep -F 'Error: UNARMED' "$RUNNER_TEMP/unarmed.log"
   private-merlin:
     runs-on: ubuntu-latest
     timeout-minutes: 12

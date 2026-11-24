@@ -1,4 +1,4 @@
-import {MODEL,PROJECT,checkInput,checkTaskKey,grant,requireThat,elapsedLimit} from './protocol.mjs';
+import {MODEL,PROJECT,checkInput,checkTaskKey,grant,requireThat,elapsedLimit,verifyClaim} from './protocol.mjs';
 import {readTurn} from './socket.mjs';
 
 function publicTask(task){
@@ -26,7 +26,7 @@ export async function enqueue(storage,env,input){
     requireThat(input.task_id===g.task_id,'TASK_NOT_GRANTED');
     const task={project_id:PROJECT,task_id:g.task_id,phase:g.phase,model_sha256:MODEL,
       sd_json:input.sd_json,source_commit:g.source_commit,image_digest:g.image_digest,
-      status:'QUEUED',created_at:Date.now()};
+      approval:g,status:'QUEUED',created_at:Date.now()};
     await tx.put('task',task);
     await tx.setAlarm(Date.now());
     return publicTask(task);
@@ -50,8 +50,7 @@ export async function runTask(storage,env){
     let opened=false, transcript=null;
     try{
       const g=grant(env,task.phase);
-      requireThat(g.task_id===task.task_id && g.source_commit===task.source_commit &&
-        g.image_digest===task.image_digest,'GRANT_CHANGED');
+      verifyClaim(g,task.approval);
       const {deadline}=await router.open(task);
       opened=true;
       const response=await router.fetch('https://router/'+task.phase,{

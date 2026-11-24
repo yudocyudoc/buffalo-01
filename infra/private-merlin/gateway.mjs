@@ -1,4 +1,4 @@
-import {ENDPOINT,grant,requireThat} from './protocol.mjs';
+import {ENDPOINT,grant,requireThat,verifyClaim} from './protocol.mjs';
 
 export async function boundedJSON(stream,max) {
   requireThat(stream,'MISSING_BODY');
@@ -32,6 +32,7 @@ export async function providerRequest(storage,env,phase,request,send=fetch) {
   });
   if(phase!=='I'||request.method!=='POST'||request.url!==ENDPOINT)return new Response(null,{status:403});
   const g=grant(env,'I');
+  verifyClaim(g,counter.approval);
   requireThat(g.task_id===counter.task_id && env.MERLIN_AI_TOKEN,'PROVIDER_NOT_ARMED');
   const body=await boundedJSON(request.body,512*1024);
   requireThat(body.model===g.provider_model && !body.stream && body.messages?.length===2 &&

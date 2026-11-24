@@ -12,7 +12,7 @@ const clientId='buffalo-worker-123e4567-e89b-42d3-a456-426614174111';
 const init={type:'initialize_session',clientProduct:'Buffalo WebSocket Lab',
  clientVersion:'1.0.0',mode:'sfd',model,tools:[],supportsArrays:true,
  supportsModules:false,supportsSubTypes:false};
-const select={type:'select_agent',sessionId,agentId:'merlin',provider:'cloudflare'};
+const select={type:'select_agent',sessionId,agentId:'merlin',provider:'anthropic'};
 const frame=x=>JSON.stringify(x);
 function gate(processApproved=true){return new OriginalMerlinProcessGate({sourceCommit:commit,
  runtimeCommit:commit,modelSha256,authenticationKey:auth,clientId,processApproved});}
@@ -36,9 +36,9 @@ test('pinned session handshake, exactly one Merlin selection, no chat or false o
  const g=toReady(gate());
  assert.equal(g.fromClient(frame(select)).allowed,true);
  assert.equal(g.fromBuffalo(frame({type:'agent_selected',sessionId,
-   agentId:'merlin',currentProvider:'cloudflare'})).allowed,true);
+   agentId:'merlin',currentProvider:'anthropic'})).allowed,true);
  assert.equal(g.fromBuffalo(frame({type:'agent_text',sessionId,
-   content:'Merlin (Cloudflare) — What can I do for you today?',isThinking:false})).allowed,true);
+   content:'Merlin (Claude) — What can I do for you today?',isThinking:false})).allowed,true);
  assert.equal(g.fromClient(frame({type:'chat',sessionId,message:'invoke provider'})).reason,
   'INFERENCE_OR_MUTATION_NOT_AUTHORIZED_IN_P');
  assert.equal(g.fromClient(frame(select)).allowed,false);
@@ -77,7 +77,7 @@ test('rejects injected auth, client id, tool registration, history and altered m
 });
 test('rejects cross-session, substitute agent/provider, extra fields and duplicate select',()=>{
  const cases=[{sessionId:'sess_abcdef1234567890abcdef1234567890'},
-  {agentId:'socrates'},{provider:'openai'},{agentConfig:'fake'},
+  {agentId:'socrates'},{provider:'openai'},{provider:'cloudflare'},{agentConfig:'fake'},
   {intelligence:'expensive'},{clientId:'injected'}];
  for(const change of cases){const g=toReady(gate());
   assert.equal(g.fromClient(frame({...select,...change})).reason,'AGENT_SELECTION_NOT_AUTHORIZED');

@@ -55,3 +55,10 @@ export async function testOriginalEngine(base,key){
  console.log('FULL_ORIGINAL_QUANTITATIVE_REST_AND_PYSD_OFFLINE '+JSON.stringify({time:data.time,Inventory:data.Inventory}));
  return result.model;
 }
+
+export async function testFailedOriginalEngine(base,key){
+ const response=await fetch(base+'/api/v1/engines/quantitative/generate',{method:'POST',
+   headers:{'content-type':'application/json',Authentication:key},body:JSON.stringify({prompt})});
+ assert.equal(response.status,200);
+ const result=await response.json();assert.equal(result.success,false);
+}

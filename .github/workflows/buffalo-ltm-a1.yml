@@ -1,0 +1,127 @@
+name: Buffalo LTM A1 mathematical controls
+on:
+  pull_request:
+    paths:
+      - 'infra/full-runtime/ltm-a1/**'
+      - '.github/workflows/buffalo-ltm-a1.yml'
+      - 'evals/categories/feedbackExplanationData/**'
+      - 'infra/full-runtime/ltm-benchmark/benchmark.py'
+permissions:
+  contents: read
+jobs:
+  a1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independent standard-library controls
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          mkdir -p "$out"
+          git rev-parse HEAD > "$out/checkout-sha.txt"
+          python infra/full-runtime/ltm-a1/test_oracle.py evals/categories/feedbackExplanationData 2>&1 | tee "$out/oracle-tests.log"
+          python infra/full-runtime/ltm-a1/oracle.py evals/categories/feedbackExplanationData > "$out/oracle.json"
+      - name: Build pinned wheel research image
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          docker build -f infra/full-runtime/ltm-a1/Dockerfile -t buffalo-ltm:a1 . 2>&1 | tee "$out/build.log"
+          docker image inspect --format '{{.Id}}' buffalo-ltm:a1 > "$out/image-id.txt"
+          docker run --rm --network none buffalo-ltm:a1 pip freeze > "$out/dependencies.txt"
+      - name: Native raw link and clock observations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/native_probe.py > "$out/native.json" 2> "$out/native.stderr" || rc=$?
+          cat "$out/native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison"),"trajectory_max_abs_error":v.get("trajectory_max_abs_error")} for k,v in d["cases"].items()}))' "$out/native.json"
+          exit "$rc"
+      - name: A2 independent flow invariance controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_flow_invariance.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/a2-tests.log"
+      - name: A2 native paired flow representations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/flow_invariance.py > "$out/a2-native.json" 2> "$out/a2-native.stderr" || rc=$?
+          cat "$out/a2-native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pair":d.get("pair"),"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison")} for k,v in d["cases"].items()}}))' "$out/a2-native.json"
+          exit "$rc"
+      - name: A3 independent graph controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_cycle_audit.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/a3-tests.log"
+      - name: A3 native cycle and partition observations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/cycle_audit.py > "$out/a3-native.json" 2> "$out/a3-native.stderr" || rc=$?
+          cat "$out/a3-native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison"),"normalization":v.get("normalization")} for k,v in d["cases"].items()}))' "$out/a3-native.json"
+          exit "$rc"
+      - name: A4 independent integration and sampling controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_clock_audit.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/a4-tests.log"
+      - name: A4 native solver, sampling and delay observations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/clock_audit.py > "$out/a4-native.json" 2> "$out/a4-native.stderr" || rc=$?
+          cat "$out/a4-native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pairs":d["pairs"],"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":{a:b for a,b in v.get("comparison",{}).items() if a!="records"}} for k,v in d["cases"].items()}}))' "$out/a4-native.json"
+          exit "$rc"
+      - name: A5 independent system change controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_system_change.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/a5-tests.log"
+      - name: A5 system change on native flow trajectories
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/system_change.py > "$out/a5-native.json" 2> "$out/a5-native.stderr" || rc=$?
+          cat "$out/a5-native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pairs":d["pairs"],"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison"),"net_vs_forward_state_difference_max_error":v.get("net_vs_forward_state_difference_max_error")} for k,v in d["cases"].items()}}))' "$out/a5-native.json"
+          exit "$rc"
+      - name: Post-audit independent reference controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_reference_revisit.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/reference-revisit-tests.log"
+      - name: Post-audit six-reference full-grid diagnostics
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/reference_revisit.py > "$out/reference-revisit.json" 2> "$out/reference-revisit.stderr" || rc=$?
+          cat "$out/reference-revisit.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"error":v.get("error"),"sampling":{a:b for a,b in v.get("sampling_pair",{}).items() if not a.startswith("per_") and a!="raw_unavailable_edges"},"clock":{a:b for a,b in v.get("reference_clock",{}).items() if a!="common_reference_times"},"predator":v.get("independent_predator_trajectory")} for k,v in d["cases"].items()}))' "$out/reference-revisit.json"
+          exit "$rc"
+      - name: Mai-Bab independent activity controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_maibab_activity.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/maibab-activity-tests.log"
+      - name: Mai-Bab saturation and controlled reactivation
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/maibab_activity.py > "$out/maibab-activity.json" 2> "$out/maibab-activity.stderr" || rc=$?
+          cat "$out/maibab-activity.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"perturbation":d.get("perturbation_summary"),"cases":{k:{"status":v["status"],"error":v.get("error"),"observation":v.get("observation"),"graph":v.get("graph_diagnostic"),"groups":v.get("reference_renormalization_diagnostic")} for k,v in d["cases"].items()}}))' "$out/maibab-activity.json"
+          exit "$rc"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ltm-a1-${{ github.run_id }}
+          path: ${{ runner.temp }}/ltm-a1/
+          retention-days: 30
+          if-no-files-found: error

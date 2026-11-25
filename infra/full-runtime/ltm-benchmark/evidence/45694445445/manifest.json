@@ -1,0 +1,72 @@
+{
+  "artifact_id": 15059503682,
+  "run_id": 45694445445,
+  "job_id": 139488054065,
+  "head_sha": "c0ab29d0f339b2a27b3f78896e76ce0dfc534725",
+  "checkout_sha": "e04533956ec52cd6b50fd275b7c5a43994bb1a62",
+  "image_id": "sha256:50fe819deb6052462572069a091dc231256abfcd1aabfa03dd39152d51207b58",
+  "zip_bytes": 430606,
+  "zip_sha256": "5a1226a081ea74c1eb0519a7dc93d3cc2ffb0d7ad2bb14c39840b166008ea3fd",
+  "files": {
+    "armsRace.json": [
+      177455,
+      "61ac50d8f25186530910a7fbfe5fae2c86ab5dce60d22404d2d71afd84ce8645"
+    ],
+    "bassDiffusion.json": [
+      101958,
+      "19253e348f6d1c7bc2defbab2af11208a490f8fdb386e25e92c1c5f11037ca97"
+    ],
+    "inventoryWorkforce.json": [
+      557694,
+      "12c5f230568455d591dbf66883d96224a70e90c2c1cef6207f4659cd97903177"
+    ],
+    "marketGrowth.json": [
+      221516,
+      "41d9bccd478bcfe775745a794281210f6bc754e65da1e92eb27c928165a4e26e"
+    ],
+    "predatorPrey.json": [
+      91428,
+      "5c022d8bef2a35d692b425b34614e71d854a3fba7e7ec4555f169f2ba42dca26"
+    ],
+    "maibab.json": [
+      515243,
+      "82815faeb7ea8fd33c7526c3af4a83fdb385d31d53ba5cdab1c1bb76c0c2284b"
+    ],
+    "checkout-sha.txt": [
+      41,
+      "1cfeb2912fb636a5724c39f0c2afc4d53f5e552df9af30648b829c8984d34c2f"
+    ],
+    "image-id.txt": [
+      72,
+      "ac77421bbdc163e16356d6f460c86709a0ae51169e0b2084a8194339d2d02451"
+    ],
+    "build.log": [
+      8220,
+      "e7e991641a5057ed9ceeeebdb16e806e3a081311e88e920a4e9e47cd42fd62a5"
+    ],
+    "armsRace.stderr": [
+      0,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "bassDiffusion.stderr": [
+      0,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "inventoryWorkforce.stderr": [
+      0,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "marketGrowth.stderr": [
+      0,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "predatorPrey.stderr": [
+      0,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "maibab.stderr": [
+      0,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ]
+  }
+}

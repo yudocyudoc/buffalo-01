@@ -1,0 +1,56 @@
+import unittest
+from cycle_audit import cycles,graph_report,synthetic,compare,dependencies,signature,canon
+
+class Tests(unittest.TestCase):
+    def test_directed_cycles(self):
+        nodes=set("abc")
+        edges={(a,b) for a in nodes for b in nodes if a!=b}
+        self.assertEqual(cycles(nodes,edges),{("a","b"),("a","c"),("b","c"),
+                                             ("a","b","c"),("a","c","b")})
+        self.assertNotEqual(signature(("a","b","c")),signature(("a","c","b")))
+
+    def test_one_way(self):
+        r=graph_report(synthetic(False))
+        self.assertEqual(r["cycles"],[{"cycle":["fx","x"],"stock_partition":["x"]},
+                                      {"cycle":["fy","y"],"stock_partition":["y"]}])
+        self.assertIn(["x","fy"],r["edges"])
+
+    def test_reciprocal(self):
+        r=graph_report(synthetic(True))
+        self.assertEqual({tuple(c["cycle"]) for c in r["cycles"]},
+                         {("fx","x"),("fy","y"),("fx","x","fy","y")})
+        self.assertTrue(all(c["stock_partition"]==["x","y"] for c in r["cycles"]))
+
+    def test_partition_comparator(self):
+        r=graph_report(synthetic(False))
+        n={"ltm_mode":"exhaustive","loops":[{"cycle":["x","fx"],"partition":7},
+                                          {"cycle":["y","fy"],"partition":3}]}
+        self.assertTrue(compare(r,n)["same_partition_membership"])
+        n["loops"][1]["partition"]=7
+        self.assertFalse(compare(r,n)["same_partition_membership"])
+        self.assertTrue(compare(r,n)["same_cycles"])
+
+    def test_stella_display_name_escape(self):
+        self.assertEqual(canon(r"Deer Kill Rate\nPer Predator"),"deer_kill_rate_per_predator")
+        self.assertEqual(canon("Deer Kill Rate\nPer Predator"),"deer_kill_rate_per_predator")
+        with self.assertRaises(ValueError):
+            canon(r"bad\tname")
+        raw=synthetic(False).replace(b'name="fx"',br'name="Flow\nX"').replace(
+            b'<inflow>fx</inflow>',b'<inflow>Flow_X</inflow>')
+        r=graph_report(raw)
+        self.assertIn(["flow_x","x"],r["edges"])
+        self.assertIn(["x","flow_x"],r["edges"])
+        # A display name and an already canonical name must not silently alias.
+        duplicate=raw.replace(b"</variables>",b'<aux name="Flow_X"><eqn>1</eqn></aux></variables>')
+        with self.assertRaisesRegex(ValueError,"duplicate"):
+            graph_report(duplicate)
+
+    def test_unsupported_syntax(self):
+        self.assertEqual(dependencies("a*STEP(.05,1963)",{"a"}),{"a"})
+        with self.assertRaises(ValueError):
+            dependencies("a[1]",{"a"})
+        with self.assertRaises(ValueError):
+            dependencies("DELAY3(a,1,0)",{"a"})
+
+if __name__=="__main__":
+    unittest.main()

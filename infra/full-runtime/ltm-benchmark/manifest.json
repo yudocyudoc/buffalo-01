@@ -1,0 +1,31 @@
+{
+  "source_repository": "UB-IAD/sd-ai",
+  "fork_snapshot": "6ae922dbcdeb5f2f32090c31f10f9b5a7da956ed",
+  "backend": "pysimlin==0.8.5",
+  "fixtures": {
+    "armsRace": [
+      "eea9fec76308e0034bfa179bf94ba8c6853115fc",
+      "364a12b9a47ad59d844d7c837fa74d4c60c01fb4"
+    ],
+    "bassDiffusion": [
+      "c87fc9d8369cdb0abb97bb7ba1e2a88c32df931e",
+      "f760d13c9a17a2deaf2fa6abaeaad38d3ef15fd2"
+    ],
+    "inventoryWorkforce": [
+      "86b4779aea58358acaab9ed521b10af5dd55799f",
+      "c36854f8ccab07cac62565965e466b05f03809d5"
+    ],
+    "predatorPrey": [
+      "f5e44a3a4273d37d589a468fdd3cf937e939a609",
+      "73a9bf7e69dd0e1b8fb4ef3284ab23e6fa29688f"
+    ],
+    "marketGrowth": [
+      "37299e6ee996ff19c472686d1a1acd8c8275695f",
+      "0eb446bc466fabd7380d8783820c6731c82da0cf"
+    ],
+    "maibab": [
+      "f4bff97ff2de1d464afc216602734e1fef4f9183",
+      "623ab6a83a91caa8d810b2cd4b71d7c0ba63fa3f"
+    ]
+  }
+}

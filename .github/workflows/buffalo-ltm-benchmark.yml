@@ -1,0 +1,58 @@
+name: Buffalo native LTM six-reference benchmark
+on:
+  pull_request:
+    paths:
+      - 'infra/full-runtime/ltm-benchmark/**'
+      - 'evals/categories/feedbackExplanationData/**'
+      - '.github/workflows/buffalo-ltm-benchmark.yml'
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build isolated research image and run comparator controls
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ltm-benchmark"
+          git rev-parse HEAD > "$RUNNER_TEMP/ltm-benchmark/checkout-sha.txt"
+          docker build -f infra/full-runtime/ltm-benchmark/Dockerfile -t buffalo-ltm:benchmark . 2>&1 | tee "$RUNNER_TEMP/ltm-benchmark/build.log"
+          docker image inspect --format '{{.Id}}' buffalo-ltm:benchmark > "$RUNNER_TEMP/ltm-benchmark/image-id.txt"
+      - name: Measure all six cases independently without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-benchmark"
+          failed=0
+          for case in armsRace bassDiffusion inventoryWorkforce predatorPrey marketGrowth maibab; do
+            echo "::group::$case"
+            if timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+              --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 \
+              buffalo-ltm:benchmark "$case" > "$out/$case.json" 2> "$out/$case.stderr"; then
+              python -c 'import json,sys; x=json.load(open(sys.argv[1])); assert x["case"]==sys.argv[2] and x["admitted"] is False; print(json.dumps({k:x.get(k) for k in ("case","status","failure_stage","error","ltm_mode","topology","grid","denominator_mapping","checks")})); print(json.dumps([{"id":l["reference_id"],"group":l["reference_group"],"max_error_pp":l.get("max_error_pp"),"polarity":l["native_polarity"]} for l in x.get("loop_comparisons",[])]))' "$out/$case.json" "$case" || failed=1
+            else
+              echo "Benchmark process failed for $case"
+              cat "$out/$case.stderr"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
+      - name: Diagnose representation without changing native verdicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-benchmark/test_representation_diagnostics.py
+          python infra/full-runtime/ltm-benchmark/representation_diagnostics.py "$RUNNER_TEMP/ltm-benchmark" evals/categories/feedbackExplanationData/marketGrowth.stmx > "$RUNNER_TEMP/ltm-benchmark/representation-diagnostics.json"
+          python -c 'import json,sys; x=json.load(open(sys.argv[1])); a=x["inventoryWorkforce"]; b=x["marketGrowth"]; print(json.dumps({"inventory":a,"market":{k:v for k,v in b.items() if k not in ("projection","loops")}})); assert x["admitted"] is False; assert a["matched"]==944 and a["inactive"]==17 and not a["mismatches"] and not a["uncovered"]; assert b["matched"]==20 and b["contracted"]==9 and b["all_polarities_match"] and not b["within_provisional_tolerance"]' "$RUNNER_TEMP/ltm-benchmark/representation-diagnostics.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ltm-native-six-${{ github.run_id }}
+          path: ${{ runner.temp }}/ltm-benchmark/
+          retention-days: 30
+          if-no-files-found: error

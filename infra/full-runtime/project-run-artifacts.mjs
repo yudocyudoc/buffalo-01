@@ -1,9 +1,19 @@
 import {readProjectBody} from './project.mjs';
 import {RUN_ID, storedRun} from './project-runs.mjs';
 import {digest} from './provider-wire.mjs';
-import {validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
+import {narrativeAssessment, validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
 
 const empty = status => new Response(null, {status});
+
+// Compare JSON objects by field and arrays in order. The expected shape is server-generated.
+function matchesAssessment(actual, expected) {
+  if (actual === expected) return true;
+  if (!actual || !expected || typeof actual !== 'object' || typeof expected !== 'object' ||
+      Array.isArray(actual) !== Array.isArray(expected)) return false;
+  const keys = Object.keys(expected);
+  return keys.length === Object.keys(actual).length &&
+    keys.every(k => Object.hasOwn(actual, k) && matchesAssessment(actual[k], expected[k]));
+}
 
 export async function projectRunArtifact(request, storage, runId, narrativeId) {
   if (!RUN_ID.test(runId) || (narrativeId !== undefined && !RUN_ID.test(narrativeId))) return empty(404);
@@ -20,6 +30,8 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
   }
   const {value, body, error} = await readProjectBody(request, 512 * 1024);
   if (error) return empty(error);
+  // An identical replay of a historical immutable artifact is still an acknowledgement.
+  if (lookup(id)?.body === body) return empty(204);
   if (value?.run_id !== runId || value.run_sha256 !== await digest(run.body)) return empty(409);
   if (narrativeId === undefined) {
     if (!validFeedbackSource(value.source) || !validFeedback(value.content, JSON.parse(run.body).series.time)) return empty(422);
@@ -27,8 +39,11 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
     const feedback = lookup('feedback');
     if (!feedback) return empty(404);
     if (value.feedback_sha256 !== await digest(feedback.body)) return empty(409);
-    if (typeof value.prompt !== 'string' || !value.prompt.trim() ||
-        !validNarrative(value, JSON.parse(feedback.body).content)) return empty(422);
+    const {content} = JSON.parse(feedback.body);
+    if (typeof value.prompt !== 'string' || !value.prompt.trim() || !validNarrative(value, content)) return empty(422);
+    const assessment = narrativeAssessment(content, JSON.parse(run.body).series.time);
+    if (assessment.dominance.status === 'contradicted' ||
+        (Object.hasOwn(value, 'assessment') && !matchesAssessment(value.assessment, assessment))) return empty(422);
   }
   // Both parent records are immutable. Only the same-ID insert needs serialization.
   return storage.transactionSync(() => {

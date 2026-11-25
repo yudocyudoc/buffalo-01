@@ -1,5 +1,6 @@
 import {digest} from './provider-wire.mjs';
 import {RUN_ID} from './project-runs.mjs';
+import {assessDominance} from './dominance-evidence.mjs';
 
 const text = value => typeof value === 'string' && value.trim().length > 0;
 const scoreKeys = ['Percent of Model Behavior Explained by Loop', 'Percent of this Feedback Loop Set Behavior Explained by Loop'];
@@ -29,6 +30,7 @@ export function validFeedback(content, time) {
   return true;
 }
 
+// Checks output shape and loop identifiers only. Arbitrary text may contradict the evidence.
 export function validNarrative(result, feedback) {
   const loops = result?.feedbackLoops;
   if (!text(result?.output?.textContent) || !Array.isArray(loops)) return false;
@@ -58,6 +60,9 @@ export async function generateRunNarrative(request, key, runId, prompt) {
   if (feedback.run_id !== runId || feedback.run_sha256 !== runHash ||
       !validFeedbackSource(feedback.source) || !validFeedback(feedback.content, run.series.time))
     throw Error('NARRATIVE_FEEDBACK_MISMATCH');
+  const assessment = narrativeAssessment(feedback.content, run.series.time);
+  if (assessment.dominance.status === 'contradicted')
+    throw Error('NARRATIVE_DOMINANCE_CONTRADICTED', {cause: assessment.dominance});
   const provenance = {run_id: runId, run_sha256: runHash, revision: run.revision,
     model_sha256: run.model_sha256, simulator: run.simulator, settings: run.settings,
     execution: run.execution, feedback_source: feedback.source, feedback_sha256: await digest(feedbackBody)};
@@ -70,5 +75,9 @@ export async function generateRunNarrative(request, key, runId, prompt) {
   const generated = await result.json();
   if (generated.success !== true || !validNarrative(generated, feedback.content)) throw Error('LTM_NARRATIVE_INVALID_RESULT');
   return {run_id: runId, run_sha256: runHash, feedback_sha256: provenance.feedback_sha256, prompt,
-    output: generated.output, feedbackLoops: generated.feedbackLoops};
+    output: generated.output, feedbackLoops: generated.feedbackLoops, assessment};
+}
+
+export function narrativeAssessment(content, time) {
+  return {dominance: assessDominance(content, time), prose: 'not_semantically_verified'};
 }

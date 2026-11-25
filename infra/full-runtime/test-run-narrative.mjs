@@ -111,11 +111,23 @@ export async function exerciseRunNarratives(request, other, key, cases, setProvi
     const narrative = await generateRunNarrative(request, key, c.runId, prompt);
     assert.equal(calls, 1);
     assert.equal(narrative.output.textContent.trim(), '<p>' + c.narrative + '</p>');
+    assert.equal(narrative.assessment.prose, 'not_semantically_verified');
+    assert.equal(narrative.assessment.dominance.status, 'supported_by_whole_model_scores');
+    assert.equal(narrative.assessment.dominance.checkedSamples, c.series.time.length - 1);
+    if (i === 0) {
+      const [first, second] = narrative.assessment.dominance.periods;
+      assert.deepEqual(first.loops, [{identifier: 'R1', polarity: '+'}]);
+      assert.equal(first.lastSample, 9.5625);
+      assert.deepEqual(second.loops, [{identifier: 'B1', polarity: '-'}]);
+      assert.equal(second.firstSample, 9.625);
+    }
     const receipt = await json(await request('/project/inference/' + (i + 1)));
     assert.equal(receipt.status, 'OK');
     assert.equal(receipt.request_sha256, requestHash);
     assert.equal(receipt.schema_sha256, await digest(JSON.stringify(schema)));
     c.narrativePath = c.path + '/narratives/' + randomUUID();
+    assert.equal((await put(request, c.narrativePath,
+      {...narrative, assessment: {...narrative.assessment, prose: 'verified'}})).status, 422);
     assert.equal((await put(request, c.narrativePath, {...narrative, feedback_sha256: '0'.repeat(64)})).status, 409);
     assert.equal((await put(request, c.narrativePath, narrative)).status, 201);
     assert.equal((await put(request, c.narrativePath, narrative)).status, 204);

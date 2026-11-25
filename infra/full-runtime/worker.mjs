@@ -43,7 +43,9 @@ export class ProjectRuntime extends DurableObject {
     return dispatch(request,this.env.AI,receipt=>storage.transaction(async tx=>{
       const used=await tx.get('bindingCalls')??0;
       if(!approved(this.env,project) || used>=Number(this.env.AI_MAX_CALLS))return false;
-      const replayKey=engine?'engine-request:'+receipt.request_sha256:null;
+      // The same invocation may arrive twice, but identical experiments are legitimate.
+      // Legacy engine-request:<hash> keys are intentionally no longer consulted.
+      const replayKey=engine?'engine-invocation:'+receipt.invocation_id:null;
       if(engine&&(this.env.ENGINE_INFERENCE_ENABLED!=='true'||await tx.get(replayKey)))return false;
       const attempt=used+1;
       await tx.put({bindingCalls:attempt,['inference:'+attempt]:receipt,...(replayKey?{[replayKey]:attempt}:{})});

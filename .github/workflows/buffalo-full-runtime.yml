@@ -5,6 +5,7 @@ on:
       - 'infra/full-runtime/**'
       - '.github/workflows/buffalo-full-runtime.yml'
       - '.github/workflows/buffalo-full-edit-manual.yml'
+      - '.github/workflows/buffalo-full-quantitative-manual.yml'
       - 'app.js'
       - 'agent/**'
       - 'routes/**'

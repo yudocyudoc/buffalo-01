@@ -23,6 +23,7 @@ import {storePersistentRuns,recoverPersistentRuns} from './test-persistent-runs.
 import {createConversationJournal,modelIdentity} from './conversation-client.mjs';
 import {checkConversationBeforeRestart,checkConversationAfterRestart} from './test-persistent-conversations.mjs';
 import {createSeldonFixture,exerciseSeldon} from './test-seldon-comparison.mjs';
+import {createBassFixture,exerciseBassReference} from './test-seldon-bass-reference.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -87,8 +88,9 @@ const simulationSteps=[
  ['get_variable_data',{variableNames:['Inventory'],runIds:['run-1'],detailed:true}],
  ['read_file',null]
 ];
-let qualitative=false,seldon=null;
+let qualitative=false,seldon=null,bass=null;
 function fixture(model,wire){
+  if(bass)return bass.reply(model,wire);
   if(seldon)return seldon.reply(model,wire);
   if(qualitative)return qualitativeFixture(model,wire);
   assert.equal(model,GEMMA);
@@ -324,6 +326,15 @@ try{
   start(true);await rest(base,key);
   await exerciseSeldon(request,other,key,persistence,seldon,lastAttempt+1);
   assert.equal(calls+engineCalls,lastAttempt+1);
+  // A fresh local DO database prevents accidental association of the Bass
+  // reference with the unrelated persisted Inventory runs.
+  await stop();await mf.dispose();
+  mf=new Miniflare({...fixtureOptions(3),resourcePersistencePath:join(disk,'bass')});await mf.ready;
+  seldon=null;bass=createBassFixture();
+  start(true);await rest(base,key);
+  await exerciseBassReference(request,key,bass);
+  assert.equal(calls+engineCalls,lastAttempt+1);
+
 
 
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

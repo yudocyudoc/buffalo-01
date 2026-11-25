@@ -21,3 +21,8 @@ The manual workflow is derived from the already exercised #80 operational scaffo
 The final output records case input/reference, observed graph, original evaluator failures, source schema/model hashes and measured consumption. A successful outcome is 1/1 causal translation on this fixed case only. The remaining four offline cases and original wider benchmark still need their own explicitly budgeted real evaluations.
 
 Parallel persistence work (#84) is independent; this branch intentionally does not modify the project store or session semantics. CI is pending at preparation.
+
+
+## Image dependency correction
+
+Initial [CI image job 139034563486](https://github.com/yudocyudoc/buffalo-01/actions/runs/45564101069/job/139034563486) failed importing `pluralize` while the native integration passed. The original evaluator and its name matcher require this package; the image uses `npm ci --omit=dev`. Promote only the existing locked `pluralize` 8.0.0 dependency to production, retaining its version and integrity and leaving all other lock entries unchanged. Do not install the full development dependency set, change upstream evaluator semantics, or weaken the offline image test. Correction is pending CI; no real inference occurred.

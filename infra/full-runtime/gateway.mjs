@@ -1,6 +1,6 @@
 ﻿import {ENDPOINT} from '../private-merlin/protocol.mjs';
 import {GEMMA,acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
-import {boundedJSON} from '../private-merlin/gateway.mjs';
+import {boundedJSON} from './provider-wire.mjs';
 
 // Original tool availability still comes from the agent and session; this is the transport capability ceiling.
 export const MODEL_TOOLS=new Set(['get_current_model','read_model_section','edit_variables','edit_relationships','edit_specs','edit_modules','update_model','run_model','get_run_info','get_variable_data','read_file']);
@@ -48,14 +48,14 @@ function responseDiagnostic(result,offered){
     predicates,failed_predicates:failed};
 }
 
-export async function completion(request,ai,reserve,record){
+export async function completion(request,ai,reserve,record,{engineEnabled=false}={}){
   if(request.url!==ENDPOINT || request.method!=='POST' || !ai?.run)return reject(403);
   let body;
   try{body=await boundedJSON(request.body,512*1024);}catch{return reject(400);}
   if(body?.model!==GEMMA || body.stream || !Array.isArray(body.messages) || !body.messages.length ||
     !body.messages.every(m=>['system','assistant','tool','user'].includes(m?.role)) ||
     !Array.isArray(body.tools))return reject(400);
-  const tools=body.tools.filter(t=>t?.type==='function' && MODEL_TOOLS.has(t.function?.name));
+  const tools=body.tools.filter(t=>t?.type==='function' && (MODEL_TOOLS.has(t.function?.name)||(engineEnabled&&t.function?.name==='generate_quantitative_model')));
   const offered=new Set(tools.map(t=>t.function.name));
   const wire={messages:body.messages,...(tools.length?{tools}:{}),max_completion_tokens:maxTokens,
     stream:false,chat_template_kwargs:{enable_thinking:false}};

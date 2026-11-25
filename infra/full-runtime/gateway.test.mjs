@@ -95,3 +95,15 @@ test('a transport-supported tool not offered by the original session is still re
  const {response,receipt}=await invoke(()=>({...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{type:'function',id:'x',function:{name:'run_model',arguments:'{}'}}]}}]}));
  assert.equal(response.status,422);assert.deepEqual(receipt.failed_predicates,['tools_offered']);
 });
+
+test('quantitative generation is conditional and still requires the original offered schema',async()=>{
+ const generation=tool('generate_quantitative_model');
+ const request=()=>new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'test'}],tools:[generation,tool('generate_qualitative_model')]})});
+ const result=()=>({...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{type:'function',id:'g',function:{name:generation.function.name,arguments:'{}'}}]}}]});
+ for(const engineEnabled of [false,true]){
+  const response=await completion(request(),{run:async(_model,wire)=>{
+    assert.deepEqual(wire.tools,engineEnabled?[generation]:undefined);return result();
+  }},()=>1,()=>{},{engineEnabled});
+  assert.equal(response.status,engineEnabled?200:422);
+ }
+});

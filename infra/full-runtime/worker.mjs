@@ -1,6 +1,8 @@
 import {DurableObject,WorkerEntrypoint} from 'cloudflare:workers';
 import {GEMMA} from '../private-merlin/gemma-response.mjs';
 import {completion} from './gateway.mjs';
+import {engineCompletion} from './engine-gateway.mjs';
+import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {projectModel} from './project.mjs';
 
 const deny=()=>new Response(null,{status:404});
@@ -35,13 +37,21 @@ export class ProjectRuntime extends DurableObject {
   async infer(request,project){
     if(!approved(this.env,project) || !this.ctx.id.equals(this.env.PROJECTS.idFromName(project)))return deny();
     const storage=this.ctx.storage;
-    return completion(request,this.env.AI,receipt=>storage.transaction(async tx=>{
+    const engine=request.url===ENGINE_ENDPOINT;
+    if(engine&&this.env.ENGINE_INFERENCE_ENABLED!=='true')return deny();
+    const dispatch=engine?engineCompletion:completion;
+    return dispatch(request,this.env.AI,receipt=>storage.transaction(async tx=>{
       const used=await tx.get('bindingCalls')??0;
       if(!approved(this.env,project) || used>=Number(this.env.AI_MAX_CALLS))return false;
+      // The same invocation may arrive twice, but identical experiments are legitimate.
+      // Legacy engine-request:<hash> keys are intentionally no longer consulted.
+      const replayKey=engine?'engine-invocation:'+receipt.invocation_id:null;
+      if(engine&&(this.env.ENGINE_INFERENCE_ENABLED!=='true'||await tx.get(replayKey)))return false;
       const attempt=used+1;
-      await tx.put({bindingCalls:attempt,['inference:'+attempt]:receipt});
+      await tx.put({bindingCalls:attempt,['inference:'+attempt]:receipt,...(replayKey?{[replayKey]:attempt}:{})});
       return attempt;
-    }),(attempt,receipt)=>storage.put('inference:'+attempt,receipt));
+    }),(attempt,receipt)=>storage.put('inference:'+attempt,receipt),
+      {engineEnabled:this.env.ENGINE_INFERENCE_ENABLED==='true'});
   }
   async stop(project){
     if(this.env.RUNTIME_ENABLED!=='true'||project!==this.env.AI_PROJECT||!this.ctx.id.equals(this.env.PROJECTS.idFromName(project)))throw Error('STOP_NOT_AUTHORIZED');
@@ -60,7 +70,8 @@ export class ProjectRuntime extends DurableObject {
       }
       c.start({image:c.images.base,instance:'basic',enableInternet:false,env:{
         AUTHENTICATION_KEY:this.env.APP_AUTH_KEY,PORT:'8080',WEBSOCKET_PORT:'8080',
-        ...(ai?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA}:{})}});
+        ...(ai?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA}:{ }),
+        ...(ai&&this.env.ENGINE_INFERENCE_ENABLED==='true'?{BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
     }
     await c.setInactivityTimeout(120000);
     const port=c.getTcpPort(8080);

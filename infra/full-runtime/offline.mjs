@@ -12,6 +12,9 @@ import {GEMMA} from '../private-merlin/gemma-response.mjs';
 import {rest} from './test-rest.mjs';
 import {session,assertDemand} from './test-session.mjs';
 import {simulationModel,simulationScenario} from './simulation-fixture.mjs';
+import {createSimulationClient} from './simulation-client.mjs';
+import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
+import {quantitativeFixture,testOriginalEngine,testFailedOriginalEngine,agentPrompt} from './test-engine.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -28,8 +31,9 @@ export class LocalProject extends ProjectRuntime {
     }}});
   }
   fetch(r){
-    if(new URL(r.url).pathname==='/fixture/infer'){
-      return this.infer(new Request('${ENDPOINT}',r),r.headers.get('x-buffalo-project'));
+    const path=new URL(r.url).pathname;
+    if(path==='/fixture/infer'||path==='/fixture/infer-engine'){
+      return this.infer(new Request(path==='/fixture/infer-engine'?'${ENGINE_ENDPOINT}':'${ENDPOINT}',r),r.headers.get('x-buffalo-project'));
     }
     return super.fetch(r);
   }
@@ -42,10 +46,10 @@ const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'15',
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'27',ENGINE_INFERENCE_ENABLED:'true',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk};
-let mf,child,exited,calls=0,scenarioOffset=0;
+let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null,lastEngineRequest=null,failNextEngine=false,invalidNextEngine=null;
 const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
 const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...options,
@@ -54,7 +58,7 @@ function start(edit){
   child=spawn('/usr/bin/setpriv',['--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',process.execPath,
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
       PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,
-      ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA}:{})}});
+      ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
 async function stop(){if(child){child.kill();await exited;child=null;}}
@@ -76,13 +80,22 @@ const simulationSteps=[
 ];
 function fixture(model,wire){
   assert.equal(model,GEMMA);
+  if(wire.response_format){engineCalls++;if(failNextEngine){failNextEngine=false;throw Error('controlled provider failure');}
+    const result=quantitativeFixture(model,wire,generationOffset===null?undefined:agentPrompt);
+    const invalid=invalidNextEngine;invalidNextEngine=null;
+    if(invalid==='schema_valid')result.choices[0].message.content='{}';
+    if(invalid==='total_tokens_valid')result.usage.total_tokens=-1;
+    return result;}
   calls++;
   if(!wire.tools)return {model,usage:{prompt_tokens:12,completion_tokens:2049,neurons:1.25},
     choices:[{finish_reason:'length',message:{role:'assistant',content:'truncated fixture'}}]};
-  const local=calls-scenarioOffset;
+  const local=calls-(generationOffset??scenarioOffset);
   if(local>1)assert(wire.messages.some(m=>m.role==='tool' && m.tool_call_id==='step-'+(calls-1)));
   const message={role:'assistant'};
-  const step=(scenarioOffset?simulationSteps:scriptedTools)[local-1];
+  const generationSteps=[['generate_quantitative_model',{prompt:agentPrompt,difficulty:'normal',parameters:{allowArrays:false,allowModules:false,allowSubTypes:false}}],
+    ['edit_variables',{operation:'update',data:[{name:'Demand',equation:'6'}]}],['run_model',{}],
+    ['get_variable_data',{variableNames:['Inventory'],runIds:['run-1'],detailed:true}]];
+  const step=(generationOffset!==null?generationSteps:scenarioOffset?simulationSteps:scriptedTools)[local-1];
   if(step){
     const [name,originalArgs]=step;
     let args=originalArgs;
@@ -93,26 +106,37 @@ function fixture(model,wire){
     assert(wire.tools.some(t=>t.function.name===name));
     message.tool_calls=[{type:'function',id:'step-'+calls,function:{name,arguments:JSON.stringify(args)}}];
   }else{
-    if(scenarioOffset){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
+    if(generationOffset!==null){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
+      const parsed=JSON.parse(result.content);assert.equal(typeof parsed.filePath,'string');}
+    else if(scenarioOffset){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
       const parsed=JSON.parse(result.content);assert.deepEqual(JSON.parse(parsed.content)['run-1'].Inventory,[10,15,20,25,30]);}
     message.content='Offline fixture acknowledges operation.';
   }
   return {model,usage:{prompt_tokens:12,completion_tokens:8},
     choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}]};
 }
-const infer=body=>mf.dispatchFetch('http://localhost/fixture/infer',{method:'POST',body});
+const infer=(body,engine=false)=>mf.dispatchFetch('http://localhost/fixture/'+(engine?'infer-engine':'infer'),{method:'POST',body});
 const proxy=createServer(async(req,res)=>{
   try{
     const body=await new Response(req).text();
     if(req.url==='/fixture'){
       const {model,wire}=JSON.parse(body);
-      res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(fixture(model,wire)));
+      // Evaluate and serialize the fixture before committing HTTP status 200.
+      // A controlled binding failure must reach the catch as a single 422.
+      const payload=JSON.stringify(fixture(model,wire));
+      res.writeHead(200,{'content-type':'application/json'}).end(payload);
       return;
     }
-    assert.equal(req.url,'/v1/chat/completions');
-    const r=await infer(body);
-    res.writeHead(r.status,{'content-type':'application/json'}).end(await r.text());
-  }catch(e){console.error(e);res.writeHead(422).end();}
+    assert(['/v1/chat/completions','/v1/engine/completions'].includes(req.url));
+    if(req.url==='/v1/engine/completions')lastEngineRequest=body;
+    const r=await infer(body,req.url==='/v1/engine/completions');
+    const payload=await r.text();
+    res.writeHead(r.status,{'content-type':'application/json'}).end(payload);
+  }catch(e){
+    console.error(e);
+    if(res.headersSent){res.destroy(e);return;}
+    res.writeHead(422).end();
+  }
 });
 try{
   mf=new Miniflare(options);await mf.ready;
@@ -125,6 +149,39 @@ try{
   await stop();assert.equal(calls,0);console.log('FULL_ORIGINAL_REST_AND_FIVE_CONFIGURATIONS');
   proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
   start(true);await rest(base,key);
+  await testOriginalEngine(base,key);assert.equal(engineCalls,2);assert.equal(calls,0);
+  const engineReceiptResponse=await mf.dispatchFetch('http://localhost/project/inference/1');
+  assert.equal(engineReceiptResponse.status,200);
+  const engineReceipt=await engineReceiptResponse.json();
+  assert.equal(engineReceipt.channel,'original-engine');assert.equal(engineReceipt.status,'OK');
+  assert.equal(engineReceipt.response_format,'json_schema');assert.equal(engineReceipt.neurons,1.5);
+  assert.equal(engineReceipt.predicates.schema_valid,true);assert.equal(engineReceipt.predicates.total_tokens_valid,true);
+  assert.deepEqual(engineReceipt.usage,{prompt_tokens:500,completion_tokens:100,total_tokens:null});
+  const repeatReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/2')).json();
+  assert.equal(repeatReceipt.status,'OK');assert.equal(repeatReceipt.request_sha256,engineReceipt.request_sha256);
+  assert.notEqual(repeatReceipt.invocation_id,engineReceipt.invocation_id);
+  assert.equal((await infer(lastEngineRequest,true)).status,403);assert.equal(engineCalls,2);
+  console.log('FULL_ENGINE_IDENTICAL_EXPERIMENTS_ALLOWED_REPLAY_DENIED');
+  failNextEngine=true;await testFailedOriginalEngine(base,key);
+  assert.equal(failNextEngine,false);assert.equal(engineCalls,3);
+  const failureReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/3')).json();
+  assert.equal(failureReceipt.status,'FAILED');assert.equal(failureReceipt.request_sha256,engineReceipt.request_sha256);
+  assert.notEqual(failureReceipt.invocation_id,engineReceipt.invocation_id);
+  assert.equal((await infer(lastEngineRequest,true)).status,403);assert.equal(engineCalls,3);
+  console.log('FULL_ENGINE_SDK_FAILURE_NO_AUTOMATIC_RETRY');
+  // Both regressions travel through the original REST/SDK and workerd.
+  // A rejected response still spends exactly one reservation.
+  for(const predicate of ['schema_valid','total_tokens_valid']){
+    invalidNextEngine=predicate;
+    const before=engineCalls;await testFailedOriginalEngine(base,key);
+    assert.equal(invalidNextEngine,null);assert.equal(engineCalls,before+1);
+    const rejected=await (await mf.dispatchFetch('http://localhost/project/inference/'+engineCalls)).json();
+    assert.equal(rejected.status,'REJECTED');assert.deepEqual(rejected.failed_predicates,[predicate]);
+    assert.deepEqual(rejected.usage,{prompt_tokens:500,completion_tokens:100,total_tokens:null});
+    assert.equal(rejected.neurons,1.5);assert.equal(rejected.request_sha256,engineReceipt.request_sha256);
+    assert.equal((await infer(lastEngineRequest,true)).status,403);assert.equal(engineCalls,before+1);
+  }
+  console.log('FULL_ENGINE_SCHEMA_AND_USAGE_REJECTION_RECEIPTS');
   const old={'if-match':created.headers.get('etag')};
   let etag=old['if-match'];
   await session({mode:'sfd',key,model,agent:'merlin',edit:true,save:async m=>{
@@ -137,12 +194,30 @@ try{
   await session({mode:'sfd',key,model:simulationModel(),agent:'merlin',edit:true,scenario,
     save:async m=>{scenario.snapshots.push(structuredClone(m));}});
   assert.equal(calls,14);
+  // An empty client model invokes the ORIGINAL sandboxed generation tool, then
+  // edits and simulates the generated model and persists each confirmed update.
+  generationOffset=calls;
+  const sim=createSimulationClient(),snapshots=[];
+  await session({mode:'sfd',key,model:{variables:[],relationships:[]},agent:'merlin',edit:true,
+    scenario:{message:agentPrompt+' Then edit Demand to 6 and simulate.',capabilities:{supportsArrays:false,supportsModules:false,supportsSubTypes:false},
+      clientRequest:(m,model)=>sim.request(m,model),
+      verify(model,tools){
+        assertDemand(model,'6');assert(snapshots.some(m=>m.variables.some(v=>v.name==='Demand'&&v.equation==='5')));
+        for(const name of ['generate_quantitative_model','edit_variables','run_model','get_variable_data'])
+          assert(tools.some(t=>t.event==='tool_call_completed'&&t.name===name&&t.isError===false),name);
+        const data=sim.runs.get('run-1')?.data;
+        assert.deepEqual(data?.time,[0,1,2,3,4]);assert.deepEqual(data?.Inventory,[10,16,22,28,34]);
+        console.log('FULL_ORIGINAL_AGENT_GENERATE_EDIT_SIMULATE '+JSON.stringify({time:data.time,Inventory:data.Inventory}));
+      }},
+    save:async m=>{snapshots.push(structuredClone(m));const saved=await doc({method:'PUT',headers:{'if-match':etag},body:JSON.stringify(m)});
+      assert.equal(saved.status,204);etag=saved.headers.get('etag');}});
+  assert.equal(engineCalls,6);assert.equal(calls,19);
   const rejectedRequest=JSON.stringify({model:GEMMA,messages:[{role:'user',content:'fixture'}],tools:[]});
   assert.equal((await infer(rejectedRequest)).status,422);
-  const lastAttempt=calls;
+  const lastAttempt=calls+engineCalls;
   await stop();await mf.dispose();mf=new Miniflare(options);await mf.ready;
   const saved=await doc();assert.equal(saved.headers.get('etag'),etag);
-  const recovered=await saved.json();assertDemand(recovered,'5');
+  const recovered=await saved.json();assertDemand(recovered,'6');
   const receipt=await mf.dispatchFetch('http://localhost/project/inference/'+lastAttempt);
   assert.equal(receipt.status,200);
   const diagnostic=await receipt.json();
@@ -150,7 +225,14 @@ try{
   assert.equal(diagnostic.neurons,1.25);
   assert.equal(diagnostic.status,'REJECTED');
   assert(diagnostic.failed_predicates.includes('finish_reason_valid'));
+  // There is still one reservation available; replay denial must survive restart
+  // independently of the budget. A fresh ID for identical content uses that slot.
+  assert.equal((await infer(lastEngineRequest,true)).status,403);assert.equal(engineCalls,6);
+  assert.equal((await infer(JSON.stringify({...JSON.parse(lastEngineRequest),invocation_id:randomUUID()}),true)).status,200);
+  assert.equal(engineCalls,7);
+  const repeatedAfterRestart=await (await mf.dispatchFetch('http://localhost/project/inference/'+(lastAttempt+1))).json();
+  assert.equal(repeatedAfterRestart.status,'OK');
   assert.equal((await infer(rejectedRequest)).status,403);
   start(false);await rest(base,key);await session({mode:'sfd',key,agent:'merlin',model:recovered});
-  assert.equal(calls,lastAttempt);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
+  assert.equal(calls+engineCalls,lastAttempt+1);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

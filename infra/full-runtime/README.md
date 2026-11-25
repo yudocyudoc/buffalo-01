@@ -103,3 +103,20 @@ keeps run series in memory; reopening a CLD here verifies only model persistence
 ## Quantitative intervention and reproducible evidence
 
 The synthetic real quantitative receipt and independent cleanup record are preserved byte-for-byte in [evidence/quantitative-45551954016](evidence/quantitative-45551954016/README.md). The image CI now runs the base replay and two derived simulations with the original converter/PySD, no inference and no deployment. The intervention changes Demand to 6, preserving the original receipt and model; an executable negative control changes Inflow to the constant 5 and must fail the same response predicate. Results include parent/model hashes and exact edits, observed trajectories and simulator settings. This is a single-case test, not a general causal validation. Run persistence and session history remain separate pending work. CI outcome pending at implementation.
+
+
+## Historical revisions and immutable completed runs
+
+This increment extends the existing model table without rewriting any saved model or adding another database. The trusted named service binding continues to authenticate/authorize the project and overwrite its project header; these routes use the same project Durable Object and are available without starting the Container. There is no public endpoint. The store does not independently authenticate the external user; the trusted caller must enforce authorization as before.
+
+| Route | Contract |
+|---|---|
+| GET /project/model | Latest exact saved SD-JSON; ETag and x-buffalo-model-sha256. Existing PUT CAS contract unchanged. |
+| GET /project/model/revisions/:revision | Exact immutable saved JSON and same revision ETag, hash of stored UTF-8 text. Historical writes are rejected. Parent is the preceding revision in this linear history. |
+| PUT /project/runs/:uuid | Completed run record; v4 UUID scoped to project. 201 first insert, 204 byte-identical replay, 409 conflicting body or revision digest, 404 missing revision, 422 invalid data/settings, 413 above 512 KiB. |
+| GET /project/runs/:uuid | Exact completed record. |
+| GET /project/runs?after=0 | Bounded index (50 per page), insertion sequence, ID, revision and digest; next_after is null at end. |
+
+The client captures ETag and hash **before** simulation and submits the completed record using that identity even when the latest revision changes. Fields: revision, model_sha256, simulator (name/version/source=client/implementation_sha256), settings (startTime/stopTime/dt/timeUnits/integrationMethod exactly as stored), execution (effective integrationMethod/dt), series (time and at least one finite scalar variable series aligned to time, with requested endpoints), optional unitWarnings/errors arrays. Diagnostics absent mean not reported, empty means reported without findings. The implementation digest is a client report, not server attestation. Initial contract permits no parameter overrides outside the saved model and does not accept array-valued series, arbitrary large results or truncated trajectories. It stores client-reported data, not proof that the simulator actually ran. The client must retain the exact serialized completion for safe retry. Distinct experiments may use distinct IDs with identical contents. This increment does not persist in-progress calls, pending acknowledgements, messages or session history, nor yet restore runs inside a new agent session.
+
+Offline acceptance uses archived real quantitative model plus Demand=6 revision and the original PySD wrapper. Captures the first input before saving the second; commits the later run first, checks concurrent same-ID replay, conflicting completion, wrong hash/revision/specs, invalid series, body limit, stale model CAS, pagination and a different authorized project with a forged incoming project header. Reopens the preexisting model-only SQLite storage, disposes/recreates workerd, retrieves both historical models and series without simulation or inference. The app is stopped throughout this persistence-specific segment. This is local workerd restart evidence, not a remote Cloudflare Container lifecycle test. CI outcome pending.

@@ -169,6 +169,24 @@ try{
   await assert.rejects(verifyQuantitative({...smokeReceipt,inference:{...engineReceipt,schema_sha256:'0'.repeat(64)}}),/EXACT_ORIGINAL_SCHEMA_HASH/);
   const wrongModel=structuredClone(smokeModel);wrongModel.variables.find(v=>v.name==='Demand').equation='6';
   await assert.rejects(verifyQuantitative({...smokeReceipt,model:wrongModel}));
+  // Equivalent auxiliary factorization and variable order are not semantic failures.
+  const factored=structuredClone(smokeModel);
+  factored.variables.find(v=>v.name==='Demand').equation='DailyDemandRate';
+  factored.variables.push({name:'DailyDemandRate',type:'variable',equation:'5',units:'items/Day'});
+  factored.variables.reverse();
+  const factoredOutcome=await verifyQuantitative({...smokeReceipt,model:factored});
+  assert.deepEqual(factoredOutcome.Inventory,[10,15,20,25,30]);
+  assert.equal(factoredOutcome.variable_count,4);
+  const wrongFactored=structuredClone(factored);
+  wrongFactored.variables.find(v=>v.name==='DailyDemandRate').equation='6';
+  await assert.rejects(verifyQuantitative({...smokeReceipt,model:wrongFactored}));
+  const extraStock=structuredClone(factored);
+  extraStock.variables.push({name:'OtherStock',type:'stock',equation:'0'});
+  await assert.rejects(verifyQuantitative({...smokeReceipt,model:extraStock}),/EXACT_ONE_STOCK/);
+  const extraFlow=structuredClone(factored);
+  extraFlow.variables.push({name:'OtherFlow',type:'flow',equation:'0'});
+  await assert.rejects(verifyQuantitative({...smokeReceipt,model:extraFlow}),/EXACT_ONE_FLOW/);
+  console.log('FULL_QUANTITATIVE_EQUIVALENT_AUXILIARY_ACCEPTED_OFFLINE');
   console.log('FULL_QUANTITATIVE_SMOKE_VERIFIER_OFFLINE '+JSON.stringify({time:verified.time,Inventory:verified.Inventory,Demand:verified.Demand,Inflow:verified.Inflow}));
   const repeatReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/2')).json();
   assert.equal(repeatReceipt.status,'OK');assert.equal(repeatReceipt.request_sha256,engineReceipt.request_sha256);

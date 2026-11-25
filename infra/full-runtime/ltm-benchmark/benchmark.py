@@ -109,6 +109,15 @@ def partition_equivalence(reference_groups, native):
     return mapping if len(set(mapping.values())) == len(partitions) == len(reference_groups) else None
 
 
+def xml_structure(element):
+    # Ignore only whitespace-only formatting between elements. Preserve all
+    # attributes and non-whitespace text (including equation text) exactly.
+    def content(value):
+        return None if value is None or not value.strip() else value
+    return (element.tag, dict(element.attrib), content(element.text),
+            content(element.tail), tuple(xml_structure(child) for child in element))
+
+
 def safe_import_copy(original):
     """Only remove known unsigned, empty AI metadata; never signed logs or equations."""
     block = re.search(rb"\t<ai_information>\n.*?\n\t</ai_information>\n", original, re.S)
@@ -130,7 +139,7 @@ def safe_import_copy(original):
     metadata = root.findall(NS + "ai_information")
     require(len(metadata) == 1, "unexpected AI metadata count")
     root.remove(metadata[0])
-    require(ET.tostring(root) == ET.tostring(ET.fromstring(derived)), "nonmetadata XML change")
+    require(xml_structure(root) == xml_structure(ET.fromstring(derived)), "nonmetadata XML change")
     require(derived[:i] + removed + derived[i:] == original, "nonreversible import")
     return derived, {"kind": "unsigned-empty-ai-metadata-only-removal",
                      "source_sha256": sha(original), "derived_sha256": sha(derived),

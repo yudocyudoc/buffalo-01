@@ -1,6 +1,7 @@
 import unittest
+import xml.etree.ElementTree as ET
 import numpy as np
-from benchmark import cycle, reference_cycle, grid_indices, partition_equivalence, safe_import_copy, compare
+from benchmark import cycle, reference_cycle, grid_indices, partition_equivalence, safe_import_copy, compare, xml_structure
 
 class ContractTests(unittest.TestCase):
     def test_cycle_rotation_not_reversal(self):
@@ -23,11 +24,19 @@ class ContractTests(unittest.TestCase):
     def test_only_unsigned_empty_metadata(self):
         prefix=b'<xmile xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0">\n'
         block=b'\t<ai_information>\n\t\t<status verified="false"/>\n\t\t<testing signed_message_body=""/>\n\t</ai_information>\n'
-        suffix=b'<model/></xmile>'
+        suffix=b'\t<model><variables><aux name="Demand"><eqn>2 + 3</eqn></aux></variables></model>\n</xmile>'
         result, provenance=safe_import_copy(prefix+block+suffix)
         self.assertEqual(result,prefix+suffix)
         self.assertEqual(provenance["removed_bytes"],len(block))
         self.assertIsNone(safe_import_copy(prefix+block.replace(b'verified="false"',b'verified="true"')+suffix))
+        # Formatting is immaterial, but nonempty equation text and attributes are not.
+        self.assertEqual(xml_structure(ET.fromstring(result)), xml_structure(ET.fromstring(prefix+suffix)))
+        self.assertNotEqual(xml_structure(ET.fromstring(result)), xml_structure(ET.fromstring(result.replace(b"2 + 3", b"2 + 4"))))
+        self.assertNotEqual(xml_structure(ET.fromstring(result)), xml_structure(ET.fromstring(result.replace(b'name="Demand"', b'name="Other"'))))
+        # Also exercise removal after a sibling, where indentation lives in its tail.
+        before=b'\t<header/>\n'
+        derived, _=safe_import_copy(prefix+before+block+suffix)
+        self.assertEqual(derived,prefix+before+suffix)
 
     def test_same_time_mismatch_and_no_cross_partition_errors(self):
         a,b=cycle(["A","B"]),cycle(["C","D"])

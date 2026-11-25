@@ -48,7 +48,8 @@ export class ProjectRuntime extends DurableObject {
       const attempt=used+1;
       await tx.put({bindingCalls:attempt,['inference:'+attempt]:receipt,...(replayKey?{[replayKey]:attempt}:{})});
       return attempt;
-    }),(attempt,receipt)=>storage.put('inference:'+attempt,receipt));
+    }),(attempt,receipt)=>storage.put('inference:'+attempt,receipt),
+      {engineEnabled:this.env.ENGINE_INFERENCE_ENABLED==='true'});
   }
   async stop(project){
     if(this.env.RUNTIME_ENABLED!=='true'||project!==this.env.AI_PROJECT||!this.ctx.id.equals(this.env.PROJECTS.idFromName(project)))throw Error('STOP_NOT_AUTHORIZED');

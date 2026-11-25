@@ -24,6 +24,7 @@ import {createConversationJournal,modelIdentity} from './conversation-client.mjs
 import {checkConversationBeforeRestart,checkConversationAfterRestart} from './test-persistent-conversations.mjs';
 import {createSeldonFixture,exerciseSeldon} from './test-seldon-comparison.mjs';
 import {createBassFixture,exerciseBassReference} from './test-seldon-bass-reference.mjs';
+import {exerciseDocumentation} from './test-document-project-model.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -89,7 +90,9 @@ const simulationSteps=[
  ['read_file',null]
 ];
 let qualitative=false,seldon=null,bass=null;
+let documentationProvider;
 function fixture(model,wire){
+  if(documentationProvider)return documentationProvider(model,wire);
   if(bass)return bass.reply(model,wire);
   if(seldon)return seldon.reply(model,wire);
   if(qualitative)return qualitativeFixture(model,wire);
@@ -137,7 +140,7 @@ const proxy=createServer(async(req,res)=>{
       const {model,wire}=JSON.parse(body);
       // Evaluate and serialize the fixture before committing HTTP status 200.
       // A controlled binding failure must reach the catch as a single 422.
-      const payload=JSON.stringify(fixture(model,wire));
+      const payload=JSON.stringify(await fixture(model,wire));
       res.writeHead(200,{'content-type':'application/json'}).end(payload);
       return;
     }
@@ -334,7 +337,16 @@ try{
   start(true);await rest(base,key);
   await exerciseBassReference(request,key,bass);
   assert.equal(calls+engineCalls,lastAttempt+1);
-
-
-
+  await stop();await mf.dispose();
+  const documentationOptions={...fixtureOptions(3),resourcePersistencePath:join(disk,'documentation')};
+  mf=new Miniflare(documentationOptions);await mf.ready;
+  bass=null;
+  start(true);await rest(base,key);
+  const documented=await exerciseDocumentation(request,key,provider=>{documentationProvider=provider;});
+  await stop();await mf.dispose();
+  mf=new Miniflare(documentationOptions);await mf.ready;
+  const restored=await request('/project/model');
+  assert.equal(restored.headers.get('etag'),'"'+documented.revision+'"');
+  assert.deepEqual(await restored.json(),documented.model);
+  console.log('FULL_DOCUMENTATION_ORIGINAL_REST_THREE_SCHEMAS_REVISION_REOPENED');
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

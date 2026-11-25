@@ -96,7 +96,7 @@ function Layout({ children }) {
             to="/" 
             className="text-white no-underline text-2xl font-bold flex items-center hover:text-blue-300"
           >
-            SD-AI
+            Buffalo
           </Link>
 
           {/* Desktop Navigation Links */}
@@ -138,6 +138,13 @@ function Layout({ children }) {
           {children}
         </div>
       </main>
+      <footer className="border-t border-gray-200 px-4 py-6 text-center text-sm text-gray-600">
+        Buffalo is an independent fork of <a className="text-blue-600 hover:underline" href="https://github.com/UB-IAD/sd-ai">SD-AI</a>.
+        {' '}No institutional affiliation, funding, sponsorship or endorsement is claimed.
+        {' '}Inherited benchmark results are upstream results, not independent Buffalo validation.
+        {' '}<a className="text-blue-600 hover:underline" href="https://github.com/yudocyudoc/buffalo-01">Fork repository</a>
+        {' · '}<a className="text-blue-600 hover:underline" href="https://github.com/yudocyudoc/buffalo-01/blob/main/LICENSE">MIT license and original copyright</a>.
+      </footer>
     </div>
   );
 }

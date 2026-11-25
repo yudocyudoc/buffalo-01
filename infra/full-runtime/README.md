@@ -98,3 +98,8 @@ save Demand 5, run [10,15,20,25,30], save Demand 6 as its child, then run
 when completions arrive out of order. Implement and verify historical revision
 reads and durable run writes in the persistence increment. The current client
 keeps run series in memory; reopening a CLD here verifies only model persistence.
+
+
+## Quantitative intervention and reproducible evidence
+
+The synthetic real quantitative receipt and independent cleanup record are preserved byte-for-byte in [evidence/quantitative-45551954016](evidence/quantitative-45551954016/README.md). The image CI now runs the base replay and two derived simulations with the original converter/PySD, no inference and no deployment. The intervention changes Demand to 6, preserving the original receipt and model; an executable negative control changes Inflow to the constant 5 and must fail the same response predicate. Results include parent/model hashes and exact edits, observed trajectories and simulator settings. This is a single-case test, not a general causal validation. Run persistence and session history remain separate pending work. CI outcome pending at implementation.

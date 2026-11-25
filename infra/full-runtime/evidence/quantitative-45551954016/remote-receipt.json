@@ -1,0 +1,147 @@
+{
+  "probe_id": "one-shot-buffalo-full-quantitative-v1",
+  "run_id": "60efb506-f649-4b4a-955b-f1c210664bc1",
+  "status": "FULL_REMOTE_QUANTITATIVE_MODEL_RETURNED",
+  "approval": {
+    "project": "buffalo-full-quantitative-v1",
+    "max_calls": 1,
+    "source_commit": "381e22050e04918289ae9371fc7c17d5b1a89ee5",
+    "image_digest": "sha256:08ba278f5bce3e44dee0681d36bed8773de48332f1d2df775c28257553c4025e",
+    "run_id": "60efb506-f649-4b4a-955b-f1c210664bc1",
+    "expires": 1795585187757
+  },
+  "claimed_at": "2026-11-25T05:26:31.266Z",
+  "inference": {
+    "channel": "original-engine",
+    "invocation_id": "d94baf4d-d379-4384-97f7-c7e6a083e441",
+    "request_sha256": "d5a943d587c490493537b15976b36b5007b70585ffdf5789094ffdb5070d1f93",
+    "request_bytes": 11651,
+    "response_format": "json_schema",
+    "max_completion_tokens": 8192,
+    "schema_sha256": "42a687027ee4d911555eba65afaa02d936b64d53cd6358067ddfe50766bcfc93",
+    "stage": "RESPONSE",
+    "status": "OK",
+    "reason": null,
+    "response_model": "@cf/google/gemma-4-26b-a4b-it-external",
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1506,
+      "completion_tokens": 767,
+      "total_tokens": 2273
+    },
+    "neurons": 34.609092712402344,
+    "predicates": {
+      "model_accepted": true,
+      "one_choice": true,
+      "assistant_role": true,
+      "usage_present": true,
+      "prompt_tokens_valid": true,
+      "completion_tokens_valid": true,
+      "total_tokens_valid": true,
+      "finish_reason_valid": true,
+      "no_tool_calls": true,
+      "no_function_call": true,
+      "content_valid": true,
+      "json_valid": true,
+      "json_object_valid": true,
+      "schema_valid": true
+    },
+    "failed_predicates": [],
+    "elapsed_ms": 19092
+  },
+  "container_stopped": true,
+  "rest_status": 200,
+  "rest_success": true,
+  "model": {
+    "relationships": [
+      {
+        "from": "Demand",
+        "to": "Inflow",
+        "reasoning": "Higher demand increases the inflow rate",
+        "polarityReasoning": "As demand increases, inflow increases",
+        "polarity": "+",
+        "delay": false
+      },
+      {
+        "from": "Inflow",
+        "to": "Inventory",
+        "reasoning": "Inflow adds to the inventory stock",
+        "polarityReasoning": "As inflow increases, inventory increases",
+        "polarity": "+",
+        "delay": false
+      }
+    ],
+    "variables": [
+      {
+        "name": "Inventory",
+        "type": "stock",
+        "units": "Units",
+        "inflows": [
+          "Inflow"
+        ],
+        "outflows": [],
+        "equation": "10",
+        "graphicalFunction": {
+          "points": []
+        },
+        "uniflow": false,
+        "documentation": "Initial accumulation of goods"
+      },
+      {
+        "name": "Inflow",
+        "type": "flow",
+        "units": "Units per Day",
+        "inflows": [],
+        "outflows": [
+          "Inventory"
+        ],
+        "equation": "Demand",
+        "graphicalFunction": {
+          "points": []
+        },
+        "uniflow": true,
+        "documentation": "Rate of goods entering inventory"
+      },
+      {
+        "name": "Demand",
+        "type": "variable",
+        "units": "Units per Day",
+        "inflows": [],
+        "outflows": [
+          "Inflow"
+        ],
+        "equation": "DailyDemandRate",
+        "graphicalFunction": {
+          "points": []
+        },
+        "uniflow": false,
+        "documentation": "The external requirement driving the inflow"
+      },
+      {
+        "name": "DailyDemandRate",
+        "type": "variable",
+        "units": "Units per Day",
+        "inflows": [],
+        "outflows": [
+          "Demand"
+        ],
+        "equation": "5",
+        "graphicalFunction": {
+          "points": []
+        },
+        "uniflow": false,
+        "documentation": "Constant value representing the demand requirement"
+      }
+    ],
+    "modules": [],
+    "specs": {
+      "startTime": 0,
+      "stopTime": 4,
+      "dt": 1,
+      "timeUnits": "Day",
+      "integrationMethod": "Euler"
+    }
+  },
+  "single_reservation": true,
+  "finished_at": "2026-11-25T05:27:19.207Z"
+}

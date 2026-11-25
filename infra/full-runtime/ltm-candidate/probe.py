@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import simlin
 from simlin import Aux, Flow, Stock
+from product_attribution import product_link_score
 
 VERSION = "0.8.5"
 REFERENCE = Path("/reference")
@@ -194,20 +195,80 @@ def bass_import_copy(model_file, directory):
                     "removed_bytes": len(block), "offset": offset,
                     "reversible": True}
     
+def bass_product_attribution(run, links, model_file):
+    """Compute from XMILE equations and measured Simlin data, before loading the score reference."""
+    frame = run.results
+    n = len(frame)
+    edges_by_loop = {}
+    for loop in run.loops:
+        nodes = list(cycle(loop.variables))
+        edges_by_loop[loop.id] = list(zip(nodes, nodes[1:] + nodes[:1]))
+    needed = set().union(*edges_by_loop.values())
+    raw = {}
+    for link in links:
+        edge = (canonical(link.from_var), canonical(link.to_var))
+        if edge in needed:
+            require(edge not in raw, "DUPLICATE_LOOP_EDGE")
+            raw[edge] = series(link.score, n, str(edge))
+    require(raw.keys() == needed, "INCOMPLETE_RAW_LOOP_LINKS")
+    require(len(run.loops) == 2 and run.loops[0].partition is not None
+            and run.loops[0].partition == run.loops[1].partition, "EXPECTED_ONE_BASS_PARTITION")
+
+    def relative_scores(scores):
+        products = {key: np.prod([scores[e] for e in edges], axis=0)
+                    for key, edges in edges_by_loop.items()}
+        total = np.sum([np.abs(p) for p in products.values()], axis=0)
+        return {key: np.divide(p, total, out=np.zeros(n), where=total != 0)
+                for key, p in products.items()}
+
+    native = relative_scores(raw)
+    for loop in run.loops:
+        require(close(native[loop.id], loop.behavior_time_series, SHARE_ATOL), "RAW_LOOP_RECONSTRUCTION")
+
+    # The pinned scalar Bass model has one auxiliary where two feedback paths
+    # enter a product. Read its factors from the model, keeping all other raw links.
+    adjusted = raw.copy()
+    products = []
+    ns = {"x": "http://docs.oasis-open.org/xmile/ns/XMILE/v1.0"}
+    for aux in ET.parse(model_file).findall("x:model/x:variables/x:aux", ns):
+        target = canonical(aux.attrib["name"].replace(r"\n", " "))
+        equation = (aux.findtext("x:eqn", default="", namespaces=ns)).strip()
+        factors = re.fullmatch(r"(\w+)\s*\*\s*(\w+)", equation)
+        if not factors:
+            continue
+        x, y = map(canonical, factors.groups())
+        if (x, target) not in raw or (y, target) not in raw:
+            continue
+        require(x != y, "EXPECTED_DISTINCT_FACTORS")
+        z = column(frame, target, n)
+        xv, yv = column(frame, x, n), column(frame, y, n)
+        require(close(z, xv * yv, 0, 1e-12), "PRODUCT_TRAJECTORY")
+        for source, values, held in [(x, xv, yv), (y, yv, xv)]:
+            first = product_link_score(values, held, z, changed_last=False)
+            require(close(first, raw[source, target], 1e-8, 1e-8), "NATIVE_PRODUCT_ATTRIBUTION")
+            adjusted[source, target] = product_link_score(values, held, z, changed_last=True)
+        products.append({"target": target, "factors": [x, y]})
+    require(len(products) == 1, "EXPECTED_ONE_BASS_MIXED_PRODUCT")
+    return relative_scores(adjusted), products
+
+
 def bass_test():
     ref_file, model_file = REFERENCE / "bassDiffusion.json", REFERENCE / "bassDiffusion.stmx"
     require(digest(ref_file) == JSON_SHA and digest(model_file) == STMX_SHA, "REFERENCE_BYTES_CHANGED")
-    source = json.loads(ref_file.read_text(encoding="utf-8"))
-    reference = source["feedback"]["feedbackLoops"]
     with tempfile.TemporaryDirectory(prefix='bass-ltm-') as directory:
         import_file, import_provenance = bass_import_copy(model_file, directory)
         model = simlin.load(import_file)
-        run = model.run(analyze_loops=True)
+        with model.simulate(enable_ltm=True) as sim:
+            sim.run_to_end()
+            run = sim.get_run()
+            links = sim.get_links()
     require(run.ltm_mode == "exhaustive", "BASS_NOT_EXHAUSTIVE")
     time = series(run.results.index, 241, "time")
     require(np.array_equal(time, np.arange(241) / 16), "BASS_TIME_GRID")
     loops = {cycle(l.variables): l for l in run.loops}
     require(len(run.loops) == len(loops) == 2, "BASS_LOOP_COUNT")
+    adapted, products = bass_product_attribution(run, links, model_file)
+    reference = json.loads(ref_file.read_text(encoding="utf-8"))["feedback"]["feedbackLoops"]
     measured = {}
     for entry in reference:
         sig = cycle([link["from"] for link in entry["links"]])
@@ -222,6 +283,8 @@ def bass_test():
             "polarity": str(lp.polarity), "signed_relative_scores": signed.tolist(),
             "reference_percent": expected.tolist(),
             "max_error_pp": max_error(100 * np.abs(signed), expected),
+            "changed_last_signed_relative_scores": adapted[lp.id].tolist(),
+            "changed_last_max_error_pp": max_error(100 * np.abs(adapted[lp.id]), expected),
         }
     r, b = measured["R1"], measured["B1"]
     rs, bs = np.array(r["signed_relative_scores"]), np.array(b["signed_relative_scores"])
@@ -248,7 +311,21 @@ def bass_test():
         "adoption_flow": close(adopting, 1.5 * a * (1000000-a)/1000000, 1e-6, 1e-10),
         "source_unchanged": digest(ref_file) == JSON_SHA and digest(model_file) == STMX_SHA,
     }
+    cr = np.array(r["changed_last_signed_relative_scores"])
+    cb = np.array(b["changed_last_signed_relative_scores"])
+    # Check the whole dominance pattern, including the final sample.
+    profile_checks = dict(checks)
+    profile_checks.update(
+        signed_ranges=bool(np.all((cr >= 0) & (cr <= 1)) and np.all((cb >= -1) & (cb <= 0))),
+        zero_initial_scores=bool(cr[0] == 0 and cb[0] == 0),
+        relative_normalization=close(np.abs(cr[1:]) + np.abs(cb[1:]), np.ones(240), SHARE_ATOL),
+        dominance_boundary=bool(np.array_equal(cb[1:] < -0.5, time[1:] >= BASS_BOUNDARY)
+                                and np.array_equal(cr[1:] > 0.5, time[1:] < BASS_BOUNDARY)),
+        all_samples_match_reference=max(r["changed_last_max_error_pp"], b["changed_last_max_error_pp"]) <= BASS_SCORE_ATOL_PP,
+    )
     return {"checks": checks, "passed": all(checks.values()), "time": time.tolist(),
+            "changed_last": {"checks": profile_checks, "passed": all(profile_checks.values()), "products": products,
+                             "balancing_transitions": time[1:][(cb[1:] < -0.5) & (cb[:-1] >= -0.5)].tolist()},
             "import_provenance": import_provenance, "loops": measured, "balancing_transitions": transitions,
             "backend_periods": [{"start": float(p.start_time), "end": float(p.end_time),
                                  "loops": list(p.dominant_loops)} for p in run.dominant_periods],
@@ -276,13 +353,15 @@ def main():
         report[stage] = births_deaths_test()
         stage = "bass"
         report[stage] = bass_test()
-        report["status"] = ("CANDIDATE_PASS" if all(report[k]["passed"] for k in
-                            ("paper_tables_2_3", "births_deaths", "bass")) else "NUMERICAL_MISMATCH")
+        controls_pass = report["paper_tables_2_3"]["passed"] and report["births_deaths"]["passed"]
+        report["native_status"] = "CANDIDATE_PASS" if controls_pass and report["bass"]["passed"] else "NUMERICAL_MISMATCH"
+        report["status"] = ("BASS_PRODUCT_PROFILE_PASS" if controls_pass and report["bass"]["changed_last"]["passed"]
+                            else "NUMERICAL_MISMATCH")
     except Exception as e:
         report["failure_stage"] = stage
         report["error"] = type(e).__name__ + ": " + str(e)
     print(json.dumps(report, allow_nan=False, indent=2))
-    return 0 if report["status"] == "CANDIDATE_PASS" else 1
+    return 0 if report["status"] == "BASS_PRODUCT_PROFILE_PASS" else 1
 
 
 if __name__ == "__main__":

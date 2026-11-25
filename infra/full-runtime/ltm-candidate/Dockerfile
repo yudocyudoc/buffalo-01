@@ -5,5 +5,8 @@ RUN pip install --no-cache-dir --only-binary=:all: pysimlin==0.8.5
 COPY evals/categories/feedbackExplanationData/bassDiffusion.json /reference/bassDiffusion.json
 COPY evals/categories/feedbackExplanationData/bassDiffusion.stmx /reference/bassDiffusion.stmx
 COPY infra/full-runtime/ltm-candidate/probe.py /probe.py
+COPY infra/full-runtime/ltm-candidate/product_attribution.py /product_attribution.py
+COPY infra/full-runtime/ltm-candidate/test_product_attribution.py /test_product_attribution.py
+RUN python /test_product_attribution.py
 USER 65532:65532
 ENTRYPOINT ["python","/probe.py"]

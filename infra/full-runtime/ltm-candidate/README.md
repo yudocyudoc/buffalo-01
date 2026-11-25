@@ -1,5 +1,13 @@
 # Buffalo Full — candidate LTM backend admission
 
+## Bass scalar-product compatibility experiment
+
+The report now gives two verdicts. `native_status` evaluates the published Simlin wheel with the original criteria below. The CI job evaluates `BASS_PRODUCT_PROFILE_PASS` for a Buffalo adapter restricted to this pinned scalar Bass model, together with the paper and births/deaths controls. The archive retains the historical native result.
+
+For a product `z = x*y`, Simlin's usual finite-change attribution to x uses `(x₁−x₀)y₀` (changed-first). A second convention uses `(x₁−x₀)y₁` (changed-last). They differ by the interaction term when both inputs change over an interval. In Bass this occurs where the two feedback paths enter the product of adopter contacts and contact probability. An additive flow step cannot distinguish these conventions. [Simlin's attribution formulas](https://github.com/bpowers/simlin/blob/40ae5e95f3b9a421405d26eb3cce257b33c19b4f/docs/reference/ltm--loops-that-matter.md#L275-L285)
+
+The adapter reads the two factors from the original XMILE equation and the values from the same Simlin run. It verifies the product trajectory, reconstructs native loop shares from the raw link products and checks the native scores of both input links against the changed-first formula. It then computes changed-last scores for those two links, retaining the remaining raw links and the native partition. A separate test uses an independent asymmetric product with a sign change and zero-change controls. The reference scores enter only during evaluation. Both profiles are evaluated at all 241 original timestamps, including the initial and final samples, with the same polarity, normalization, dominance and 0.1 percentage point criteria. This experiment establishes compatibility only for the selected reference when the profile passes. Other model families and Stella's general attribution convention require independent evidence.
+
 This is a separate offline scientific experiment, based on merged #88 while #89's general upstream CI is being rerun. It does not replace PySD, enable a new engine, install a dependency in the production image, consume AI credits, change an original evaluator or change Cloudflare isolation. It can be integrated with the Seldon delivery branch after that branch is approved. SD-AI's own `get_feedback_information` tool requests LTM evidence from the client; its PySD wrapper supplies trajectories rather than LTM. The separate original experimental Simlin agent uses a nested Docker/Claude path, not a ready-to-use deterministic analysis service. Use the published Python API directly in the isolated candidate, not the experimental agent.
 
 ## Selected candidate and sources

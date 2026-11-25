@@ -46,10 +46,10 @@ const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'22',ENGINE_INFERENCE_ENABLED:'true',
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'24',ENGINE_INFERENCE_ENABLED:'true',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk};
-let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null;
+let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null,lastEngineRequest=null;
 const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
 const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...options,
@@ -120,6 +120,7 @@ const proxy=createServer(async(req,res)=>{
       return;
     }
     assert(['/v1/chat/completions','/v1/engine/completions'].includes(req.url));
+    if(req.url==='/v1/engine/completions')lastEngineRequest=body;
     const r=await infer(body,req.url==='/v1/engine/completions');
     res.writeHead(r.status,{'content-type':'application/json'}).end(await r.text());
   }catch(e){console.error(e);res.writeHead(422).end();}
@@ -135,12 +136,17 @@ try{
   await stop();assert.equal(calls,0);console.log('FULL_ORIGINAL_REST_AND_FIVE_CONFIGURATIONS');
   proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
   start(true);await rest(base,key);
-  await testOriginalEngine(base,key);assert.equal(engineCalls,1);assert.equal(calls,0);
+  await testOriginalEngine(base,key);assert.equal(engineCalls,2);assert.equal(calls,0);
   const engineReceiptResponse=await mf.dispatchFetch('http://localhost/project/inference/1');
   assert.equal(engineReceiptResponse.status,200);
   const engineReceipt=await engineReceiptResponse.json();
   assert.equal(engineReceipt.channel,'original-engine');assert.equal(engineReceipt.status,'OK');
   assert.equal(engineReceipt.response_format,'json_schema');assert.equal(engineReceipt.neurons,1.5);
+  const repeatReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/2')).json();
+  assert.equal(repeatReceipt.status,'OK');assert.equal(repeatReceipt.request_sha256,engineReceipt.request_sha256);
+  assert.notEqual(repeatReceipt.invocation_id,engineReceipt.invocation_id);
+  assert.equal((await infer(lastEngineRequest,true)).status,403);assert.equal(engineCalls,2);
+  console.log('FULL_ENGINE_IDENTICAL_EXPERIMENTS_ALLOWED_REPLAY_DENIED');
   const old={'if-match':created.headers.get('etag')};
   let etag=old['if-match'];
   await session({mode:'sfd',key,model,agent:'merlin',edit:true,save:async m=>{
@@ -170,7 +176,7 @@ try{
       }},
     save:async m=>{snapshots.push(structuredClone(m));const saved=await doc({method:'PUT',headers:{'if-match':etag},body:JSON.stringify(m)});
       assert.equal(saved.status,204);etag=saved.headers.get('etag');}});
-  assert.equal(engineCalls,2);assert.equal(calls,19);
+  assert.equal(engineCalls,3);assert.equal(calls,19);
   const rejectedRequest=JSON.stringify({model:GEMMA,messages:[{role:'user',content:'fixture'}],tools:[]});
   assert.equal((await infer(rejectedRequest)).status,422);
   const lastAttempt=calls+engineCalls;
@@ -184,7 +190,14 @@ try{
   assert.equal(diagnostic.neurons,1.25);
   assert.equal(diagnostic.status,'REJECTED');
   assert(diagnostic.failed_predicates.includes('finish_reason_valid'));
+  // There is still one reservation available; replay denial must survive restart
+  // independently of the budget. A fresh ID for identical content uses that slot.
+  assert.equal((await infer(lastEngineRequest,true)).status,403);assert.equal(engineCalls,3);
+  assert.equal((await infer(JSON.stringify({...JSON.parse(lastEngineRequest),invocation_id:randomUUID()}),true)).status,200);
+  assert.equal(engineCalls,4);
+  const repeatedAfterRestart=await (await mf.dispatchFetch('http://localhost/project/inference/'+(lastAttempt+1))).json();
+  assert.equal(repeatedAfterRestart.status,'OK');
   assert.equal((await infer(rejectedRequest)).status,403);
   start(false);await rest(base,key);await session({mode:'sfd',key,agent:'merlin',model:recovered});
-  assert.equal(calls+engineCalls,lastAttempt);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
+  assert.equal(calls+engineCalls,lastAttempt+1);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

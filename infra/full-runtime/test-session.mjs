@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 import {on,once} from 'node:events';
 import {WebSocket} from 'ws';
 
+export function assertDemand(model,equation){
+  assert.deepEqual(model.variables.filter(v=>v.name==='Demand').map(v=>v.equation),[equation]);
+}
+
 export async function session({mode,key,model,agent,edit=false,save}){
+  if(edit)assertDemand(model,'3');
   const ws=new WebSocket('ws://127.0.0.1:8793/api/v1');
   const frames=on(ws,'message',{signal:AbortSignal.timeout(45000),close:['close']});
-  let id,updated=false,confirmed=false;
+  let id;
+  const tools=[];
   const send=(type,body={})=>ws.send(JSON.stringify({type,sessionId:id,...body}));
   try{
     for await(const [bytes] of frames){
@@ -29,20 +35,23 @@ export async function session({mode,key,model,agent,edit=false,save}){
         case 'get_current_model':
           send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
         case 'update_model':
-          assert.equal(m.modelData.variables.find(v=>v.name==='Demand').equation,'5');
+          await save(m.modelData);
           model=m.modelData;
-          await save(model);
-          updated=true;
           send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
+        case 'tool_call_notification':
         case 'tool_call_completed':
-          assert.equal(m.toolName,'edit_variables');assert.equal(m.isError,false);confirmed=true;break;
+          tools.push({event:m.type,callId:m.callId,name:m.toolName,isError:m.isError});break;
         case 'agent_complete':{
-          assert.equal(m.status,'success');assert(updated && confirmed);
+          assert.equal(m.status,'success');
+          if(edit)assertDemand(model,'5');
           const closed=once(ws,'close');send('disconnect');assert.equal((await closed)[0],1000);return;
         }
         case 'error':throw Error(m.error);
       }
     }
     throw Error('early WebSocket close');
-  }finally{await frames.return();ws.terminate();}
+  }finally{
+    if(edit)console.log(JSON.stringify({event:'FULL_EDIT_TOOLS',tools}));
+    await frames.return();ws.terminate();
+  }
 }

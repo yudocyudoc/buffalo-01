@@ -30,11 +30,14 @@ export class ModelProvider extends WorkerEntrypoint {
 export class ProjectRuntime extends DurableObject {
   async infer(request,project){
     if(!approved(this.env,project) || !this.ctx.id.equals(this.env.PROJECTS.idFromName(project)))return deny();
-    return completion(request,this.env.AI,()=>this.ctx.storage.transaction(async tx=>{
+    const storage=this.ctx.storage;
+    return completion(request,this.env.AI,receipt=>storage.transaction(async tx=>{
       const used=await tx.get('bindingCalls')??0;
       if(!approved(this.env,project) || used>=Number(this.env.AI_MAX_CALLS))return false;
-      await tx.put('bindingCalls',used+1);return true;
-    }));
+      const attempt=used+1;
+      await tx.put({bindingCalls:attempt,['inference:'+attempt]:receipt});
+      return attempt;
+    }),(attempt,receipt)=>storage.put('inference:'+attempt,receipt));
   }
   async prepare(project){
     const c=this.ctx.container;
@@ -65,6 +68,12 @@ export class ProjectRuntime extends DurableObject {
   async fetch(request){
     const url=new URL(request.url);
     if(url.pathname==='/project/model')return projectModel(request,this.ctx.storage);
+    const attempt=/^\/project\/inference\/([1-9]\d{0,15})$/.exec(url.pathname);
+    if(attempt){
+      if(request.method!=='GET')return new Response(null,{status:405,headers:{Allow:'GET'}});
+      const receipt=await this.ctx.storage.get('inference:'+attempt[1]);
+      return receipt?Response.json(receipt,{headers:{'cache-control':'no-store'}}):deny();
+    }
     if(!this.env.APP_AUTH_KEY)return new Response(null,{status:503});
     let port;
     try{port=await this.applicationPort(request.headers.get('x-buffalo-project'));}

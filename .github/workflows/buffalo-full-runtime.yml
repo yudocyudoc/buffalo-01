@@ -74,12 +74,22 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -r third-party/PySD-simulator/requirements.txt
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
+      - name: Produce Bass trajectories and feedback in one isolated simulation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f infra/full-runtime/ltm-candidate/Dockerfile -t buffalo-ltm:narrative .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 \
+            buffalo-ltm:narrative > "$RUNNER_TEMP/narrative-bass.json"
+          echo "FULL_LTM_REPORT=$RUNNER_TEMP/narrative-bass.json" >> "$GITHUB_ENV"
+          echo "FULL_LTM_IMAGE=$(docker image inspect --format '{{.Id}}' buffalo-ltm:narrative)" >> "$GITHUB_ENV"
       - name: Original REST, sessions and confirmed model edit with a local binding fixture
         shell: bash
         run: |
           set -euo pipefail
           export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools" FULL_PYTHON_PATH="$(dirname "$(command -v python3)")"
-          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH unshare --net --mount --propagation private sh -ec '
+          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,FULL_LTM_REPORT,FULL_LTM_IMAGE unshare --net --mount --propagation private sh -ec '
             ip link set lo up
             sysctl -qw net.ipv4.ip_unprivileged_port_start=0
             hosts=$(mktemp)

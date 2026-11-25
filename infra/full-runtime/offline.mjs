@@ -25,6 +25,7 @@ import {checkConversationBeforeRestart,checkConversationAfterRestart} from './te
 import {createSeldonFixture,exerciseSeldon} from './test-seldon-comparison.mjs';
 import {createBassFixture,exerciseBassReference} from './test-seldon-bass-reference.mjs';
 import {exerciseDocumentation} from './test-document-project-model.mjs';
+import {seedNarrativeRuns, exerciseRunNarratives} from './test-run-narrative.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -90,9 +91,9 @@ const simulationSteps=[
  ['read_file',null]
 ];
 let qualitative=false,seldon=null,bass=null;
-let documentationProvider;
+let engineFixture;
 function fixture(model,wire){
-  if(documentationProvider)return documentationProvider(model,wire);
+  if(engineFixture)return engineFixture(model,wire);
   if(bass)return bass.reply(model,wire);
   if(seldon)return seldon.reply(model,wire);
   if(qualitative)return qualitativeFixture(model,wire);
@@ -342,11 +343,24 @@ try{
   mf=new Miniflare(documentationOptions);await mf.ready;
   bass=null;
   start(true);await rest(base,key);
-  const documented=await exerciseDocumentation(request,key,provider=>{documentationProvider=provider;});
+  const documented=await exerciseDocumentation(request,key,provider=>{engineFixture=provider;});
   await stop();await mf.dispose();
   mf=new Miniflare(documentationOptions);await mf.ready;
   const restored=await request('/project/model');
   assert.equal(restored.headers.get('etag'),'"'+documented.revision+'"');
   assert.deepEqual(await restored.json(),documented.model);
   console.log('FULL_DOCUMENTATION_ORIGINAL_REST_THREE_SCHEMAS_REVISION_REOPENED');
+  await mf.dispose();
+  const narrativeOptions={...fixtureOptions(2),resourcePersistencePath:join(disk,'narratives')};
+  mf=new Miniflare(narrativeOptions);await mf.ready;
+  const cases=await seedNarrativeRuns(request,other);
+  await mf.dispose();mf=new Miniflare(narrativeOptions);await mf.ready;
+  start(true);await rest(base,key);
+  await exerciseRunNarratives(request,other,key,cases,provider=>{engineFixture=provider;});
+  await stop();await mf.dispose();mf=new Miniflare(narrativeOptions);await mf.ready;
+  for(const c of cases){
+    assert.deepEqual(await (await request(c.narrativePath)).json(),c.saved);
+    assert.deepEqual(await (await request(c.path+'/feedback')).json(),c.feedback);
+  }
+  console.log('FULL_LTM_NARRATIVE_BASS_AND_JOINT_DOMINANCE_REOPENED');
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

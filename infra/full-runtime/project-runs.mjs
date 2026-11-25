@@ -41,11 +41,16 @@ export function validRun(value){
 function init(sql){
  sql.exec('CREATE TABLE IF NOT EXISTS simulation_runs (seq INTEGER PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, revision INTEGER NOT NULL, model_sha256 TEXT NOT NULL, body TEXT NOT NULL)');
 }
+export function storedRun(sql,id){
+ init(sql);
+ return sql.exec('SELECT body FROM simulation_runs WHERE run_id=?',id).toArray()[0];
+}
 export async function projectRuns(request,storage,runId=null){
- const sql=storage.sql;init(sql);
- const find=()=>sql.exec('SELECT body FROM simulation_runs WHERE run_id=?',runId).toArray()[0];
+ const sql=storage.sql;
+ const find=()=>storedRun(sql,runId);
  if(runId===null){
   if(request.method!=='GET')return response(405);
+  init(sql);
   const params=new URL(request.url).searchParams;
   const after=params.get('after')??'0';
   if(!/^\d{1,16}$/.test(after)||!Number.isSafeInteger(Number(after)))return response(400);

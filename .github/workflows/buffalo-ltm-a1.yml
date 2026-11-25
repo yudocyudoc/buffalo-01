@@ -105,6 +105,19 @@ jobs:
           cat "$out/reference-revisit.stderr"
           python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"error":v.get("error"),"sampling":{a:b for a,b in v.get("sampling_pair",{}).items() if not a.startswith("per_") and a!="raw_unavailable_edges"},"clock":{a:b for a,b in v.get("reference_clock",{}).items() if a!="common_reference_times"},"predator":v.get("independent_predator_trajectory")} for k,v in d["cases"].items()}))' "$out/reference-revisit.json"
           exit "$rc"
+      - name: Mai-Bab independent activity controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_maibab_activity.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/maibab-activity-tests.log"
+      - name: Mai-Bab saturation and controlled reactivation
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/maibab_activity.py > "$out/maibab-activity.json" 2> "$out/maibab-activity.stderr" || rc=$?
+          cat "$out/maibab-activity.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"perturbation":d.get("perturbation_summary"),"cases":{k:{"status":v["status"],"error":v.get("error"),"observation":v.get("observation"),"graph":v.get("graph_diagnostic"),"groups":v.get("reference_renormalization_diagnostic")} for k,v in d["cases"].items()}}))' "$out/maibab-activity.json"
+          exit "$rc"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

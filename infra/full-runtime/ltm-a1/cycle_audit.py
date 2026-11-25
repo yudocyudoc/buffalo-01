@@ -24,6 +24,10 @@ def require(ok, message):
 
 
 def canon(name):
+    # Stella display names can contain the literal two-character escape \n.
+    # Resolve that escape before whitespace canonicalization; do not edit XML.
+    name = name.replace("\\n", "\n")
+    require("\\" not in name, "unsupported identifier escape")
     return re.sub(r"\s+", "_", name.strip().casefold())
 
 

@@ -1,5 +1,5 @@
 import unittest
-from cycle_audit import cycles,graph_report,synthetic,compare,dependencies,signature
+from cycle_audit import cycles,graph_report,synthetic,compare,dependencies,signature,canon
 
 class Tests(unittest.TestCase):
     def test_directed_cycles(self):
@@ -29,6 +29,21 @@ class Tests(unittest.TestCase):
         n["loops"][1]["partition"]=7
         self.assertFalse(compare(r,n)["same_partition_membership"])
         self.assertTrue(compare(r,n)["same_cycles"])
+
+    def test_stella_display_name_escape(self):
+        self.assertEqual(canon(r"Deer Kill Rate\nPer Predator"),"deer_kill_rate_per_predator")
+        self.assertEqual(canon("Deer Kill Rate\nPer Predator"),"deer_kill_rate_per_predator")
+        with self.assertRaises(ValueError):
+            canon(r"bad\tname")
+        raw=synthetic(False).replace(b'name="fx"',br'name="Flow\nX"').replace(
+            b'<inflow>fx</inflow>',b'<inflow>Flow_X</inflow>')
+        r=graph_report(raw)
+        self.assertIn(["flow_x","x"],r["edges"])
+        self.assertIn(["x","flow_x"],r["edges"])
+        # A display name and an already canonical name must not silently alias.
+        duplicate=raw.replace(b"</variables>",b'<aux name="Flow_X"><eqn>1</eqn></aux></variables>')
+        with self.assertRaisesRegex(ValueError,"duplicate"):
+            graph_report(duplicate)
 
     def test_unsupported_syntax(self):
         self.assertEqual(dependencies("a*STEP(.05,1963)",{"a"}),{"a"})

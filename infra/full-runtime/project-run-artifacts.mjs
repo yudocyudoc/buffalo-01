@@ -41,9 +41,11 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
     if (value.feedback_sha256 !== await digest(feedback.body)) return empty(409);
     const {content} = JSON.parse(feedback.body);
     if (typeof value.prompt !== 'string' || !value.prompt.trim() || !validNarrative(value, content)) return empty(422);
+    // New records must carry the exact server-derived assessment. Only the
+    // byte-identical historical acknowledgement above can bypass this check.
     const assessment = narrativeAssessment(content, JSON.parse(run.body).series.time);
     if (assessment.dominance.status === 'contradicted' ||
-        (Object.hasOwn(value, 'assessment') && !matchesAssessment(value.assessment, assessment))) return empty(422);
+        !Object.hasOwn(value, 'assessment') || !matchesAssessment(value.assessment, assessment)) return empty(422);
   }
   // Both parent records are immutable. Only the same-ID insert needs serialization.
   return storage.transactionSync(() => {

@@ -126,11 +126,18 @@ export async function exerciseRunNarratives(request, other, key, cases, setProvi
     assert.equal(receipt.request_sha256, requestHash);
     assert.equal(receipt.schema_sha256, await digest(JSON.stringify(schema)));
     c.narrativePath = c.path + '/narratives/' + randomUUID();
+    const {assessment: ignoredAssessment, ...withoutAssessment} = narrative;
+    for (const invalid of [withoutAssessment, {...narrative, assessment: null}, {...narrative, assessment: {}}]) {
+      assert.equal((await put(request, c.narrativePath, invalid)).status, 422);
+      assert.equal((await request(c.narrativePath)).status, 404);
+    }
     assert.equal((await put(request, c.narrativePath,
       {...narrative, assessment: {...narrative.assessment, prose: 'verified'}})).status, 422);
     assert.equal((await put(request, c.narrativePath, {...narrative, feedback_sha256: '0'.repeat(64)})).status, 409);
     assert.equal((await put(request, c.narrativePath, narrative)).status, 201);
     assert.equal((await put(request, c.narrativePath, narrative)).status, 204);
+    assert.equal((await put(request, c.narrativePath, withoutAssessment)).status, 422);
+    assert.deepEqual(await json(await request(c.narrativePath)), narrative);
     assert.equal((await other(c.narrativePath)).status, 404);
     c.saved = narrative;
   }

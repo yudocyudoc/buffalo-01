@@ -23,6 +23,7 @@
     "marked": "^18.1.2",
     "openai": "^7.45.1",
     "pdfjs-dist": "^6.4.299",
+    "pluralize": "^8.0.0",
     "prompts": "^2.4.2",
     "ws": "^8.21.3",
     "xlsx": "^0.18.5",
@@ -50,7 +51,6 @@
     "jest": "^30.0.4",
     "nodemon": "^3.1.7",
     "number-to-words": "^1.2.4",
-    "pluralize": "^8.0.0",
     "supertest": "^7.1.3"
   }
 }

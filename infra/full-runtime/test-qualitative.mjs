@@ -6,6 +6,9 @@ import {evaluate as conformance, groups as constraints} from '../../evals/catego
 import {LLMWrapper} from '../../utilities/LLMWrapper.js';
 import {GEMMA} from '../private-merlin/gemma-response.mjs';
 import {session} from './test-session.mjs';
+import {CASE_ID,CASE_NAME,REQUEST,EXPECTED} from './qualitative-smoke-case.mjs';
+import {PASS as QUALITATIVE_MODEL_RETURNED} from './remote-qualitative.mjs';
+import {verifyQualitative} from './verify-remote-qualitative.mjs';
 
 const named=(items,name)=>{
   const item=items.find(candidate=>candidate.name===name);
@@ -17,7 +20,10 @@ const reinforcing=named(graphs.singleFeedbackLoop,'extract a reinforcing feedbac
 const balancing=named(graphs.singleFeedbackLoop,'extract a balancing feedback loop with 3 variables');
 const road=named(constraints.specificConformance,'include requested variables for Road Rage');
 const roadLimits=named(constraints.genericConformance,'include a maximum number of feedback loops and a maximum number of variables for Road Rage');
-const cases=[positive,reinforcing,balancing,road,roadLimits];
+const {prompt,...additionalParameters}=REQUEST;
+const fixedBalancing={name:CASE_NAME,prompt,additionalParameters,expectations:EXPECTED};
+// A repeated fixed instance verifies the manual smoke evaluator, not a sixth distinct upstream case.
+const cases=[positive,reinforcing,balancing,road,roadLimits,fixedBalancing];
 const roadEdges=[
   {from:'Traffic Congestion',to:'Driver Stress',polarity:'+'},
   {from:'Driver Stress',to:'Accidents',polarity:'+'},
@@ -61,7 +67,7 @@ export function qualitativeFixture(model,wire){
       function:{name:'generate_qualitative_model',arguments:JSON.stringify(args)}}]};
     finish='tool_calls';
   }
-  return {model,choices:[{index:0,finish_reason:finish,message}],usage:{prompt_tokens:100,completion_tokens:50}};
+  return {model,choices:[{index:0,finish_reason:finish,message}],usage:{prompt_tokens:100,completion_tokens:50,neurons:1.5}};
 }
 
 function checkModel(model,example){
@@ -90,6 +96,14 @@ export async function exerciseQualitative(base,key,save,receipt){
       provider:'controlled',prompt:example.prompt,parameters:example.additionalParameters,
       expected:example.expectations,observed:result.model.relationships.map(({from,to,polarity})=>({from,to,polarity})),
       schema_sha256:schemaHash,model_sha256:digest(result.model)}));
+    if(example===fixedBalancing){
+      const evaluated=verifyQualitative({fixture_only:true,status:QUALITATIVE_MODEL_RETURNED,
+        case_id:CASE_ID,case_input:REQUEST,model:result.model,inference:recorded,
+        single_reservation:true,container_stopped:true});
+      assert.equal(evaluated.status,'FULL_REMOTE_QUALITATIVE_TRANSLATION_PASS');
+      assert.equal(evaluated.evidence_source,'controlled-provider-fixture');
+      console.log('FULL_QUALITATIVE_FROZEN_SMOKE_VERIFIER_OFFLINE '+JSON.stringify(evaluated));
+    }
     if(example===positive){
       const [e]=result.model.relationships;
       assert.notEqual(e.from,example.expectations[0].from,'exercise a singular response against plural ground truth');

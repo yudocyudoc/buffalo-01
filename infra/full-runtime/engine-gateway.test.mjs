@@ -5,7 +5,8 @@ import {ENGINE_ALIAS,ENGINE_ENDPOINT,ENGINE_MAX_TOKENS} from './engine-protocol.
 import {GEMMA,GEMMA_OBSERVED_ALIAS} from '../private-merlin/gemma-response.mjs';
 
 const schema={type:'object',properties:{answer:{type:'string'}},required:['answer']};
-const body={model:ENGINE_ALIAS,messages:[{role:'system',content:'private instruction'},{role:'user',content:'private prompt'}],
+const invocation_id='12345678-1234-4234-8234-123456789abc';
+const body={model:ENGINE_ALIAS,invocation_id,messages:[{role:'system',content:'private instruction'},{role:'user',content:'private prompt'}],
  stream:false,max_completion_tokens:ENGINE_MAX_TOKENS,response_format:{type:'json_schema',json_schema:schema}};
 const req=(value=body,url=ENGINE_ENDPOINT)=>new Request(url,{method:'POST',body:JSON.stringify(value)});
 const answer=()=>({model:GEMMA_OBSERVED_ALIAS,usage:{prompt_tokens:123,completion_tokens:9,neurons:0.5},
@@ -20,6 +21,7 @@ async function run(result,request=req()){
  }},r=>{initial=r;return 1;},(id,r)=>{assert.equal(id,1);receipt=r;});
  assert.equal(calls,1);
  assert.equal(initial.status,'RESERVED');assert.equal(initial.usage,null);
+ assert.equal(receipt.invocation_id,invocation_id);assert.equal(initial.invocation_id,invocation_id);
  assert.equal(receipt.request_sha256,initial.request_sha256);assert.match(receipt.request_sha256,/^[a-f0-9]{64}$/);
  assert(!JSON.stringify(receipt).includes('private'));
  return {response,receipt};
@@ -39,7 +41,7 @@ test('reject malformed structured responses and truncation without losing usage'
  }
 });
 test('reject invalid request before reserving or invoking',async()=>{
- for(const value of [{...body,model:GEMMA},{...body,tools:[]},{...body,stream:true},
+ for(const value of [{...body,invocation_id:undefined},{...body,invocation_id:'not-a-uuid'},{...body,model:GEMMA},{...body,tools:[]},{...body,stream:true},
    {...body,max_completion_tokens:ENGINE_MAX_TOKENS+1},{...body,response_format:{type:'json_schema',json_schema:{name:'wrap'},extra:true}}]){
    assert.equal((await engineCompletion(req(value),{run:assert.fail},assert.fail,assert.fail)).status,400);
  }

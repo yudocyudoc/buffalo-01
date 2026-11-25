@@ -5,13 +5,14 @@ import {ENGINE_MAX_TOKENS} from './engine-protocol.mjs';
 import {simulationModel} from './simulation-fixture.mjs';
 import {createSimulationClient} from './simulation-client.mjs';
 
-const prompt='Create a stock Inventory initially 10, fed by Inflow equal to Demand of 5 per Day. Simulate days 0 to 4 with Euler dt 1.';
-export function quantitativeFixture(model,wire){
+export const prompt='Create a stock Inventory initially 10, fed by Inflow equal to Demand of 5 per Day. Simulate days 0 to 4 with Euler dt 1.';
+export const agentPrompt=prompt+' Generate from an empty model.';
+export function quantitativeFixture(model,wire,expectedPrompt=prompt){
  assert.equal(model,GEMMA);
  assert.equal(wire.stream,false);
  assert.equal(wire.max_completion_tokens,ENGINE_MAX_TOKENS);
  assert.equal(wire.chat_template_kwargs.enable_thinking,false);
- assert.equal(wire.messages.at(-1).content,prompt);
+ assert.equal(wire.messages.at(-1).content,expectedPrompt);
  assert.equal(wire.response_format.type,'json_schema');
  const schema=LLMWrapper.prototype.generateQuantitativeSDJSONResponseSchema(false,false,false,false);
  assert.deepEqual(wire.response_format.json_schema,schema.toJSONSchema());

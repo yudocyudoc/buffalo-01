@@ -19,6 +19,7 @@ import {createSimulationClient} from './simulation-client.mjs';
 import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {quantitativeFixture,testOriginalEngine,testFailedOriginalEngine,agentPrompt} from './test-engine.mjs';
 import {qualitativeFixture,exerciseQualitative,reopenQualitative} from './test-qualitative.mjs';
+import {storePersistentRuns,recoverPersistentRuns} from './test-persistent-runs.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -48,7 +49,7 @@ const script=(await build({stdin:{contents:testModule,resolveDir:process.cwd()},
 const disk=await mkdtemp(join(tmpdir(),'buffalo-full-test-'));
 const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793,workers:[
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
-    script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
+    script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project',q.headers.get('x-fixture-project')==='other'?'other':'example');q.headers.delete('x-fixture-project');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
     bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'27',ENGINE_INFERENCE_ENABLED:'true',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
@@ -291,4 +292,14 @@ try{
   const cld=await doc();assert.equal(cld.status,200);assert.equal(cld.headers.get('etag'),cldTag);
   start(false);await rest(base,key);await reopenQualitative(key,await cld.json());
   console.log('FULL_ORIGINAL_CLD_REST_MERLIN_AND_PROJECT_REOPENED_OFFLINE');
+  // Return to the preexisting quantitative model-only storage; do not
+  // start the original app or invoke the controlled provider in this test.
+  await stop();await mf.dispose();mf=new Miniflare(options);await mf.ready;
+  const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
+  const other=(path,init={})=>request(path,{...init,headers:{...init.headers,'x-fixture-project':'other','x-buffalo-project':'example'}});
+  const persistence=await storePersistentRuns(request,other);
+  await mf.dispose();mf=new Miniflare(options);await mf.ready;
+  await recoverPersistentRuns(request,other,persistence);
+  assert.equal(calls+engineCalls,lastAttempt+1);
+
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

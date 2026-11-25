@@ -12,6 +12,8 @@ import {GEMMA} from '../private-merlin/gemma-response.mjs';
 import {rest} from './test-rest.mjs';
 import {session,assertDemand} from './test-session.mjs';
 import {simulationModel,simulationScenario} from './simulation-fixture.mjs';
+import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
+import {quantitativeFixture,testOriginalEngine} from './test-engine.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -28,8 +30,9 @@ export class LocalProject extends ProjectRuntime {
     }}});
   }
   fetch(r){
-    if(new URL(r.url).pathname==='/fixture/infer'){
-      return this.infer(new Request('${ENDPOINT}',r),r.headers.get('x-buffalo-project'));
+    const path=new URL(r.url).pathname;
+    if(path==='/fixture/infer'||path==='/fixture/infer-engine'){
+      return this.infer(new Request(path==='/fixture/infer-engine'?'${ENGINE_ENDPOINT}':'${ENDPOINT}',r),r.headers.get('x-buffalo-project'));
     }
     return super.fetch(r);
   }
@@ -42,10 +45,10 @@ const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'15',
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'16',ENGINE_INFERENCE_ENABLED:'true',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk};
-let mf,child,exited,calls=0,scenarioOffset=0;
+let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0;
 const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
 const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...options,
@@ -54,7 +57,7 @@ function start(edit){
   child=spawn('/usr/bin/setpriv',['--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',process.execPath,
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
       PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,
-      ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA}:{})}});
+      ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
 async function stop(){if(child){child.kill();await exited;child=null;}}
@@ -76,6 +79,7 @@ const simulationSteps=[
 ];
 function fixture(model,wire){
   assert.equal(model,GEMMA);
+  if(wire.response_format){engineCalls++;return quantitativeFixture(model,wire);}
   calls++;
   if(!wire.tools)return {model,usage:{prompt_tokens:12,completion_tokens:2049,neurons:1.25},
     choices:[{finish_reason:'length',message:{role:'assistant',content:'truncated fixture'}}]};
@@ -100,7 +104,7 @@ function fixture(model,wire){
   return {model,usage:{prompt_tokens:12,completion_tokens:8},
     choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}]};
 }
-const infer=body=>mf.dispatchFetch('http://localhost/fixture/infer',{method:'POST',body});
+const infer=(body,engine=false)=>mf.dispatchFetch('http://localhost/fixture/'+(engine?'infer-engine':'infer'),{method:'POST',body});
 const proxy=createServer(async(req,res)=>{
   try{
     const body=await new Response(req).text();
@@ -109,8 +113,8 @@ const proxy=createServer(async(req,res)=>{
       res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(fixture(model,wire)));
       return;
     }
-    assert.equal(req.url,'/v1/chat/completions');
-    const r=await infer(body);
+    assert(['/v1/chat/completions','/v1/engine/completions'].includes(req.url));
+    const r=await infer(body,req.url==='/v1/engine/completions');
     res.writeHead(r.status,{'content-type':'application/json'}).end(await r.text());
   }catch(e){console.error(e);res.writeHead(422).end();}
 });
@@ -125,6 +129,12 @@ try{
   await stop();assert.equal(calls,0);console.log('FULL_ORIGINAL_REST_AND_FIVE_CONFIGURATIONS');
   proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
   start(true);await rest(base,key);
+  await testOriginalEngine(base,key);assert.equal(engineCalls,1);assert.equal(calls,0);
+  const engineReceiptResponse=await mf.dispatchFetch('http://localhost/project/inference/1');
+  assert.equal(engineReceiptResponse.status,200);
+  const engineReceipt=await engineReceiptResponse.json();
+  assert.equal(engineReceipt.channel,'original-engine');assert.equal(engineReceipt.status,'OK');
+  assert.equal(engineReceipt.response_format,'json_schema');assert.equal(engineReceipt.neurons,1.5);
   const old={'if-match':created.headers.get('etag')};
   let etag=old['if-match'];
   await session({mode:'sfd',key,model,agent:'merlin',edit:true,save:async m=>{
@@ -139,7 +149,7 @@ try{
   assert.equal(calls,14);
   const rejectedRequest=JSON.stringify({model:GEMMA,messages:[{role:'user',content:'fixture'}],tools:[]});
   assert.equal((await infer(rejectedRequest)).status,422);
-  const lastAttempt=calls;
+  const lastAttempt=calls+engineCalls;
   await stop();await mf.dispose();mf=new Miniflare(options);await mf.ready;
   const saved=await doc();assert.equal(saved.headers.get('etag'),etag);
   const recovered=await saved.json();assertDemand(recovered,'5');
@@ -152,5 +162,5 @@ try{
   assert(diagnostic.failed_predicates.includes('finish_reason_valid'));
   assert.equal((await infer(rejectedRequest)).status,403);
   start(false);await rest(base,key);await session({mode:'sfd',key,agent:'merlin',model:recovered});
-  assert.equal(calls,lastAttempt);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
+  assert.equal(calls+engineCalls,lastAttempt);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

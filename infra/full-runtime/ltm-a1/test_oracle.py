@@ -56,6 +56,18 @@ class OracleTests(unittest.TestCase):
         self.assertNotIn("first_end",rows[0]["hypotheses"])
         self.assertNotIn("first_start",rows[-1]["hypotheses"])
 
+    def test_coupled_pulse(self):
+        rows=pulse_rows(coupled=True)
+        self.assertAlmostEqual(rows[1]["x"],3.012)
+        self.assertAlmostEqual(rows[1]["y"],4.006)
+        z=3.012**2*4.006
+        self.assertAlmostEqual(rows[2]["y"],5.006+z/2000)
+        self.assertAlmostEqual(rows[3]["y"]-rows[2]["y"],4+rows[2]["z"]/2000)
+        r=rows[2]["hypotheses"]
+        a=[l["score"] for l in r["last_end"]["links"]]
+        b=[l["score"] for l in r["first_start"]["links"]]
+        self.assertGreater(max(abs(x-y) for x,y in zip(a,b)),.01)
+
     def test_bass(self):
         d=bass(REF)
         self.assertEqual(len(d["rows"]),241)

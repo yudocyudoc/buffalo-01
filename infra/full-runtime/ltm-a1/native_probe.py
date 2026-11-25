@@ -41,11 +41,13 @@ def measure(model):
                 "imported_specs":json.loads(model.project.serialize_json())["simSpecs"]}
 
 
-def compare(native,rows,target,sources):
+def compare(native,rows,target,sources,source_indices=None):
     actual={ (l["from"],l["to"]):l["raw"] for l in native["links"]}
     require(len(actual)==len(native["links"]),"duplicate native links")
     require(native["time"]==[r["time"] for r in rows],"different time grid")
     selected=[actual.get((source,target)) for source in sources]
+    indices=list(range(len(sources))) if source_indices is None else source_indices
+    require(len(indices)==len(sources),"source index mismatch")
     if any(a is None for a in selected):
         return {"status":"RAW_LINK_NOT_AVAILABLE","requested":[[s,target] for s in sources]}
     result={}
@@ -53,7 +55,8 @@ def compare(native,rows,target,sources):
         # Same interior support for all hypotheses. Exclude both boundaries explicitly.
         errors=[]
         for i,r in enumerate(rows[1:-1],1):
-            for j,l in enumerate(r["hypotheses"][key]["links"]):
+            for j,k in enumerate(indices):
+                l=r["hypotheses"][key]["links"][k]
                 v=selected[j][i]
                 if v is None:
                     return {"status":"NONFINITE_NATIVE_RAW","time":r["time"]}
@@ -67,17 +70,19 @@ def main():
     require(md.version("pysimlin")=="0.8.5","backend drift")
     result={"admitted":False,"backend":md.version("pysimlin"),
             "wheel_source_commit":"UNVERIFIED","cases":{}}
-    for case in ("pulse","bass"):
+    for case in ("pulse","pulse_coupled","bass"):
         out={}
         result["cases"][case]=out
         try:
             with tempfile.TemporaryDirectory() as td:
                 p=Path(td)/(case+".xmile")
-                if case=="pulse":
-                    raw=XMILE.encode()
+                if case in ("pulse","pulse_coupled"):
+                    coupled=case=="pulse_coupled"
+                    xml=XMILE.replace("1+STEP(3,2)","1+STEP(3,2)+z/2000") if coupled else XMILE
+                    raw=xml.encode()
                     p.write_bytes(raw)
                     model=simlin.load(p)
-                    rows=pulse_rows()
+                    rows=pulse_rows(coupled=coupled)
                     target,sources="z",["x","y"]
                 else:
                     raw=Path("/reference/bassDiffusion.stmx").read_bytes()
@@ -87,16 +92,30 @@ def main():
                 out["source_sha256"]=hashlib.sha256(raw).hexdigest()
                 out["native"]=measure(model)
                 out["comparison"]=compare(out["native"],rows,target,sources)
-                if case=="pulse":
+                if case in ("pulse","pulse_coupled"):
                     tr=out["native"]["trajectory"]
                     out["trajectory_max_abs_error"]={k:max(abs(v-r[k]) for v,r in zip(tr[k],rows))
                                                      for k in ("x","y","z")}
                 out["status"]="OBSERVED" if out["comparison"]["status"]=="OBSERVED" else "INCOMPLETE"
+                if case=="pulse":
+                    # Preserve the original negative coverage result. This is not
+                    # a substitute for the two-link coupled observation below.
+                    links={(l["from"],l["to"]):l["raw"] for l in out["native"]["links"]}
+                    out["single_link_comparison"]=compare(out["native"],rows,target,["x"],[0])
+                    require(("y","z") in links,"missing structural edge y -> z")
+                    require(out["single_link_comparison"]["status"]=="OBSERVED","x score absent")
+                    if links[("y","z")] is None:
+                        out["status"]="OBSERVED_PARTIAL_COVERAGE"
+                    # If native supplies both raw links, retain the full result.
+                if case in ("pulse","pulse_coupled"):
+                    require(all(v<=1e-9 for v in out["trajectory_max_abs_error"].values()),
+                            "synthetic trajectory differs from independent Euler oracle")
         except Exception as e:
             out.update(status="EXECUTION_FAILURE",error=type(e).__name__+": "+str(e))
     print(json.dumps(result,allow_nan=False,indent=2))
     # Missing observations are not accepted as completed controls.
-    if any(c["status"]!="OBSERVED" for c in result["cases"].values()):
+    if (result["cases"]["pulse"]["status"] not in ("OBSERVED","OBSERVED_PARTIAL_COVERAGE")
+            or any(result["cases"][k]["status"]!="OBSERVED" for k in ("pulse_coupled","bass"))):
         raise SystemExit(1)
 
 if __name__=="__main__":

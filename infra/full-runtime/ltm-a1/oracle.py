@@ -63,19 +63,20 @@ def flow_tables():
             "table3_direct": direct, "stock_second_difference": curvature}
 
 
-def pulse_states():
+def pulse_states(coupled=False):
     # Fixed synthetic stock feedback with an independent forcing pulse.
     # x'=1+z/1000, y'=1+3*STEP(1,2); z=x*x*y; dt=1.
     x, y = 2., 3.
     out = [(x, y)]
     for t in range(5):
-        x, y = x + 1 + x*x*y/1000, y + 1 + (3 if t >= 2 else 0)
+        z = x*x*y
+        x, y = x + 1 + z/1000, y + 1 + (3 if t >= 2 else 0) + (z/2000 if coupled else 0)
         out.append((x, y))
     return out
 
 
-def pulse_rows():
-    states = pulse_states()
+def pulse_rows(coupled=False):
+    states = pulse_states(coupled)
     f = lambda x,y: x*x*y
     return [{"time": i, "x": x, "y": y, "z": f(x,y),
              "hypotheses": {mode+"_"+anchor: interval(f, states, i, mode, anchor)
@@ -146,7 +147,7 @@ def controls():
 def report(ref_dir):
     return {"admitted":False,"kind":"independent_mathematical_controls",
             "controls":controls(),"flow_tables":flow_tables(),
-            "pulse":pulse_rows(),"bass":bass(ref_dir)}
+            "pulse":pulse_rows(),"pulse_coupled":pulse_rows(coupled=True),"bass":bass(ref_dir)}
 
 
 if __name__ == "__main__":

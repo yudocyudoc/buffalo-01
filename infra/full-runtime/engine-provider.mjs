@@ -42,7 +42,17 @@ globalThis.fetch=async(input,init={})=>{
       redirect:'error',signal:init.signal??(input instanceof Request?input.signal:undefined)});
     if(!response.ok){await response.body?.cancel();return fail();}
     const result=await response.json();
-    return Response.json(responseToOpenRouter({success:true,result},digest(raw)));
+    const envelope=responseToOpenRouter({success:true,result},digest(raw));
+    // OpenRouter SDK requires total_tokens; derive only this SDK envelope field
+    // from known input/output counters. Durable receipts remain provider-observed.
+    if(envelope.usage?.total_tokens==null){
+      const {prompt_tokens,completion_tokens}=envelope.usage??{};
+      const total=prompt_tokens+completion_tokens;
+      if(!Number.isSafeInteger(prompt_tokens)||!Number.isSafeInteger(completion_tokens)||
+        !Number.isSafeInteger(total)||prompt_tokens<0||completion_tokens<0)return fail();
+      envelope.usage={...envelope.usage,total_tokens:total};
+    }
+    return Response.json(envelope);
   }catch{
     // A transport failure is terminal for the SDK, including ambiguous
     // consumption. The durable reservation (if any) stays spent.

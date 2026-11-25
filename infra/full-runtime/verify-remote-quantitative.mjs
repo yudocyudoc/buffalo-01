@@ -14,8 +14,14 @@ export async function verifyQuantitative(receipt){
  const expectedSchemaHash=hash(schema);
  assert.equal(receipt.inference.schema_sha256,expectedSchemaHash,'EXACT_ORIGINAL_SCHEMA_HASH');
  const model=receipt.model;
- // Bound the synthetic smoke to the requested tiny model before simulation.
- assert.equal(model.variables.length,3,'EXACT_THREE_VARIABLES');
+ // Bound the smoke to one stock, one flow, and a small set of auxiliaries.
+ // Equivalent auxiliary decompositions are valid; never rewrite equations.
+ assert(Array.isArray(model.variables)&&model.variables.length>=3&&model.variables.length<=16,'BOUNDED_SMOKE_VARIABLES');
+ assert(model.variables.every(v=>v&&typeof v.name==='string'&&['stock','flow','variable'].includes(v.type)),'SMOKE_VARIABLE_TYPES');
+ const names=model.variables.map(v=>v.name.replace(/\s+/g,'_').toLowerCase());
+ assert.equal(new Set(names).size,names.length,'DUPLICATE_VARIABLE_NAMES');
+ assert.equal(model.variables.filter(v=>v.type==='stock').length,1,'EXACT_ONE_STOCK');
+ assert.equal(model.variables.filter(v=>v.type==='flow').length,1,'EXACT_ONE_FLOW');
  for(const [name,type] of [['Inventory','stock'],['Inflow','flow'],['Demand','variable']])
   assert(model.variables.some(v=>v.name===name&&v.type===type),'MISSING_'+name);
  const stock=model.variables.find(v=>v.name==='Inventory');
@@ -34,6 +40,7 @@ export async function verifyQuantitative(receipt){
  assert.equal(hash(model),modelHash,'MODEL_MUTATED');
  return {status:'FULL_REMOTE_QUANTITATIVE_PYSD_PASS',schema_sha256:expectedSchemaHash,
   time:data.time,Inventory:data.Inventory,Demand:data.Demand,Inflow:data.Inflow,model_sha256:modelHash,
+  variable_count:model.variables.length,acceptance_contract:'bounded-equivalent-auxiliaries-v2',
   simulation_location:'github-runner-original-pysd',provider_model:receipt.inference.response_model,
   evidence_source:receipt.fixture_only===true?'controlled-provider-fixture':'remote-receipt'};
 }

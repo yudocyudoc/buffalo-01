@@ -42,3 +42,11 @@ test('SDK envelope preserves content and observed counters; missing total alone 
  assert.throws(()=>toSdkResponse({...result,choices:[{...result.choices[0],finish_reason:'length'}]},id));
  assert.throws(()=>toSdkResponse({...result,usage:{prompt_tokens:123}},id));
 });
+
+test('SDK and gateway share the same invalid total and overflow rules',()=>{
+ const result={choices:[{finish_reason:'stop',message:{role:'assistant',content:'ok'}}],usage:{prompt_tokens:123,completion_tokens:9}};
+ const id='12345678-1234-4234-8234-123456789abc';
+ for(const total_tokens of [-1,1.5,'132',null,Number.MAX_SAFE_INTEGER+1])
+   assert.throws(()=>toSdkResponse({...result,usage:{...result.usage,total_tokens}},id),/INVALID_ENGINE_USAGE/);
+ assert.throws(()=>toSdkResponse({...result,usage:{...result.usage,prompt_tokens:Number.MAX_SAFE_INTEGER}},id),/INVALID_ENGINE_USAGE/);
+});

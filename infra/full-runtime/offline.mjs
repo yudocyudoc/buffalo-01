@@ -151,6 +151,8 @@ try{
   const engineReceipt=await engineReceiptResponse.json();
   assert.equal(engineReceipt.channel,'original-engine');assert.equal(engineReceipt.status,'OK');
   assert.equal(engineReceipt.response_format,'json_schema');assert.equal(engineReceipt.neurons,1.5);
+  assert.equal(engineReceipt.predicates.schema_valid,true);assert.equal(engineReceipt.predicates.total_tokens_valid,true);
+  assert.deepEqual(engineReceipt.usage,{prompt_tokens:500,completion_tokens:100,total_tokens:null});
   const repeatReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/2')).json();
   assert.equal(repeatReceipt.status,'OK');assert.equal(repeatReceipt.request_sha256,engineReceipt.request_sha256);
   assert.notEqual(repeatReceipt.invocation_id,engineReceipt.invocation_id);

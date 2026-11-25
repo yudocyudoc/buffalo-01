@@ -1,9 +1,8 @@
 // Buffalo's provider boundary for the original LLMWrapper OpenRouter SDK lane.
 // No network, engine-specific schema logic, experimental grants or model repair.
-import {ENGINE_ALIAS,ENGINE_MAX_TOKENS} from './engine-protocol.mjs';
+import {ENGINE_ALIAS,ENGINE_MAX_TOKENS,observedTokenCount,sdkTotalTokens} from './engine-protocol.mjs';
 
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
-const tokenCount=n=>Number.isSafeInteger(n)&&n>=0;
 
 export function toBindingRequest(request){
   if(!object(request)||request.model!==ENGINE_ALIAS||
@@ -33,10 +32,10 @@ export function toSdkResponse(result,invocationId){
   const choice=result?.choices?.[0],message=choice?.message,u=result?.usage;
   if(!Array.isArray(result?.choices)||result.choices.length!==1||choice?.finish_reason!=='stop'||
     message?.role!=='assistant'||typeof message.content!=='string'||!message.content.trim()||
-    !tokenCount(u?.prompt_tokens)||!tokenCount(u?.completion_tokens))
+    observedTokenCount(u?.prompt_tokens)===null||observedTokenCount(u?.completion_tokens)===null)
     throw Error('INVALID_ENGINE_BINDING_RESPONSE');
-  const total=u.total_tokens??(u.prompt_tokens+u.completion_tokens);
-  if(!tokenCount(total))throw Error('INVALID_ENGINE_USAGE');
+  const total=sdkTotalTokens(u);
+  if(total===null)throw Error('INVALID_ENGINE_USAGE');
   return {id:'buffalo-'+invocationId,object:'chat.completion',created:Math.floor(Date.now()/1000),
     model:ENGINE_ALIAS,system_fingerprint:'buffalo-workers-ai-v1',
     choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:message.content}}],

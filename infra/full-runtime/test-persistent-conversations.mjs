@@ -13,16 +13,31 @@ export async function checkConversationBeforeRestart(request,other,journal,input
  assert((await get(request('/project/conversations'))).items.some(x=>x.id===conversationId));
  assert.deepEqual({revision:completed.turn.revision,model_sha256:completed.turn.model_sha256},input);
  const events=completed.events.map(x=>x.event);
- const ack=events.find(x=>x.type==='model_accepted');
+ const accepted=events.filter(x=>x.type==='model_accepted');
+ assert(accepted.length>0,'MISSING_ACCEPTED_REVISION');
+ // The original agent may publish an edited model and subsequently confirm
+ // the same model via update_model. Equal hashes do not collapse revisions.
+ let prior=input.revision;
+ const requestIds=new Set();
+ for(const ack of accepted){
+  assert(ack.revision>prior,'ACCEPTED_REVISION_ORDER');prior=ack.revision;
+  assert(!requestIds.has(ack.request_id),'DUPLICATE_UPDATE_REQUEST');requestIds.add(ack.request_id);
+  const historical=await check(request('/project/model/revisions/'+ack.revision),200);
+  assert.equal(historical.headers.get('x-buffalo-model-sha256'),ack.model_sha256);
+  assert.equal((await historical.json()).variables.find(v=>v.name==='Demand').equation,'5');
+ }
+ const ack=accepted.at(-1);
  assert.deepEqual({revision:ack.revision,model_sha256:ack.model_sha256},output);
+ assert.equal(accepted.length,output.revision-input.revision,'UNRECORDED_MODEL_UPDATE');
+ console.log('FULL_CONVERSATION_ACCEPTED_REVISIONS '+JSON.stringify(accepted.map(({revision,model_sha256})=>({revision,model_sha256}))));
  assert(events.some(e=>e.type==='tool_completed'&&e.tool_name==='update_model'&&e.is_error===false));
- assert(events.findIndex(e=>e.type==='model_accepted')<events.findIndex(e=>e.type==='tool_completed'&&e.tool_name==='update_model'));
+ assert(events.lastIndexOf(ack)<events.findIndex(e=>e.type==='tool_completed'&&e.tool_name==='update_model'));
  assert(events.filter(e=>e.type==='tool_completed').every(e=>Object.hasOwn(e,'result')));
  assert(events.some(e=>e.type==='tool_completed'&&e.tool_name==='edit_variables'&&e.is_error===false));
  assert.deepEqual(events.at(-1),{type:'completed',...output});
  const history=await recoverHistoricalMessages(request,conversationId);
  assert.equal(history[0].content,'Change the equation for Demand from 3 to 5.');
- assert(history.some(x=>x.type==='agent_text'&&x.content==='Offline fixture acknowledges operation.'));
+ assert(history.some(x=>x.type==='agent_text'&&x.content==='<p>Offline fixture acknowledges operation.</p>\n'));
  await check(put(request,turnPath+'/events/'+completed.events.length,events.at(-1)),204);
  await check(put(request,turnPath+'/events/'+completed.events.length,{type:'interrupted',reason:'client_error'}),409);
  const active=root+'/turns/'+randomUUID();

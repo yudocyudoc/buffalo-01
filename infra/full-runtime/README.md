@@ -59,3 +59,42 @@ Only the original generate_quantitative_model tool is conditionally added to the
 As of 2026-11-25 UTC, #80 is merged at `381e22050e04918289ae9371fc7c17d5b1a89ee5`. [Remote run 45551954016](https://github.com/yudocyudoc/buffalo-01/actions/runs/45551954016) generated a schema-valid quantitative SD-JSON via original REST, LLMWrapper and actual Workers AI Gemma. One binding reservation, 1506 input tokens, 767 output tokens, 34.609092712402344 neurons; stop and cleanup verified. The original run failed before PySD because v1 demanded exactly three variables. #81's separate [real receipt replay](https://github.com/yudocyudoc/buffalo-01/actions/runs/45554508506/job/139003214241) passed using v2, the unchanged four-variable model and original PySD in isolated GitHub runner Docker: Inventory [10,15,20,25,30], Demand and Inflow [5,5,5,5,5]. No additional inference. All four CI workflows on `57bfbdfd` passed; #81 is still a draft at this cutoff. This is single-case remote quantitative evidence and a post-hoc criterion correction, not a quality benchmark or proof of every engine. See [full smoke record](REMOTE_QUANTITATIVE_SMOKE.md).
 
 The project-level documents BUFFALO_HOJA_DE_RUTA.md and BUFFALO_PLAN_DE_IMPLEMENTACION.md guide subsequent work. The repository [roadmap summary](BUFFALO_FULL_ROADMAP.md) records their priorities and acceptance boundaries, without treating unimplemented milestones as available.
+## Original qualitative generation and evaluation
+
+With the original-engine lane enabled, the transport also forwards the original
+`generate_qualitative_model` definition when offered by a CLD session. The
+enabled transport ceiling is now 13 built-in tools across modes. The upstream
+agent and session still select the available subset. The REST route is
+`POST /api/v1/engines/qualitative/generate`.
+
+The offline integration uses the upstream qualitative schema, three upstream
+translation cases (a positive relationship described with decreases, a
+reinforcing loop and a balancing loop), and two original Road Rage conformance
+cases (required variables and numeric caps). The translation fixture returns
+singular names against plural ground truth. Use the original evaluator's name
+matching for provider evaluation. The offline REST transport check compares the
+returned variable list with the returned edge endpoints.
+The numeric case passes at five variables and four feedback loops. Two controls
+exceed just one cap each. Other controls reverse a link, flip its sign, invent
+a link and omit a required variable. A separate original Merlin CLD session invokes the tool,
+acknowledges a model revision and reopens it after restarting the app and
+workerd. The provider is controlled; these cases measure integration and
+evaluator behavior. Earlier increments above list their historical tool counts.
+
+### Next persistent run contract (design)
+
+The client must capture the project model revision (the ETag returned by the
+accepted save) and its SD-JSON digest **before** starting a simulation. Attach
+the result to that immutable input even if the latest project revision has
+advanced by the time PySD finishes. Encode the simulator/version, integration
+method, step, time units, scenario, series and available diagnostics. Keep a
+project-scoped run identity across retries; two deliberate simulations of the
+same revision may each have their own run identity. A repeated completion
+with different contents for the same run must conflict.
+
+The first persistence acceptance case uses the original inventory example:
+save Demand 5, run [10,15,20,25,30], save Demand 6 as its child, then run
+[10,16,22,28,34]. Restart and resolve each run to its original revision, even
+when completions arrive out of order. Implement and verify historical revision
+reads and durable run writes in the persistence increment. The current client
+keeps run series in memory; reopening a CLD here verifies only model persistence.

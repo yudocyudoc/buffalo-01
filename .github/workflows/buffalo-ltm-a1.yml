@@ -1,0 +1,46 @@
+name: Buffalo LTM A1 mathematical controls
+on:
+  pull_request:
+    paths:
+      - 'infra/full-runtime/ltm-a1/**'
+      - '.github/workflows/buffalo-ltm-a1.yml'
+      - 'evals/categories/feedbackExplanationData/bassDiffusion.*'
+      - 'infra/full-runtime/ltm-benchmark/benchmark.py'
+permissions:
+  contents: read
+jobs:
+  a1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Independent standard-library controls
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          mkdir -p "$out"
+          git rev-parse HEAD > "$out/checkout-sha.txt"
+          python infra/full-runtime/ltm-a1/test_oracle.py evals/categories/feedbackExplanationData 2>&1 | tee "$out/oracle-tests.log"
+          python infra/full-runtime/ltm-a1/oracle.py evals/categories/feedbackExplanationData > "$out/oracle.json"
+      - name: Build pinned wheel research image
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          docker build -f infra/full-runtime/ltm-a1/Dockerfile -t buffalo-ltm:a1 . 2>&1 | tee "$out/build.log"
+          docker image inspect --format '{{.Id}}' buffalo-ltm:a1 > "$out/image-id.txt"
+          docker run --rm --network none buffalo-ltm:a1 pip freeze > "$out/dependencies.txt"
+      - name: Native raw link and clock observations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/native_probe.py > "$out/native.json" 2> "$out/native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"comparison":v.get("comparison"),"trajectory_max_abs_error":v.get("trajectory_max_abs_error")} for k,v in d["cases"].items()}))' "$out/native.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ltm-a1-${{ github.run_id }}
+          path: ${{ runner.temp }}/ltm-a1/
+          retention-days: 30
+          if-no-files-found: error

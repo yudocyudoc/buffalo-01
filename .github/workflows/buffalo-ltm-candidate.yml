@@ -1,0 +1,43 @@
+name: Buffalo LTM candidate scientific admission
+on:
+  pull_request:
+    paths:
+      - 'infra/full-runtime/ltm-candidate/**'
+      - 'evals/categories/feedbackExplanationData/bassDiffusion.*'
+      - '.github/workflows/buffalo-ltm-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  candidate:
+    name: Bass scalar-product compatibility and native LTM evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build candidate only (no production image change)
+        run: |
+          docker build -f infra/full-runtime/ltm-candidate/Dockerfile -t buffalo-ltm:candidate .
+          docker image inspect --format '{{.Id}}' buffalo-ltm:candidate > "$RUNNER_TEMP/ltm-image-id.txt"
+      - name: Calculate and evaluate reference cases with network disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          timeout 180s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 \
+            buffalo-ltm:candidate > "$RUNNER_TEMP/ltm-candidate.json"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/ltm-candidate.json"
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ltm-candidate-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/ltm-candidate.json
+            ${{ runner.temp }}/ltm-image-id.txt
+          retention-days: 30
+          if-no-files-found: warn

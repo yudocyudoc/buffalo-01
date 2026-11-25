@@ -69,10 +69,14 @@ agent and session still select the available subset. The REST route is
 
 The offline integration uses the upstream qualitative schema, three upstream
 translation cases (a positive relationship described with decreases, a
-reinforcing loop and a balancing loop), and the Road Rage required-variables
-conformance case. It runs the two original evaluators on the returned models.
-Negative controls reverse a link, flip its sign, invent a link and omit a
-required variable. A separate original Merlin CLD session invokes the tool,
+reinforcing loop and a balancing loop), and two original Road Rage conformance
+cases (required variables and numeric caps). The translation fixture returns
+singular names against plural ground truth. Use the original evaluator's name
+matching for provider evaluation. The offline REST transport check compares the
+returned variable list with the returned edge endpoints.
+The numeric case passes at five variables and four feedback loops. Two controls
+exceed just one cap each. Other controls reverse a link, flip its sign, invent
+a link and omit a required variable. A separate original Merlin CLD session invokes the tool,
 acknowledges a model revision and reopens it after restarting the app and
 workerd. The provider is controlled; these cases measure integration and
 evaluator behavior. Earlier increments above list their historical tool counts.

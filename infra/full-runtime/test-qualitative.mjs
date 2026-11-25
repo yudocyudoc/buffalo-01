@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import pluralize from 'pluralize';
 import {evaluate as translation, groups as graphs} from '../../evals/categories/qualitativeTranslation.js';
 import {evaluate as conformance, groups as constraints} from '../../evals/categories/conformance.js';
 import {LLMWrapper} from '../../utilities/LLMWrapper.js';
@@ -15,12 +16,18 @@ const positive=named(graphs.singleRelationship,'extract a reinforcing relationsh
 const reinforcing=named(graphs.singleFeedbackLoop,'extract a reinforcing feedback loop with 3 variables');
 const balancing=named(graphs.singleFeedbackLoop,'extract a balancing feedback loop with 3 variables');
 const road=named(constraints.specificConformance,'include requested variables for Road Rage');
-const cases=[positive,reinforcing,balancing,road];
+const roadLimits=named(constraints.genericConformance,'include a maximum number of feedback loops and a maximum number of variables for Road Rage');
+const cases=[positive,reinforcing,balancing,road,roadLimits];
 const roadEdges=[
   {from:'Traffic Congestion',to:'Driver Stress',polarity:'+'},
   {from:'Driver Stress',to:'Accidents',polarity:'+'},
   {from:'Accidents',to:'Traffic Congestion',polarity:'+'}
 ];
+// Each spoke forms one directed cycle with Driver Stress.
+const boundedRoadEdges=['Traffic Congestion','Accidents','Delays','Aggression'].flatMap(name=>[
+  {from:'Driver Stress',to:name,polarity:'+'},{from:name,to:'Driver Stress',polarity:'+'}
+]);
+const conformanceEdges=new Map([[road,roadEdges],[roadLimits,boundedRoadEdges]]);
 const schema=LLMWrapper.prototype.generateQualitativeSDJSONResponseSchema(false).toJSONSchema();
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const schemaHash=digest(schema);
@@ -38,7 +45,10 @@ export function qualitativeFixture(model,wire){
     const example=cases.find(c=>userText.includes(c.additionalParameters.backgroundKnowledge)
       &&userText.includes(c.prompt));
     assert(example,'original case prompt and background must reach the binding');
-    const edges=example===road?roadEdges:example.expectations;
+    let edges=conformanceEdges.get(example)??example.expectations;
+    if(example===positive){
+      edges=edges.map(edge=>({...edge,from:pluralize.singular(edge.from),to:pluralize.singular(edge.to)}));
+    }
     const relationships=edges.map(edge=>({...edge,reasoning:'Controlled case',polarityReasoning:'Controlled sign'}));
     message={role:'assistant',content:JSON.stringify({title:example.name,explanation:'Offline example',relationships})};
   }else if(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='cld-generation')){
@@ -55,13 +65,8 @@ export function qualitativeFixture(model,wire){
 }
 
 function checkModel(model,example){
-  if(example===road){
-    assert.deepEqual(conformance({model},road.expectations),[]);
-  }else{
-    assert.deepEqual(translation({model},example.expectations),[]);
-    const names=[...new Set(example.expectations.flatMap(r=>[r.from,r.to]))].sort();
-    assert.deepEqual(model.variables.map(v=>v.name).sort(),names);
-  }
+  const evaluate=conformanceEdges.has(example)?conformance:translation;
+  assert.deepEqual(evaluate({model},example.expectations),[]);
 }
 
 export async function exerciseQualitative(base,key,save,receipt){
@@ -72,17 +77,22 @@ export async function exerciseQualitative(base,key,save,receipt){
     const result=await response.json();
     assert.equal(result.success,true,result.message);
     checkModel(result.model,example);
+    // Transport integrity: SD-AI builds the variable list from the endpoints it
+    // actually received. Only the upstream evaluator compares to ground truth.
+    const endpoints=new Set(result.model.relationships.flatMap(r=>[r.from,r.to]));
+    assert.deepEqual(result.model.variables.map(v=>v.name).sort(),[...endpoints].sort());
     const recorded=await receipt(i+1);
     assert.equal(recorded.status,'OK');assert.equal(recorded.schema_sha256,schemaHash);
     assert.equal(recorded.predicates.schema_valid,true);
     // Upstream varies the English phrasing. Preserve the actual public test
     // input and graph so this CI result can be interpreted independently.
-    console.log(JSON.stringify({case:example.name,category:example===road?'conformance':'qualitativeTranslation',
+    console.log(JSON.stringify({case:example.name,category:conformanceEdges.has(example)?'conformance':'qualitativeTranslation',
       provider:'controlled',prompt:example.prompt,parameters:example.additionalParameters,
       expected:example.expectations,observed:result.model.relationships.map(({from,to,polarity})=>({from,to,polarity})),
       schema_sha256:schemaHash,model_sha256:digest(result.model)}));
     if(example===positive){
       const [e]=result.model.relationships;
+      assert.notEqual(e.from,example.expectations[0].from,'exercise a singular response against plural ground truth');
       for(const [relationships,failure] of [
         [[{...e,from:e.to,to:e.from}],'Real relationships not found'],
         [[{...e,polarity:'-'}],'Incorrect polarity discovered'],
@@ -92,6 +102,17 @@ export async function exerciseQualitative(base,key,save,receipt){
     if(example===road){
       const incomplete={model:{variables:[],relationships:[roadEdges[0]]}};
       assert(conformance(incomplete,road.expectations).some(f=>f.type==='Missing required variable'));
+    }
+    if(example===roadLimits){
+      for(const [from,to,failure] of [
+        ['Accidents','Injuries','Too many variables'],
+        ['Accidents','Delays','Too many feedback loops']
+      ]){
+        const relationships=[...result.model.relationships,{from,to,polarity:'+'}];
+        const variables=[...new Set(relationships.flatMap(r=>[r.from,r.to]))].map(name=>({name,type:'variable'}));
+        const failures=conformance({model:{variables,relationships}},example.expectations);
+        assert.deepEqual(failures.map(f=>f.type),[failure]);
+      }
     }
   }
   await session({mode:'cld',key,agent:'merlin',model:{variables:[],relationships:[]},edit:true,save,

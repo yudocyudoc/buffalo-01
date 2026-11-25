@@ -1,6 +1,6 @@
 ﻿import {ENDPOINT} from '../private-merlin/protocol.mjs';
 import {GEMMA,acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
-import {boundedJSON} from '../private-merlin/gateway.mjs';
+import {boundedJSON} from './provider-wire.mjs';
 
 // Original tool availability still comes from the agent and session; this is the transport capability ceiling.
 export const MODEL_TOOLS=new Set(['get_current_model','read_model_section','edit_variables','edit_relationships','edit_specs','edit_modules','update_model','run_model','get_run_info','get_variable_data','read_file']);

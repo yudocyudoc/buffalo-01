@@ -1,0 +1,179 @@
+name: Buffalo Full original qualitative REST smoke (manual, one inference ceiling)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact main checkout SHA
+        required: true
+        type: string
+      approval:
+        description: Enter ONE_BUFFALO_FULL_REMOTE_QUALITATIVE_MAX_ONE
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-r1-private-one-shot
+  cancel-in-progress: false
+jobs:
+  qualitative:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_BUFFALO_FULL_REMOTE_QUALITATIVE_MAX_ONE' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+      CLOUDFLARE_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify exact source and offline tests
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test infra/full-runtime/*.test.mjs
+      - name: Verify untouched private infrastructure and unused qualitative smoke attempt
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/full-runtime/manual-qualitative.mjs preflight
+      - name: Build and test the exact full application image
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 node:22-bookworm-slim
+          BASE="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
+            --build-arg "NODE_BASE=$BASE" --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --metadata-file "$RUNNER_TEMP/full-build.json" -t "buffalo-full-qualitative-private:$GITHUB_SHA" -f infra/full-runtime/Dockerfile .
+          docker run -d --name full --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges -e AUTHENTICATION_KEY=ci-only "buffalo-full-qualitative-private:$GITHUB_SHA"
+          trap 'docker logs --tail 30 full; docker rm -f full' EXIT
+          docker exec full node infra/full-runtime/test-rest.mjs
+          docker exec full node infra/full-runtime/test-simulation-image.mjs
+          test "$(docker inspect --format '{{.Config.User}}' full)" = node
+      - name: Publish and independently read back image digest
+        timeout-minutes: 12
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_CONTAINERS_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="buffalo-full-qualitative-private:$GITHUB_SHA"
+          LOCAL="$(docker image inspect --format '{{.Id}}' "$TAG")"
+          npx --yes wrangler@4.166.0 containers push "$TAG"
+          REF="registry.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID/$TAG"
+          docker pull "$REF"
+          test "$(docker image inspect --format '{{.Id}}' "$REF")" = "$LOCAL"
+          export LOCAL REF
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {execFileSync} from 'node:child_process';
+          import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+          const e=process.env,t=e.RUNNER_TEMP;
+          const build=JSON.parse(readFileSync(t+'/full-build.json'));
+          const digest=build['containerimage.digest']??build['containerimage.descriptor']?.digest;
+          assert.match(digest,/^sha256:[a-f0-9]{64}$/);
+          const ref='registry.cloudflare.com/'+e.CLOUDFLARE_ACCOUNT_ID+'/buffalo-full-qualitative-private@'+digest;
+          const image=JSON.parse(execFileSync('docker',['image','inspect',e.REF],{encoding:'utf8'}))[0];
+          assert(image.RepoDigests.includes(ref));assert.equal(image.Id,e.LOCAL);assert.equal(image.Config.User,'node');assert.equal(image.Config.Labels['org.opencontainers.image.revision'],e.GITHUB_SHA);
+          mkdirSync(t+'/buffalo-full-qualitative',{recursive:true});
+          writeFileSync(t+'/buffalo-full-qualitative/registry.json',JSON.stringify({source_commit:e.GITHUB_SHA,ref,manifest_digest:digest,config_digest:image.Id},null,2));
+          NODE
+      - name: Dry run private deployment configurations
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/full-runtime/manual-qualitative.mjs configs
+          for kind in runtime operator; do
+            for mode in disabled armed; do
+              npx --yes wrangler@4.166.0 deploy --dry-run --config "infra/full-runtime/wrangler.qualitative-$kind-$mode.json" --outdir "$RUNNER_TEMP/full-$kind-$mode"
+            done
+          done
+      - name: Deploy disabled private runtime and operator
+        id: deploy
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo 'cleanup=true' >> "$GITHUB_OUTPUT"
+          for kind in runtime operator; do
+            npx --yes wrangler@4.166.0 deploy --config "infra/full-runtime/wrangler.qualitative-$kind-disabled.json"
+          done
+      - name: Install temporary app authentication secrets
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          KEY="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+          echo "::add-mask::$KEY"
+          for kind in runtime operator; do
+            printf '%s' "$KEY" | npx --yes wrangler@4.166.0 secret put APP_AUTH_KEY --config "infra/full-runtime/wrangler.qualitative-$kind-disabled.json"
+          done
+      - name: Arm the private project and activate operator last
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          node infra/full-runtime/manual-qualitative.mjs arm
+          npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.qualitative-runtime-armed.json
+          node infra/full-runtime/manual-qualitative.mjs check-runtime-armed
+          npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.qualitative-operator-armed.json
+      - name: Observe original qualitative REST response and binding receipt
+        timeout-minutes: 27
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/full-runtime/manual-qualitative.mjs observe
+      - name: Always disable operator
+        if: ${{ always() && steps.deploy.outputs.cleanup == 'true' }}
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.qualitative-operator-disabled.json
+      - name: Always disable runtime and AI binding
+        if: ${{ always() && steps.deploy.outputs.cleanup == 'true' }}
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.qualitative-runtime-disabled.json
+      - name: Always remove temporary authentication secrets
+        if: ${{ always() && steps.deploy.outputs.cleanup == 'true' }}
+        timeout-minutes: 4
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/full-runtime/manual-qualitative.mjs remove-secrets
+      - name: Always verify no active Containers and disabled private Workers
+        if: ${{ always() && steps.deploy.outputs.cleanup == 'true' }}
+        timeout-minutes: 18
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
+        run: node infra/full-runtime/manual-qualitative.mjs cleanup
+      - name: Evaluate exact returned CLD using original causal translation evaluator
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/buffalo-full-qualitative"
+          test -f "$DIR/cleanup.json"
+          chmod 644 "$DIR/remote-receipt.json"
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,source=$DIR/remote-receipt.json,target=/tmp/remote-receipt.json,readonly" \
+            "buffalo-full-qualitative-private:$GITHUB_SHA" \
+            node infra/full-runtime/verify-remote-qualitative.mjs /tmp/remote-receipt.json > "$DIR/evaluation.json" || {
+              cat "$DIR/evaluation.json"; exit 1;
+            }
+          node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(x.status!=="FULL_REMOTE_QUALITATIVE_TRANSLATION_PASS"||x.evidence_source!=="remote-receipt") process.exit(1); console.log("FULL_REMOTE_QUALITATIVE_EVALUATION "+JSON.stringify(x))' "$DIR/evaluation.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffalo-full-qualitative-${{ github.run_id }}
+          path: ${{ runner.temp }}/buffalo-full-qualitative/*.json
+          retention-days: 7
+          if-no-files-found: warn

@@ -13,6 +13,8 @@ on:
       - 'engines/**'
       - 'evals/categories/qualitativeTranslation.js'
       - 'evals/categories/conformance.js'
+      - 'evals/categories/feedbackExplanation.js'
+      - 'evals/categories/feedbackExplanationData/**'
       - 'config.js'
       - 'package*.json'
 permissions:
@@ -44,6 +46,8 @@ jobs:
             buffalo-full:offline node infra/full-runtime/verify-remote-quantitative.mjs /tmp/remote-receipt.json --fixture > "$RUNNER_TEMP/quantitative-fixture-result.json"
           node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(x.status!=="FULL_REMOTE_QUANTITATIVE_PYSD_PASS"||x.evidence_source!=="controlled-provider-fixture") process.exit(1); console.log("FULL_QUANTITATIVE_SMOKE_VERIFIER_IMAGE_OFFLINE "+JSON.stringify(x))' "$RUNNER_TEMP/quantitative-fixture-result.json"
           docker exec full node --test infra/full-runtime/verify-remote-qualitative.test.mjs
+          docker exec full node --test infra/full-runtime/bass-feedback-reference.test.mjs
+          docker exec full node infra/full-runtime/bass-feedback-reference.mjs
           docker exec full node infra/full-runtime/verify-quantitative-intervention.mjs > "$RUNNER_TEMP/quantitative-intervention.json"
           node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(x.status!=="FULL_QUANTITATIVE_REAL_INTERVENTION_PASS"||x.evidence_source!=="archived-remote-receipt") process.exit(1); console.log("FULL_QUANTITATIVE_REAL_INTERVENTION "+JSON.stringify(x))' "$RUNNER_TEMP/quantitative-intervention.json"
       - uses: actions/upload-artifact@v4

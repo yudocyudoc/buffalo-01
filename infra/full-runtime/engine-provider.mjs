@@ -16,10 +16,11 @@ process.env.OPEN_ROUTER_API_KEY='VIRTUAL_CLOUDFLARE_ONLY';
 config.buildDefaultModel=ENGINE_ALIAS;
 config.nonBuildDefaultModel=ENGINE_ALIAS;
 config.models=[{label:'Workers AI (Gemma)',value:ENGINE_ALIAS},...config.models];
+const lane={normal:ENGINE_ALIAS,hard:ENGINE_ALIAS};
+config.agentToolModels.cloudflare={build:lane,nonBuild:lane};
 
 // This lane is for the original SDK. The separate agent conversation route
-// is untouched. The full runtime currently enables engine generation via REST;
-// sandboxed agent engine tools must be integrated and tested separately.
+// is untouched. The full-runtime sandbox preloads this same module explicitly.
 const nativeFetch=globalThis.fetch;
 const fail=()=>Response.json({error:{code:422,message:'FULL_ENGINE_INFERENCE_REJECTED'}},{status:422});
 globalThis.fetch=async(input,init={})=>{

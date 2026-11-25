@@ -42,6 +42,13 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+      - name: Diagnose representation without changing native verdicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-benchmark/test_representation_diagnostics.py
+          python infra/full-runtime/ltm-benchmark/representation_diagnostics.py "$RUNNER_TEMP/ltm-benchmark" evals/categories/feedbackExplanationData/marketGrowth.stmx > "$RUNNER_TEMP/ltm-benchmark/representation-diagnostics.json"
+          python -c 'import json,sys; x=json.load(open(sys.argv[1])); a=x["inventoryWorkforce"]; b=x["marketGrowth"]; print(json.dumps({"inventory":a,"market":{k:v for k,v in b.items() if k not in ("projection","loops")}})); assert x["admitted"] is False; assert a["matched"]==944 and a["inactive"]==17 and not a["mismatches"] and not a["uncovered"]; assert b["matched"]==20 and b["contracted"]==9 and b["all_polarities_match"] and not b["within_provisional_tolerance"]' "$RUNNER_TEMP/ltm-benchmark/representation-diagnostics.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

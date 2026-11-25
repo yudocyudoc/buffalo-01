@@ -4,8 +4,7 @@ on:
     paths:
       - 'infra/full-runtime/ltm-a1/**'
       - '.github/workflows/buffalo-ltm-a1.yml'
-      - 'evals/categories/feedbackExplanationData/bassDiffusion.*'
-      - 'evals/categories/feedbackExplanationData/maibab.*'
+      - 'evals/categories/feedbackExplanationData/**'
       - 'infra/full-runtime/ltm-benchmark/benchmark.py'
 permissions:
   contents: read
@@ -92,6 +91,19 @@ jobs:
           timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/system_change.py > "$out/a5-native.json" 2> "$out/a5-native.stderr" || rc=$?
           cat "$out/a5-native.stderr"
           python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pairs":d["pairs"],"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison"),"net_vs_forward_state_difference_max_error":v.get("net_vs_forward_state_difference_max_error")} for k,v in d["cases"].items()}}))' "$out/a5-native.json"
+          exit "$rc"
+      - name: Post-audit independent reference controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_reference_revisit.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/reference-revisit-tests.log"
+      - name: Post-audit six-reference full-grid diagnostics
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/reference_revisit.py > "$out/reference-revisit.json" 2> "$out/reference-revisit.stderr" || rc=$?
+          cat "$out/reference-revisit.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"error":v.get("error"),"sampling":{a:b for a,b in v.get("sampling_pair",{}).items() if not a.startswith("per_") and a!="raw_unavailable_edges"},"clock":{a:b for a,b in v.get("reference_clock",{}).items() if a!="common_reference_times"},"predator":v.get("independent_predator_trajectory")} for k,v in d["cases"].items()}))' "$out/reference-revisit.json"
           exit "$rc"
       - uses: actions/upload-artifact@v4
         if: always()

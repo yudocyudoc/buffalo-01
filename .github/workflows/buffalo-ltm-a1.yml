@@ -80,6 +80,19 @@ jobs:
           cat "$out/a4-native.stderr"
           python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pairs":d["pairs"],"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":{a:b for a,b in v.get("comparison",{}).items() if a!="records"}} for k,v in d["cases"].items()}}))' "$out/a4-native.json"
           exit "$rc"
+      - name: A5 independent system change controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_system_change.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/a5-tests.log"
+      - name: A5 system change on native flow trajectories
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/system_change.py > "$out/a5-native.json" 2> "$out/a5-native.stderr" || rc=$?
+          cat "$out/a5-native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pairs":d["pairs"],"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison"),"net_vs_forward_state_difference_max_error":v.get("net_vs_forward_state_difference_max_error")} for k,v in d["cases"].items()}}))' "$out/a5-native.json"
+          exit "$rc"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

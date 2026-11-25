@@ -1,5 +1,14 @@
-# SD-AI
-Open source repository for the [SD-AI Project](https://ub-iad.github.io/sd-ai/). 
+# Buffalo — independent SD-AI fork
+
+Buffalo is an independently maintained fork of SD-AI that aims to run the original engines, agents and application code on alternative infrastructure, with durable project state and continuity across sessions and restarts. The initial implementation targets Cloudflare; the goal is portability while preserving upstream behavior and minimizing changes to the original code.
+
+This repository is a fork of [UB-IAD/sd-ai](https://github.com/UB-IAD/sd-ai), originally developed at the University at Buffalo. It is independently maintained and does not claim affiliation, funding, sponsorship or endorsement by the university or upstream partners. The [original MIT license and copyright](LICENSE) are preserved.
+
+- [Buffalo documentation site](https://yudocyudoc.github.io/buffalo-01/)
+- [Original SD-AI documentation](https://ub-iad.github.io/sd-ai/)
+- [Buffalo runtime implementation and validation](infra/full-runtime/README.md)
+
+The inherited engine and evaluation documentation below describes upstream SD-AI. Inherited leaderboard results do not establish Buffalo parity or independently reproduced performance. Portability and persistence remain under development.
 
 Contains the engines used by [Stella](https://www.iseesystems.com/store/products/stella-architect.aspx) & [CoModel](https://comodel.io), evaluations used to test those engines and a frontend used to explore those evaluations and engines.
 

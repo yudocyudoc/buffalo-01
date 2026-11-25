@@ -1,7 +1,10 @@
-# SD-AI Frontend
+# Buffalo — SD-AI fork documentation
 
-A static documentation site for the SD-AI project, running at
-[https://ub-iad.github.io/sd-ai/](https://ub-iad.github.io/sd-ai/).
+A static documentation site for the independent [Buffalo fork](https://github.com/yudocyudoc/buffalo-01), published at [https://yudocyudoc.github.io/buffalo-01/](https://yudocyudoc.github.io/buffalo-01/).
+
+Buffalo is an independently maintained fork of SD-AI that aims to run the original engines, agents and application code on alternative infrastructure, with durable project state and continuity across sessions and restarts. The initial implementation targets Cloudflare; the goal is portability while preserving upstream behavior and minimizing changes to the original code.
+
+The original project is [UB-IAD/sd-ai](https://github.com/UB-IAD/sd-ai), developed at the University at Buffalo, with its [own documentation](https://ub-iad.github.io/sd-ai/). This fork does not claim affiliation, funding, sponsorship or endorsement by upstream or its partners. Inherited leaderboard data is not independently reproduced Buffalo benchmark evidence. The original MIT license and copyright remain intact. Runtime implementation and validation are described in [the runtime README](../infra/full-runtime/README.md).
 
 ## What this is
 

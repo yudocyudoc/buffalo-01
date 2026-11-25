@@ -66,7 +66,7 @@ export class ProjectRuntime extends DurableObject {
     const port=c.getTcpPort(8080);
     for(let attempt=0;attempt<60;attempt++){
       try{const health=await port.fetch('http://container/status',{signal:AbortSignal.timeout(1000)});
-        await health.body?.cancel();if(health.ok)return port;}catch{}
+        await health.body?.cancel();if(health.ok){if((await c.inspect())?.image!==c.images.base)throw Error('FULL_IMAGE_IDENTITY');return port;}}catch{}
       await scheduler.wait(250);
     }
     throw Error('ORIGINAL_APP_STARTUP_TIMEOUT');

@@ -4,6 +4,7 @@ on:
     paths:
       - 'infra/full-runtime/**'
       - '.github/workflows/buffalo-full-runtime.yml'
+      - '.github/workflows/buffalo-full-edit-manual.yml'
       - 'app.js'
       - 'agent/**'
       - 'routes/**'
@@ -40,7 +41,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test infra/full-runtime/gateway.test.mjs
+      - run: node --test infra/full-runtime/*.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm install --prefix "$RUNNER_TEMP/full-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap

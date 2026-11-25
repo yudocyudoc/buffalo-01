@@ -1,7 +1,6 @@
 import {ENGINE_ALIAS,ENGINE_ENDPOINT,ENGINE_MAX_TOKENS,validInvocationId} from './engine-protocol.mjs';
 import {GEMMA,acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
-import {boundedJSON} from '../private-merlin/gateway.mjs';
-import {digest} from '../private-merlin/protocol.mjs';
+import {boundedJSON,digest} from './provider-wire.mjs';
 
 const reject=status=>new Response(null,{status});
 const count=n=>Number.isSafeInteger(n)&&n>=0?n:null;

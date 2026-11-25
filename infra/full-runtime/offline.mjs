@@ -22,6 +22,7 @@ import {qualitativeFixture,exerciseQualitative,reopenQualitative} from './test-q
 import {storePersistentRuns,recoverPersistentRuns} from './test-persistent-runs.mjs';
 import {createConversationJournal,modelIdentity} from './conversation-client.mjs';
 import {checkConversationBeforeRestart,checkConversationAfterRestart} from './test-persistent-conversations.mjs';
+import {createSeldonFixture,exerciseSeldon} from './test-seldon-comparison.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -49,13 +50,14 @@ export class LocalProject extends ProjectRuntime {
 const script=(await build({stdin:{contents:testModule,resolveDir:process.cwd()},bundle:true,write:false,
   format:'esm',target:'es2022',external:['cloudflare:workers']})).outputFiles[0].text;
 const disk=await mkdtemp(join(tmpdir(),'buffalo-full-test-'));
-const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793,workers:[
+const fixtureOptions=(limit=27)=>({...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793,workers:[
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project',q.headers.get('x-fixture-project')==='other'?'other':'example');q.headers.delete('x-fixture-project');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'27',ENGINE_INFERENCE_ENABLED:'true',
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:String(limit),ENGINE_INFERENCE_ENABLED:'true',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
-]}),resourcePersistencePath:disk};
+]}),resourcePersistencePath:disk});
+const options=fixtureOptions();
 let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null,lastEngineRequest=null,failNextEngine=false,invalidNextEngine=null;
 const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
@@ -85,8 +87,9 @@ const simulationSteps=[
  ['get_variable_data',{variableNames:['Inventory'],runIds:['run-1'],detailed:true}],
  ['read_file',null]
 ];
-let qualitative=false;
+let qualitative=false,seldon=null;
 function fixture(model,wire){
+  if(seldon)return seldon.reply(model,wire);
   if(qualitative)return qualitativeFixture(model,wire);
   assert.equal(model,GEMMA);
   if(wire.response_format){engineCalls++;if(failNextEngine){failNextEngine=false;throw Error('controlled provider failure');}
@@ -312,5 +315,15 @@ try{
   await mf.dispose();mf=new Miniflare(options);await mf.ready;
   await recoverPersistentRuns(request,other,persistence);
   assert.equal(calls+engineCalls,lastAttempt+1);
+  // The previous test exhausted its 27 reservations and proved denial.
+  // Only the offline controlled-provider fixture receives six new slots;
+  // no deployed grant, runtime template or real provider budget changes.
+  assert.equal(lastAttempt+1,27);
+  await mf.dispose();mf=new Miniflare(fixtureOptions(33));await mf.ready;
+  qualitative=false;seldon=createSeldonFixture();
+  start(true);await rest(base,key);
+  await exerciseSeldon(request,other,key,persistence,seldon,lastAttempt+1);
+  assert.equal(calls+engineCalls,lastAttempt+1);
+
 
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

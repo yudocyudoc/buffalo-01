@@ -117,14 +117,22 @@ const proxy=createServer(async(req,res)=>{
     const body=await new Response(req).text();
     if(req.url==='/fixture'){
       const {model,wire}=JSON.parse(body);
-      res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(fixture(model,wire)));
+      // Evaluate and serialize the fixture before committing HTTP status 200.
+      // A controlled binding failure must reach the catch as a single 422.
+      const payload=JSON.stringify(fixture(model,wire));
+      res.writeHead(200,{'content-type':'application/json'}).end(payload);
       return;
     }
     assert(['/v1/chat/completions','/v1/engine/completions'].includes(req.url));
     if(req.url==='/v1/engine/completions')lastEngineRequest=body;
     const r=await infer(body,req.url==='/v1/engine/completions');
-    res.writeHead(r.status,{'content-type':'application/json'}).end(await r.text());
-  }catch(e){console.error(e);res.writeHead(422).end();}
+    const payload=await r.text();
+    res.writeHead(r.status,{'content-type':'application/json'}).end(payload);
+  }catch(e){
+    console.error(e);
+    if(res.headersSent){res.destroy(e);return;}
+    res.writeHead(422).end();
+  }
 });
 try{
   mf=new Miniflare(options);await mf.ready;

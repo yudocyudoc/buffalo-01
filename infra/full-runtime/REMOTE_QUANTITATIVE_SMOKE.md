@@ -1,0 +1,22 @@
+# Buffalo Full — remote quantitative smoke (PR #80)
+
+## Scope and approval
+
+Preparation only. No provider call, publishing, deployment, migration or scheduled execution is authorized by this PR. Previous #79 is merged at 01fc4cea2a59db16e4b78d1feec9b2706798f7e7; its offline CI passed 25/25 and the complete original REST/Merlin/PySD/persistence integration. R0 historical OCI-local namespace block remains unchanged.
+
+A later manual workflow on the exact main SHA, first run attempt only, requires the explicit token ONE_BUFFALO_FULL_REMOTE_QUANTITATIVE_MAX_ONE. It uses separate private runtime and operator names and a fresh fixed project. No public URLs, no general Internet egress, and no change to sandbox policy. The existing control-plane D1 table is reused solely for the smoke claim and result (distinct probe ID); no migration is performed. The runtime grant permits one cumulative binding reservation for the fixed project, expiring within 22 minutes. The operator makes one original REST request, with no retry; a failed or ambiguous attempt is spent. This is a test budget, not a product-wide ban on repetitions.
+
+## Acceptance stages
+
+1. Source SHA, image digest, image local REST and offline contracts; private config dry-run.
+2. Preflight: existing table accessible, no conflicting CLAIMED row, new smoke resources absent, zero active Containers.
+3. Publish the image and verify digest and revision; deploy disabled configuration; use temporary auth secret; activate only after explicit approval.
+4. Operator atomically claims, checks no old inference receipt, starts the original app via health, POSTs one synthetic Inventory prompt through the authenticated original quantitative endpoint, stores returned unmodified SD-JSON and actual receipt. An OK receipt must prove the actual accepted Gemma model, schema mode, successful schema and total validation, stop reason and measured usage including neurons. No extra reservation, stop must be confirmed.
+5. Independently disable operator and runtime (including engine flag and AI binding), remove temporary secrets, verify no active or starting Containers, no public endpoints/cron/AI/secrets on smoke Workers. Disabled resources and registry image remain; no automatic deletion.
+6. With cleanup successful, run the original SDJsonToXMILE and PySD client on the GitHub runner using the exact returned model. Compare schema digest to the exact original LLMWrapper schema, time [0,1,2,3,4], Inventory [10,15,20,25,30], Demand/Inflow constant 5. Retain model hash and simulation evidence. The simulation is real but local to the runner, not Cloudflare-side PySD. No model or equation repair. A failed semantic/simulation assertion is a failed smoke even if transport succeeds.
+
+The operator terminal status FULL_REMOTE_QUANTITATIVE_MODEL_RETURNED means model/transport acceptance only. FULL_REMOTE_QUANTITATIVE_PYSD_PASS plus verified cleanup are needed for the complete smoke. Receipts may be RESERVED or missing after ambiguous failure; do not retry or infer successful execution from a missing receipt. The raw model is synthetic test data and is retained in the private D1 receipt and workflow artifacts.
+
+## Remaining boundaries
+
+Offline CI tests operator contracts and the existing real original app path with a controlled provider; it cannot certify Gemma remote structured output. The manual workflow is prepared but unexecuted. No expansion of the tool roster, no Buffalo Persistent features. Existing runtime and historical edit operator remain untouched.

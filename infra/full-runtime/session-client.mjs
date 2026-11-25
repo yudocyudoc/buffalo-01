@@ -4,7 +4,7 @@ export function assertDemand(model,equation){
  const values=model?.variables?.filter(v=>v.name==='Demand').map(v=>v.equation);
  check(Array.isArray(values)&&values.length===1&&values[0]===equation,'UNEXPECTED_DEMAND');
 }
-export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],scenario=null,deadline=Date.now()+45000}){
+export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],scenario=null,journal=null,historicalMessages=null,deadline=Date.now()+45000}){
  if(edit&&!scenario)assertDemand(model,'3');
  if(scenario)check(edit&&typeof scenario.message==='string'&&typeof scenario.verify==='function','INVALID_SCENARIO');
  return new Promise((resolve,reject)=>{
@@ -24,7 +24,7 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
     case 'session_created':
      check(stage==='created'&&/^sess_[a-f0-9]{32}$/.test(m.sessionId),'EXPECTED_SESSION');
      id=m.sessionId;stage='initializing';
-     send('initialize_session',{authenticationKey:key,clientProduct:'SD-AI integration',clientVersion:'1.0',clientId:'full-runtime-test',mode,model,tools:[],...(scenario?.capabilities??{})});break;
+     send('initialize_session',{authenticationKey:key,clientProduct:'SD-AI integration',clientVersion:'1.0',clientId:'full-runtime-test',mode,model,tools:[],...(scenario?.capabilities??{}),...(historicalMessages?{historicalMessages}:{})});break;
     case 'session_ready':{
      check(stage==='initializing','EXPECTED_READY');
      const expected=mode==='sfd'?['athena_SFD','merlin','socrates','themis']:['athena_CLD','merlin','socrates'];
@@ -34,14 +34,20 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
     }
     case 'agent_selected':
      check(stage==='selecting'&&m.agentId===agent,'AGENT_SELECTION');
-     if(edit){stage='chat';send('chat',{message:scenario?.message??'Change the equation for Demand from 3 to 5.'})}
+     if(edit){
+      stage='chat';const message=scenario?.message??'Change the equation for Demand from 3 to 5.';
+      if(journal)await journal.begin(id,message);
+      send('chat',{message});
+     }
      else{stage='disconnect';send('disconnect')}break;
     case 'get_current_model':
      check(stage==='chat','UNEXPECTED_MODEL_REQUEST');
      send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
     case 'update_model':
      check(stage==='chat'&&typeof save==='function','UNEXPECTED_UPDATE');
-     await save(m.modelData);model=m.modelData;updated++;
+     const saved=await save(m.modelData);
+     if(journal)await journal.modelAccepted(m.requestId,saved);
+     model=m.modelData;updated++;
      send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
     case 'run_model':
     case 'get_run_info':
@@ -53,14 +59,22 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
     case 'tool_call_notification':
     case 'tool_call_completed':
      check(tools.length<256,'TOOL_TRACE_LIMIT');
-     tools.push({event:m.type,callId:m.callId,name:m.toolName,isError:m.isError});break;
+     tools.push({event:m.type,callId:m.callId,name:m.toolName,isError:m.isError});
+     if(journal)await journal.event(m.type==='tool_call_notification'?
+       {type:'tool_started',call_id:m.callId,tool_name:m.toolName,...(m.arguments===undefined?{}:{arguments:m.arguments})}:
+       {type:'tool_completed',call_id:m.callId,tool_name:m.toolName,is_error:m.isError,...(m.result===undefined?{}:{result:m.result})});
+     break;
     case 'agent_text':
-     if(stage==='chat'&&!m.isThinking&&typeof m.content==='string')output=m.content.slice(0,24000);
+     if(stage==='chat'&&!m.isThinking&&typeof m.content==='string'){
+      output=m.content.slice(0,24000);
+      if(journal&&!m.isProgress&&m.content.length)await journal.event({type:'assistant_text',content:m.content});
+     }
      break;
     case 'agent_complete':
      check(stage==='chat'&&m.status==='success','AGENT_NOT_SUCCESS');
      if(scenario)await scenario.verify(model,tools);else assertDemand(model,'5');
      check(updated>0,'MODEL_NOT_UPDATED');
+     if(journal)await journal.complete();
      stage='disconnect';send('disconnect');break;
     case 'error':throw Error('ORIGINAL_AGENT_ERROR');
    }

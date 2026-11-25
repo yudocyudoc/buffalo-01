@@ -91,7 +91,7 @@ async function route(request,storage,all,id,turns,turnId,events,n){
    return status(201);
   });
  }
- if(events!=='events'||!/^([1-9]\\d{0,2})$/.test(n??'')||Number(n)>MAX_EVENTS)return status(404);
+ if(events!=='events'||!/^([1-9]\d{0,2})$/.test(n??'')||Number(n)>MAX_EVENTS)return status(404);
  if(request.method!=='PUT')return status(405);
  if(!turn())return status(404);
  const p=await readProjectBody(request,MAX_EVENT);if(p.error)return status(p.error);

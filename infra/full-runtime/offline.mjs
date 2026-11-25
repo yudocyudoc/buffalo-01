@@ -20,6 +20,8 @@ import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {quantitativeFixture,testOriginalEngine,testFailedOriginalEngine,agentPrompt} from './test-engine.mjs';
 import {qualitativeFixture,exerciseQualitative,reopenQualitative} from './test-qualitative.mjs';
 import {storePersistentRuns,recoverPersistentRuns} from './test-persistent-runs.mjs';
+import {createConversationJournal,modelIdentity} from './conversation-client.mjs';
+import {checkConversationBeforeRestart,checkConversationAfterRestart} from './test-persistent-conversations.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -219,10 +221,17 @@ try{
   console.log('FULL_ENGINE_SCHEMA_AND_USAGE_REJECTION_RECEIPTS');
   const old={'if-match':created.headers.get('etag')};
   let etag=old['if-match'];
-  await session({mode:'sfd',key,model,agent:'merlin',edit:true,save:async m=>{
+  const journalRequest=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
+  const journalOther=(path,init={})=>journalRequest(path,{...init,headers:{...init.headers,'x-fixture-project':'other','x-buffalo-project':'example'}});
+  const journalInput=modelIdentity(created);
+  const journal=await createConversationJournal(journalRequest,{mode:'sfd',agent:'merlin',provider:'cloudflare'},journalInput);
+  let journalOutput;
+  await session({mode:'sfd',key,model,agent:'merlin',edit:true,journal,save:async m=>{
     const saved=await doc({method:'PUT',headers:{'if-match':etag},body:JSON.stringify(m)});
     assert.equal(saved.status,204);etag=saved.headers.get('etag');
+    journalOutput=modelIdentity(saved);return journalOutput;
   }});
+  const conversationState=await checkConversationBeforeRestart(journalRequest,journalOther,journal,journalInput,journalOutput);
   assert.equal((await doc({method:'PUT',headers:old,body:JSON.stringify(model)})).status,412);
   // A second original session runs a real stock/flow simulation in the compatible client.
   scenarioOffset=calls;const scenario=simulationScenario();
@@ -268,7 +277,9 @@ try{
   const repeatedAfterRestart=await (await mf.dispatchFetch('http://localhost/project/inference/'+(lastAttempt+1))).json();
   assert.equal(repeatedAfterRestart.status,'OK');
   assert.equal((await infer(rejectedRequest)).status,403);
-  start(false);await rest(base,key);await session({mode:'sfd',key,agent:'merlin',model:recovered});
+  const historicalMessages=await checkConversationAfterRestart(journalRequest,journalOther,conversationState,journal);
+  start(false);await rest(base,key);await session({mode:'sfd',key,agent:'merlin',model:recovered,historicalMessages});
+  console.log('FULL_ORIGINAL_SESSION_INITIALIZED_WITH_RECOVERED_HISTORY');
   assert.equal(calls+engineCalls,lastAttempt+1);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
   // Separate offline project storage keeps the quantitative replay and
   // lifetime-budget regression above independent of the CLD scenarios.

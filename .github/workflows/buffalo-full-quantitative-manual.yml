@@ -19,7 +19,7 @@ jobs:
   quantitative:
     if: ${{ github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.approval == 'ONE_BUFFALO_FULL_REMOTE_QUANTITATIVE_MAX_ONE' && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 150
     env:
       CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
       CLOUDFLARE_SEND_METRICS: 'false'
@@ -52,6 +52,7 @@ jobs:
           docker run -d --name full --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges -e AUTHENTICATION_KEY=ci-only "buffalo-full-quantitative-private:$GITHUB_SHA"
           trap 'docker logs --tail 30 full; docker rm -f full' EXIT
           docker exec full node infra/full-runtime/test-rest.mjs
+          docker exec full node infra/full-runtime/test-simulation-image.mjs
           test "$(docker inspect --format '{{.Config.User}}' full)" = node
       - name: Publish and independently read back image digest
         timeout-minutes: 12
@@ -121,9 +122,9 @@ jobs:
         run: |
           set -euo pipefail
           node infra/full-runtime/manual-quantitative.mjs arm
-          for kind in runtime operator; do
-            npx --yes wrangler@4.166.0 deploy --config "infra/full-runtime/wrangler.quantitative-$kind-armed.json"
-          done
+          npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.quantitative-runtime-armed.json
+          node infra/full-runtime/manual-quantitative.mjs check-runtime-armed
+          npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.quantitative-operator-armed.json
       - name: Observe original quantitative REST response and binding receipt
         timeout-minutes: 27
         env:
@@ -153,12 +154,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
         run: node infra/full-runtime/manual-quantitative.mjs cleanup
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: python -m pip install -r third-party/PySD-simulator/requirements.txt
-      - name: Simulate the exact returned model with original PySD
-        run: node infra/full-runtime/verify-remote-quantitative.mjs
+      - name: Simulate the exact returned model with original PySD (offline image)
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/buffalo-full-quantitative"
+          test -f "$DIR/cleanup.json"
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,source=$DIR/remote-receipt.json,target=/tmp/remote-receipt.json,readonly" \
+            "buffalo-full-quantitative-private:$GITHUB_SHA" \
+            node infra/full-runtime/verify-remote-quantitative.mjs /tmp/remote-receipt.json > "$DIR/simulation.json"
+          node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(x.status!=="FULL_REMOTE_QUANTITATIVE_PYSD_PASS") process.exit(1); console.log(JSON.stringify(x))' "$DIR/simulation.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

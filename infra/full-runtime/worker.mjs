@@ -4,6 +4,7 @@ import {completion} from './gateway.mjs';
 import {engineCompletion} from './engine-gateway.mjs';
 import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {projectModel} from './project.mjs';
+import {projectRuns} from './project-runs.mjs';
 
 const deny=()=>new Response(null,{status:404});
 const idPattern=/^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -93,6 +94,11 @@ export class ProjectRuntime extends DurableObject {
   async fetch(request){
     const url=new URL(request.url);
     if(url.pathname==='/project/model')return projectModel(request,this.ctx.storage);
+    const revision=/^\/project\/model\/revisions\/([1-9]\d{0,15})$/.exec(url.pathname);
+    if(revision&&Number.isSafeInteger(Number(revision[1])))return projectModel(request,this.ctx.storage,Number(revision[1]));
+    if(url.pathname.startsWith('/project/model/revisions'))return deny();
+    if(url.pathname==='/project/runs')return projectRuns(request,this.ctx.storage);
+    if(url.pathname.startsWith('/project/runs/'))return projectRuns(request,this.ctx.storage,url.pathname.slice('/project/runs/'.length));
     const attempt=/^\/project\/inference\/([1-9]\d{0,15})$/.exec(url.pathname);
     if(attempt){
       if(request.method!=='GET')return new Response(null,{status:405,headers:{Allow:'GET'}});

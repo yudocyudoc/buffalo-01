@@ -48,9 +48,10 @@ export async function testOriginalEngine(base,key){
  assert.equal(run.simulated,true,run.error);
  const data=client.runs.get(run.runId).data;
  assert.deepEqual(data.time,[0,1,2,3,4]);assert.deepEqual(data.Inventory,[10,15,20,25,30]);
- // An identical engine request in this grant may not consume another reservation.
- const duplicate=await post({prompt},key);assert.equal(duplicate.status,200);
- assert.equal((await duplicate.json()).success,false);
+ // Independent experiments are allowed to repeat exactly the same request.
+ const repeated=await post({prompt},key);assert.equal(repeated.status,200);
+ const repeatedResult=await repeated.json();assert.equal(repeatedResult.success,true,repeatedResult.message);
+ assert.deepEqual(repeatedResult.model,result.model);
  console.log('FULL_ORIGINAL_QUANTITATIVE_REST_AND_PYSD_OFFLINE '+JSON.stringify({time:data.time,Inventory:data.Inventory}));
  return result.model;
 }

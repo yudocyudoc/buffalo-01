@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
+import {LLMWrapper} from '../../utilities/LLMWrapper.js';
 import {once} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -155,6 +156,7 @@ try{
   const engineReceipt=await engineReceiptResponse.json();
   assert.equal(engineReceipt.channel,'original-engine');assert.equal(engineReceipt.status,'OK');
   assert.equal(engineReceipt.response_format,'json_schema');assert.equal(engineReceipt.neurons,1.5);
+  assert.equal(engineReceipt.schema_sha256,createHash('sha256').update(JSON.stringify(LLMWrapper.prototype.generateQuantitativeSDJSONResponseSchema(false,false,false,false).toJSONSchema())).digest('hex'));
   assert.equal(engineReceipt.predicates.schema_valid,true);assert.equal(engineReceipt.predicates.total_tokens_valid,true);
   assert.deepEqual(engineReceipt.usage,{prompt_tokens:500,completion_tokens:100,total_tokens:null});
   const repeatReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/2')).json();

@@ -5,6 +5,7 @@ import {engineCompletion} from './engine-gateway.mjs';
 import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {projectModel} from './project.mjs';
 import {projectRuns} from './project-runs.mjs';
+import {projectRunArtifact} from './project-run-artifacts.mjs';
 import {projectConversations} from './project-conversations.mjs';
 
 const deny=()=>new Response(null,{status:404});
@@ -100,6 +101,8 @@ export class ProjectRuntime extends DurableObject {
     if(url.pathname.startsWith('/project/model/revisions'))return deny();
     if(url.pathname==='/project/conversations'||url.pathname.startsWith('/project/conversations/'))return projectConversations(request,this.ctx.storage);
     if(url.pathname==='/project/runs')return projectRuns(request,this.ctx.storage);
+    const artifact=/^\/project\/runs\/([^/]+)\/(?:feedback|narratives\/([^/]+))$/.exec(url.pathname);
+    if(artifact)return projectRunArtifact(request,this.ctx.storage,artifact[1],artifact[2]);
     if(url.pathname.startsWith('/project/runs/'))return projectRuns(request,this.ctx.storage,url.pathname.slice('/project/runs/'.length));
     const attempt=/^\/project\/inference\/([1-9]\d{0,15})$/.exec(url.pathname);
     if(attempt){

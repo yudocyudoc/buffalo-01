@@ -10,6 +10,8 @@ on:
       - 'agent/**'
       - 'routes/**'
       - 'engines/**'
+      - 'evals/categories/qualitativeTranslation.js'
+      - 'evals/categories/conformance.js'
       - 'config.js'
       - 'package*.json'
 permissions:

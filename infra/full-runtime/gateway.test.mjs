@@ -96,14 +96,20 @@ test('a transport-supported tool not offered by the original session is still re
  assert.equal(response.status,422);assert.deepEqual(receipt.failed_predicates,['tools_offered']);
 });
 
-test('quantitative generation is conditional and still requires the original offered schema',async()=>{
- const generation=tool('generate_quantitative_model');
- const request=()=>new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'test'}],tools:[generation,tool('generate_qualitative_model')]})});
- const result=()=>({...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{type:'function',id:'g',function:{name:generation.function.name,arguments:'{}'}}]}}]});
- for(const engineEnabled of [false,true]){
-  const response=await completion(request(),{run:async(_model,wire)=>{
-    assert.deepEqual(wire.tools,engineEnabled?[generation]:undefined);return result();
-  }},()=>1,()=>{},{engineEnabled});
-  assert.equal(response.status,engineEnabled?200:422);
+test('generation requires engine permission and the specific original tool offered by the session',async()=>{
+ for(const [offered,chosen,enabled,status] of [
+   ['generate_quantitative_model','generate_quantitative_model',true,200],
+   ['generate_qualitative_model','generate_qualitative_model',true,200],
+   ['generate_qualitative_model','generate_qualitative_model',false,422],
+   ['generate_quantitative_model','generate_quantitative_model',false,422],
+   ['generate_quantitative_model','generate_qualitative_model',true,422]
+ ]){
+   const generation=tool(offered);
+   const request=new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'test'}],tools:[generation,tool('write_file')]})});
+   const response=await completion(request,{run:async(_model,wire)=>{
+     assert.deepEqual(wire.tools,enabled?[generation]:undefined);
+     return {...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{type:'function',id:'g',function:{name:chosen,arguments:'{}'}}]}}]};
+   }},()=>1,()=>{},{engineEnabled:enabled});
+   assert.equal(response.status,status);
  }
 });

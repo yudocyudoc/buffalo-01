@@ -18,6 +18,7 @@ import {simulationModel,simulationScenario} from './simulation-fixture.mjs';
 import {createSimulationClient} from './simulation-client.mjs';
 import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {quantitativeFixture,testOriginalEngine,testFailedOriginalEngine,agentPrompt} from './test-engine.mjs';
+import {qualitativeFixture,exerciseQualitative,reopenQualitative} from './test-qualitative.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -81,7 +82,9 @@ const simulationSteps=[
  ['get_variable_data',{variableNames:['Inventory'],runIds:['run-1'],detailed:true}],
  ['read_file',null]
 ];
+let qualitative=false;
 function fixture(model,wire){
+  if(qualitative)return qualitativeFixture(model,wire);
   assert.equal(model,GEMMA);
   if(wire.response_format){engineCalls++;if(failNextEngine){failNextEngine=false;throw Error('controlled provider failure');}
     const result=quantitativeFixture(model,wire,generationOffset===null?undefined:agentPrompt);
@@ -266,4 +269,26 @@ try{
   assert.equal((await infer(rejectedRequest)).status,403);
   start(false);await rest(base,key);await session({mode:'sfd',key,agent:'merlin',model:recovered});
   assert.equal(calls+engineCalls,lastAttempt+1);console.log('FULL_ORIGINAL_EDIT_CONFIRMED_AND_PROJECT_REOPENED_OFFLINE');
+  // Separate offline project storage keeps the quantitative replay and
+  // lifetime-budget regression above independent of the CLD scenarios.
+  await stop();await mf.dispose();
+  const cldOptions={...options,resourcePersistencePath:join(disk,'cld')};
+  qualitative=true;
+  mf=new Miniflare(cldOptions);await mf.ready;
+  start(true);await rest(base,key);
+  let cldTag;
+  const saveCLD=async model=>{
+    const headers=cldTag?{'if-match':cldTag}:{'if-none-match':'*'};
+    const saved=await doc({method:'PUT',headers,body:JSON.stringify(model)});
+    assert.equal(saved.status,cldTag?204:201);
+    cldTag=saved.headers.get('etag');
+  };
+  await exerciseQualitative(base,key,saveCLD,async n=>{
+    const r=await mf.dispatchFetch('http://localhost/project/inference/'+n);
+    assert.equal(r.status,200);return r.json();
+  });
+  await stop();await mf.dispose();mf=new Miniflare(cldOptions);await mf.ready;
+  const cld=await doc();assert.equal(cld.status,200);assert.equal(cld.headers.get('etag'),cldTag);
+  start(false);await rest(base,key);await reopenQualitative(key,await cld.json());
+  console.log('FULL_ORIGINAL_CLD_REST_MERLIN_AND_PROJECT_REOPENED_OFFLINE');
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

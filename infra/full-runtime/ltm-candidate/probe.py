@@ -9,6 +9,8 @@ from pathlib import Path
 import platform
 import re
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import simlin
@@ -160,13 +162,47 @@ def births_deaths_test():
             "signed_balancing": bs.tolist()}
 
 
+# The original Stella file has unsigned AI metadata that the pinned Simlin
+# deserializer rejects (missing keyurl). Remove only that exact byte range
+# in a disposable copy; never modify the source or invent signature fields.
+def bass_import_copy(model_file, directory):
+    original = model_file.read_bytes()
+    require(hashlib.sha256(original).hexdigest() == STMX_SHA, "REFERENCE_BYTES_CHANGED")
+    block = (b'\t<ai_information>\n'
+             b'\t\t<status verified="false"/>\n'
+             b'\t\t<settings>\n'
+             b'\t\t\t<isee:setting key="problemStatement" value=""/>\n'
+             b'\t\t\t<isee:setting key="quantitative/backgroundKnowledge" value=""/>\n'
+             b'\t\t</settings>\n'
+             b'\t</ai_information>\n')
+    require(original.count(block) == 1, "UNEXPECTED_UNSIGNED_METADATA")
+    offset = original.index(block)
+    derived = original[:offset] + original[offset + len(block):]
+    require(derived[:offset] + block + derived[offset:] == original, "IMPORT_COPY_BYTE_DRIFT")
+    root = ET.fromstring(original)
+    ns = "{http://docs.oasis-open.org/xmile/ns/XMILE/v1.0}"
+    metadata = root.findall(ns + "ai_information")
+    require(len(metadata) == 1, "UNEXPECTED_METADATA_COUNT")
+    root.remove(metadata[0])
+    require(ET.tostring(root) == ET.tostring(ET.fromstring(derived)), "IMPORT_COPY_XML_DRIFT")
+    target = Path(directory) / "bassDiffusion.import.xmile"
+    target.write_bytes(derived)
+    return target, {"kind": "unsigned-ai-metadata-only-removal",
+                    "source_sha256": STMX_SHA,
+                    "derived_sha256": digest(target),
+                    "removed_sha256": hashlib.sha256(block).hexdigest(),
+                    "removed_bytes": len(block), "offset": offset,
+                    "reversible": True}
+    
 def bass_test():
     ref_file, model_file = REFERENCE / "bassDiffusion.json", REFERENCE / "bassDiffusion.stmx"
     require(digest(ref_file) == JSON_SHA and digest(model_file) == STMX_SHA, "REFERENCE_BYTES_CHANGED")
     source = json.loads(ref_file.read_text(encoding="utf-8"))
     reference = source["feedback"]["feedbackLoops"]
-    model = simlin.load(model_file)
-    run = model.run(analyze_loops=True)
+    with tempfile.TemporaryDirectory(prefix='bass-ltm-') as directory:
+        import_file, import_provenance = bass_import_copy(model_file, directory)
+        model = simlin.load(import_file)
+        run = model.run(analyze_loops=True)
     require(run.ltm_mode == "exhaustive", "BASS_NOT_EXHAUSTIVE")
     time = series(run.results.index, 241, "time")
     require(np.array_equal(time, np.arange(241) / 16), "BASS_TIME_GRID")
@@ -213,7 +249,7 @@ def bass_test():
         "source_unchanged": digest(ref_file) == JSON_SHA and digest(model_file) == STMX_SHA,
     }
     return {"checks": checks, "passed": all(checks.values()), "time": time.tolist(),
-            "loops": measured, "balancing_transitions": transitions,
+            "import_provenance": import_provenance, "loops": measured, "balancing_transitions": transitions,
             "backend_periods": [{"start": float(p.start_time), "end": float(p.end_time),
                                  "loops": list(p.dominant_loops)} for p in run.dominant_periods],
             "trajectory": {"Adopters": adopters.tolist(), "Potential Adopters": potentials.tolist(),

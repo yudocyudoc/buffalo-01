@@ -40,6 +40,19 @@ jobs:
           cat "$out/native.stderr"
           python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison"),"trajectory_max_abs_error":v.get("trajectory_max_abs_error")} for k,v in d["cases"].items()}))' "$out/native.json"
           exit "$rc"
+      - name: A2 independent flow invariance controls
+        run: |
+          set -euo pipefail
+          python infra/full-runtime/ltm-a1/test_flow_invariance.py 2>&1 | tee "$RUNNER_TEMP/ltm-a1/a2-tests.log"
+      - name: A2 native paired flow representations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ltm-a1"
+          rc=0
+          timeout 120s docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 1g --cpus 2 buffalo-ltm:a1 python /a1/flow_invariance.py > "$out/a2-native.json" 2> "$out/a2-native.stderr" || rc=$?
+          cat "$out/a2-native.stderr"
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["admitted"] is False; print(json.dumps({"pair":d.get("pair"),"cases":{k:{"status":v["status"],"error":v.get("error"),"comparison":v.get("comparison")} for k,v in d["cases"].items()}}))' "$out/a2-native.json"
+          exit "$rc"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

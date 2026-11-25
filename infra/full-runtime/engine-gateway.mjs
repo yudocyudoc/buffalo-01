@@ -85,7 +85,8 @@ export async function engineCompletion(request,ai,reserve,record){
     }catch{return reject(400);}
   }
   const meta={channel:'original-engine',invocation_id:invocationId,request_sha256:await digest(text),request_bytes,
-    response_format:wire.response_format?.type??'text',max_completion_tokens:wire.max_completion_tokens};
+    response_format:wire.response_format?.type??'text',max_completion_tokens:wire.max_completion_tokens,
+    ...(wire.response_format?.type==='json_schema'?{schema_sha256:await digest(JSON.stringify(wire.response_format.json_schema))}:{})};
   const attempt=await reserve({...meta,stage:'BINDING_INVOKE',status:'RESERVED',usage:null});
   if(!attempt)return reject(403);
   const started=Date.now();

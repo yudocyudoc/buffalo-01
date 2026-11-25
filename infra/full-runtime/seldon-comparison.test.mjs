@@ -38,11 +38,34 @@ test('comparison preserves explicit order and supplies original model and both f
  assert(!p.backgroundKnowledge.includes('"unitWarnings":'));
  assert(!p.backgroundKnowledge.includes('"errors":'));
 });
+test('different metadata key order permits discussion of the same simulation contract',async()=>{
+ const f=await fixture();
+ const record=f.records[1].record;
+ for(const group of ['settings','execution','simulator']){
+  record[group]=Object.fromEntries(Object.entries(record[group]).reverse());
+ }
+ const result=await discussPersistedRuns(f.request,'seldon','Compare.',ids,'fixture');
+ assert.deepEqual(result.runIds,ids);
+ assert.equal(f.calls,1);
+});
+test('different time units on a valid revision fail before inference',async()=>{
+ const f=await fixture();
+ const other=f.records[1];
+ other.record.settings.timeUnits='Year';
+ other.model.specs={...other.model.specs,timeUnits:'Year'};
+ other.body=JSON.stringify(other.model);
+ other.hash=await digest(other.body);
+ other.record.model_sha256=other.hash;
+ await assert.rejects(discussPersistedRuns(f.request,'seldon','Compare.',ids,'fixture'),/INCOMPARABLE_RUNS/);
+ assert.equal(f.calls,0);
+});
 test('missing or tampered revision and incompatible run grids fail before inference',async()=>{
  for(const corrupt of [
   f=>{f.records[0].record.model_sha256='0'.repeat(64);},
   f=>{f.records[0].body+=' ';},
   f=>{f.records[1].record.series.time=[0,.5,2,3,4];},
+  f=>{f.records[1].record.series.Demand=[6,6,6,6,6];},
+  f=>{f.records[1].record.execution.dt=0.5;},
   f=>{f.records[1].record.simulator.version='different';},
   f=>{f.records[1].record.settings.dt=2;}
  ]){

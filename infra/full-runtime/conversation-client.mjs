@@ -39,13 +39,14 @@ export async function recoverHistoricalMessages(request,conversationId){
  const list=await (await expect(request(root+'/turns'),200)).json();
  // Deliberately bounded initial history. Refuse silent truncation.
  assert.equal(list.next_after,null,'HISTORY_PAGE_LIMIT');
- const messages=[];
+ const messages=[];let chars=0;
+ const append=message=>{chars+=message.content.length;assert(chars<=16000,'HISTORY_TEXT_LIMIT');messages.push(message);};
  for(const item of list.items){
   if(item.status!=='completed')continue;
   const record=await (await expect(request(root+'/turns/'+item.turn_id),200)).json();
   assert.equal(record.status,'completed');
-  messages.push({type:'user_text',content:record.turn.message});
-  for(const {event} of record.events)if(event.type==='assistant_text')messages.push({type:'agent_text',content:event.content});
+  append({type:'user_text',content:record.turn.message});
+  for(const {event} of record.events)if(event.type==='assistant_text')append({type:'agent_text',content:event.content});
  }
  return messages;
 }

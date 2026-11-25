@@ -10,7 +10,7 @@ const keys=(x,required,optional=[])=>obj(x)&&required.every(k=>Object.hasOwn(x,k
 const text=(x,n=256)=>typeof x==='string'&&x.length>0&&x.length<=n;
 const ref=x=>Number.isSafeInteger(x.revision)&&x.revision>0&&typeof x.model_sha256==='string'&&/^[0-9a-f]{64}$/.test(x.model_sha256);
 const agents={cld:['merlin','socrates','athena_CLD'],sfd:['merlin','socrates','themis','athena_SFD']};
-export const validConversation=x=>keys(x,['mode','agent','provider'])&&Object.hasOwn(agents,x.mode)&&agents[x.mode].includes(x.agent)&&text(x.provider);
+export const validConversation=x=>keys(x,['mode','agent','provider'])&&typeof x.mode==='string'&&Object.hasOwn(agents,x.mode)&&agents[x.mode].includes(x.agent)&&text(x.provider);
 export const validTurn=x=>keys(x,['runtime_session_id','message','revision','model_sha256'])&&typeof x.runtime_session_id==='string'&&/^sess_[a-f0-9]{32}$/.test(x.runtime_session_id)&&text(x.message,24000)&&ref(x);
 export function validConversationEvent(x){
  if(!obj(x))return false;

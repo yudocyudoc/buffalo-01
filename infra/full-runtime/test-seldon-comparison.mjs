@@ -23,7 +23,10 @@ export function createSeldonFixture(){
    assert.equal(model,GEMMA);
    assert.deepEqual(wire.response_format,{type:'json_schema',json_schema:schema});
    const system=wire.messages.find(m=>m.role==='system')?.content;
-   assert.equal(system,engine==='seldon-mentor'?SeldonBrain.MENTOR_SYSTEM_PROMPT:engine==='seldon'?SeldonBrain.DEFAULT_SYSTEM_PROMPT:SeldonILEUserBrain.DEFAULT_SYSTEM_PROMPT);
+   const originalSystem=engine==='seldon-mentor'?SeldonBrain.MENTOR_SYSTEM_PROMPT:engine==='seldon'?SeldonBrain.DEFAULT_SYSTEM_PROMPT:SeldonILEUserBrain.DEFAULT_SYSTEM_PROMPT;
+   // Original LLMWrapper adds its JSON instruction only if no message mentions JSON.
+   const mentionsJson=[originalSystem,...wire.messages.filter(m=>m.role!=='system').map(m=>m.content)].some(x=>/json/i.test(x));
+   assert.equal(system,originalSystem+(mentionsJson?'':'\n\nRespond with valid JSON.'));
    const payload=comparisonRequest(engine,prompt,runs);
    const user=wire.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n\n');
    assert(user.includes(payload.behaviorContent),'EXACT_RECOVERED_BEHAVIOR');

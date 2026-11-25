@@ -1,4 +1,4 @@
-# Buffalo Full: original qualitative remote smoke (prepared; not executed)
+# Buffalo Full: original qualitative remote smoke (first authorized attempt: inconclusive runtime failure)
 
 This independent increment starts from merged #83. #82 established five offline upstream cases and original Merlin/REST CLD generation using a controlled provider. This smoke is **one real REST case** only, not a general Gemma quality benchmark or a remote Merlin tool-selection test.
 
@@ -25,4 +25,11 @@ Parallel persistence work (#84) is independent; this branch intentionally does n
 
 ## Image dependency correction
 
-Initial [CI image job 139034563486](https://github.com/yudocyudoc/buffalo-01/actions/runs/45564101069/job/139034563486) failed importing `pluralize` while the native integration passed. The original evaluator and its name matcher require this package; the image uses `npm ci --omit=dev`. Promote only the existing locked `pluralize` 8.0.0 dependency to production, retaining its version and integrity and leaving all other lock entries unchanged. Do not install the full development dependency set, change upstream evaluator semantics, or weaken the offline image test. Correction is pending CI; no real inference occurred.
+Initial [CI image job 139034563486](https://github.com/yudocyudoc/buffalo-01/actions/runs/45564101069/job/139034563486) failed importing `pluralize` while the native integration passed. The original evaluator and its name matcher require this package; the image uses `npm ci --omit=dev`. Promote only the existing locked `pluralize` 8.0.0 dependency to production, retaining its version and integrity and leaving all other lock entries unchanged. Do not install the full development dependency set, change upstream evaluator semantics, or weaken the offline image test. Correction passed offline CI and integrated #85 was merged; the subsequent authorized remote attempt is recorded below.
+
+
+## Observed remote outcome — 2026-11-25 UTC
+
+[Run 45568126474](https://github.com/yudocyudoc/buffalo-01/actions/runs/45568126474), [job 139047848311](https://github.com/yudocyudoc/buffalo-01/actions/runs/45568126474/job/139047848311), [artifact 15001108616](https://github.com/yudocyudoc/buffalo-01/actions/runs/45568126474/artifacts/15001108616). Source 6f63d0c43bc6c9d2b60ebcfdc59b386c1c2c831a. Downloaded and inspected exact archive; remote-receipt.json SHA-256 a899bdd988000f0e092c8266b8325f02f6feca07be424d8458f276f1c3bab1d0; cleanup.json SHA-256 13ad37de7af1a621217cf3e959f5eddcda4e26a719c99fefe1a2ef27f02d2170.
+
+Terminal operator status RUNTIME_FAILURE, failure_stage GENERATE, failure_code REMOTE_EXECUTION_FAILURE. Claimed 07:39:42.070Z; finished 07:42:58.179Z. Binding receipt stage BINDING_INVOKE, status RESERVED, usage null, request_bytes 6912, max_completion_tokens 8192, exact frozen qualitative schema hash e1040c3a83801ee0feda28a5e0aaec6a78d5df6f0fcbdf0e9e66914446a46ea8. No returned model, response status, provider terminal receipt, or verified consumption. The approximately 196-second claim-to-finish interval is consistent with the 180-second generate timeout plus startup/cleanup, but does not prove timeout or its location. Distinguish reserved/possibly consumed from completed inference. Do not infer a semantic failure, do not score the case, and do not reuse this spent reservation. Original evaluator step skipped. Stop confirmed and cleanup status ZERO_ACTIVE_AND_DISABLED_NO_AI_OR_SECRETS. No rerun authorized. Archive expires; preserve reviewed receipt separately if needed. Before a new attempt, improve stage-specific time/abort and provider terminal receipt observability without changing the frozen acceptance case or weakening isolation.

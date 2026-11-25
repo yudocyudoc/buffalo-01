@@ -75,7 +75,9 @@ router.post("/:engine/generate", async (req, res) => {
     }
 
     const authenticationKey = process.env.AUTHENTICATION_KEY;
-    if (authenticationKey && !suppliesOwnCredentials(req)) {
+    // Buffalo's private binding spends the operator's budget, not a client's key.
+    // Keep upstream BYOK behavior unchanged outside this explicitly enabled runtime.
+    if (authenticationKey && (process.env.BUFFALO_FULL_ENGINE_PROVIDER === 'true' || !suppliesOwnCredentials(req))) {
         if (!req.header('Authentication') || req.header('Authentication') !== authenticationKey) {
           return res.status(403).send({ "success": false, message: 'Unauthorized, please pass valid Authentication header or provide a valid API key.' });
         }

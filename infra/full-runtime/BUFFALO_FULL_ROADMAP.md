@@ -1,0 +1,43 @@
+# Buffalo Full — delivery roadmap and acceptance boundaries
+
+Documentation cutoff: 2026-11-25 UTC. Source: the project documents **BUFFALO_HOJA_DE_RUTA.md** and **BUFFALO_PLAN_DE_IMPLEMENTACION.md** (Astra, reviewed against #81 HEAD `57bfbdfd`). This is an operational summary, not a replacement for the detailed project sources. Future PR numbering is deliberately not reserved.
+
+## Product objective
+
+Port original SD-AI as a standalone private product on Cloudflare: Merlin, Socrates, Themis, Athena CLD/SFD; original engines, tools, formats and evaluations; a compatible client that supplies model state, simulations, diagnostics and feedback according to original contracts. A user must be able to generate, edit, simulate, discuss and resume a project later, with explanations grounded in the correct model revisions and actual run evidence. Cloudflare supplies isolation, access control, inference transport, persistence and consumption controls. No new Arena, CEI, ATMS or advanced Buffalo Persistent features in this delivery.
+
+## Verified baseline
+
+- #79 merged: original LLMWrapper route and schema-agnostic native binding adapter; 25/25 and functional CI. Agent lane separately demonstrated a real remote Merlin edit and confirmed model recovery.
+- #80 merged: one real Gemma quantitative REST result accepted by the original engine, with observed usage and cleanup. Original workflow failed v1 structural assertion, before PySD.
+- #81 draft: independent replay of unchanged original result, exact trajectory, original schema identity, 30/30 contracts, native/image/upstream/Go all passed on `57bfbdfd`. No second inference. See [evidence](REMOTE_QUANTITATIVE_SMOKE.md).
+- Scope: one real quantitative REST case, not broad model quality, full real agent autonomy, or Stella simulation equivalence.
+
+## Ordered milestones (proposed)
+
+| Milestone | Delivery and acceptance |
+|---|---|
+| 1. Original qualitative generation | Start with upstream qualitative engine/REST/schema and selected original qualitativeTranslation/conformance cases. Include a positive link phrased with decreases, a balancing cycle and reinforcing cycle. Compare directed graph and polarities independent of order; check instruction constraints separately. Negative controls: reversed link, wrong polarity, invented link, violated variable count. Original CLD agent WebSocket tool path, accepted model revision and reopen; retain upstream gates. Controlled provider first, separately authorized real smoke later. Report denominators, input, expected/observed graphs, differences and receipt. |
+| 2. Minimal project continuity (may begin alongside 1) | Two revisions and two simulation runs, completed conversation turns and confirmed tool traces survive Container destruction. Bind runs to exact revision/hash and simulator settings; compare Demand 5→6 and retrieve both series without resupplying them. Preserve existing model-only projects and ETag conflict checks. Test concurrent writes, duplicate operation identity, interrupted tool/ack, project isolation. No blind retry of ambiguous operations; genuinely new experiments get new identity. |
+| 3. Seldon family | Original Seldon, mentor, ILE and experimental variants according to their contracts. Compare two known runs, then persistent runs. Read-only discussion preserves model hash. If dominance requested without feedback, request evidence rather than invent it. Test interpretation of known feedback separately from backend calculation. |
+| 4. Documentation and narrative | Original documentation and LTM narrative engines; preserve equations, units and links; correct references, periods and polarities, joint dominance where applicable. Reject mixed-run feedback and trajectories. |
+| 5. Remaining original capabilities | Inventory 21 engine directories, 25 built-in tools and five configurations, distinguishing test/experimental engines and client-defined tools. Verify Go causal-chains, Python causal-decoder, Simlin, formats, files/RAG/embeddings, dynamic tools, visualization and multimedia separately. Record supported modes, dependencies, provider and evidence; catalogue presence alone is not functional proof. |
+| 6. Reproducible release | Clean-install private REST/WS product journey through generation, editing, simulation, comparison, narrative and reopen; restore and isolate projects; versioned upstream evaluations and coverage matrix including exceptions and consumption. |
+
+## Shared architecture and scientific constraints
+
+Retain upstream app.js, agents, engines, sandbox, REST/WebSocket/SD-JSON and tool availability gates. Extend only the transport needed by the tested original contract. Project-scoped access and cumulative inference budgets remain authoritative. Preserve original schemas, observed usage and invocation IDs; content equality is not replay identity.
+
+Start persistence with project Durable Object revisions and minimal indices for completed turns, confirmed tool calls, runs and evidence references. Design bounded migration compatible with current projects. Associate exact input/output revisions, simulator/version, integration method, dt, units, series, diagnostics and feedback provenance; use object storage by digest for large artifacts if needed. Confirm durable writes before acknowledgement; reconcile partial writes; never resurrect pending tool calls. Keep D1 smoke ledger operational, not product memory. No cross-project knowledge or general orchestration expansion.
+
+Distinguish missing unitWarnings/errors from a checked empty list. Preserve original scientific calculation and its provenance; language output cannot substitute for simulator results or feedback. The project's source plan cites the original qualitative benchmark (24 translation and 18 conformance cases, 11 LLMs); compare only matching evaluation conditions and explicitly label smaller samples. For future LTM calculation, reproduce published corrected equivalent-flow examples before claiming backend fidelity; evaluate Seldon narration independently. For system change, use the Bass example to distinguish relative loop dominance from magnitude of change, with tolerance and intervals agreed beforehand. A reference feedback package is not evidence of a working LTM backend.
+
+## Immediate work package
+
+1. Close #81 documentation and preserve the original failure plus replay pass (this documentation change); merge only with approval and reviewed CI.
+2. Archive authorized synthetic test model/receipt and provenance durably before the temporary artifact expires. This remains pending, no storage changes authorized here.
+3. Derive Demand=6 from the unchanged saved model, require Inflow=6 and Inventory=[10,16,22,28,34]; hard-code Inflow=5 as negative control. No new inference. Record the parent/derived revision and results separately.
+4. Implement qualitative offline path with original cases and evaluator contracts; separately budget and authorize the real remote trial.
+5. In parallel design the revision–run–session contract needed for minimal continuity and later Seldon. Do not implement a generalized persistent laboratory prematurely.
+
+Per PR: define contract and controls, run relevant native/image and upstream suites; preserve post-hoc criteria and historical results. Per remote trial: exact source/project/model/expiry/budget, distinct authorization, measured receipt and independently verified cleanup, no automatic retry. Per scientific result: versioned model, scenario, simulator and evidence; distinguish fixture, remote provider output and actual calculation. This roadmap grants no merge, deployment or inference authorization.

@@ -27,11 +27,13 @@ export async function loadComparison(request,runIds){
   runs.push({id,record,model});
  }
  const [a,b]=runs;
- const equal=(x,y)=>JSON.stringify(x)===JSON.stringify(y);
- require(equal(a.record.series.time,b.record.series.time)&&
-  equal(Object.keys(a.record.series).sort(),Object.keys(b.record.series).sort())&&
-  equal(a.record.settings,b.record.settings)&&equal(a.record.execution,b.record.execution)&&
-  equal(a.record.simulator,b.record.simulator),'INCOMPARABLE_RUNS');
+ const sameSequence=(left,right)=>left.length===right.length&&left.every((value,i)=>value===right[i]);
+ // validRun checks the exact field set and scalar types of each metadata group.
+ const sameFields=(left,right)=>Object.keys(left).every(key=>left[key]===right[key]);
+ require(sameSequence(a.record.series.time,b.record.series.time)&&
+  sameSequence(Object.keys(a.record.series).sort(),Object.keys(b.record.series).sort())&&
+  sameFields(a.record.settings,b.record.settings)&&sameFields(a.record.execution,b.record.execution)&&
+  sameFields(a.record.simulator,b.record.simulator),'INCOMPARABLE_RUNS');
  return runs;
 }
 export function comparisonRequest(engine,prompt,runs){

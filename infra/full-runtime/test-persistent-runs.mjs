@@ -110,6 +110,21 @@ export async function recoverPersistentRuns(request,other,state){
  await assertStatus(other('/project/runs/'+id2),404);
  await assertStatus(other('/project/model/revisions/'+rev2),404);
  assert.equal((await parse(await request('/project/runs'))).runs.length,2);
+ // Exercise the full page boundary on a different project. These are
+ // deliberate repeated experiments with identical reported results, not
+ // provider retries; every distinct UUID is a separate record.
+ const independent=await assertStatus(other('/project/model',{method:'PUT',headers:{'if-none-match':'*'},body:JSON.stringify(input1.model)}),201);
+ const independentBody={...firstRun,revision:1,model_sha256:independent.headers.get(hashHeader)};
+ const independentIds=Array.from({length:51},()=>randomUUID());
+ for(const id of independentIds)await assertStatus(write(other,id,independentBody),201);
+ const page1=await parse(await other('/project/runs'));
+ assert.equal(page1.runs.length,50);assert.notEqual(page1.next_after,null);
+ const page2=await parse(await other('/project/runs?after='+page1.next_after));
+ assert.equal(page2.runs.length,1);assert.equal(page2.next_after,null);
+ assert.deepEqual([...page1.runs,...page2.runs].map(r=>r.run_id),independentIds);
+ await assertStatus(request('/project/runs/'+independentIds[0]),404);
+ assert.equal((await parse(await request('/project/runs'))).runs.length,2);
+
  console.log('FULL_PERSISTENT_RUNS_REOPENED_WITHOUT_RESIMULATION '+JSON.stringify({
   revisions:[rev1,rev2],hashes:[input1.model_sha256,input2.model_sha256],
   run_ids:[id1,id2],Inventory:[restored1.series.Inventory,restored2.series.Inventory]

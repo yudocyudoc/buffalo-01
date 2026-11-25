@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {engineCompletion} from './engine-gateway.mjs';
+import {digest} from './provider-wire.mjs';
 import {ENGINE_ALIAS,ENGINE_ENDPOINT,ENGINE_MAX_TOKENS} from './engine-protocol.mjs';
 import {GEMMA,GEMMA_OBSERVED_ALIAS} from '../private-merlin/gemma-response.mjs';
 
@@ -30,6 +31,7 @@ test('original engine uses Gemma with the bare upstream schema, not the virtual 
  const {response,receipt}=await run(answer);
  assert.equal(response.status,200);assert.equal(receipt.status,'OK');
  assert.equal(receipt.channel,'original-engine');
+ assert.equal(receipt.schema_sha256,await digest(JSON.stringify(schema)));
  assert.equal(receipt.response_model,GEMMA_OBSERVED_ALIAS);
  assert.deepEqual((await response.json()).choices[0].message,answer().choices[0].message);
 });

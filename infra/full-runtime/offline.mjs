@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
+import {LLMWrapper} from '../../utilities/LLMWrapper.js';
+import {verifyQuantitative} from './verify-remote-quantitative.mjs';
+import {PASS as SMOKE_MODEL_RETURNED} from './remote-quantitative.mjs';
 import {once} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -149,14 +152,24 @@ try{
   await stop();assert.equal(calls,0);console.log('FULL_ORIGINAL_REST_AND_FIVE_CONFIGURATIONS');
   proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
   start(true);await rest(base,key);
-  await testOriginalEngine(base,key);assert.equal(engineCalls,2);assert.equal(calls,0);
+  const smokeModel=await testOriginalEngine(base,key);assert.equal(engineCalls,2);assert.equal(calls,0);
   const engineReceiptResponse=await mf.dispatchFetch('http://localhost/project/inference/1');
   assert.equal(engineReceiptResponse.status,200);
   const engineReceipt=await engineReceiptResponse.json();
   assert.equal(engineReceipt.channel,'original-engine');assert.equal(engineReceipt.status,'OK');
   assert.equal(engineReceipt.response_format,'json_schema');assert.equal(engineReceipt.neurons,1.5);
+  assert.equal(engineReceipt.schema_sha256,createHash('sha256').update(JSON.stringify(LLMWrapper.prototype.generateQuantitativeSDJSONResponseSchema(false,false,false,false).toJSONSchema())).digest('hex'));
   assert.equal(engineReceipt.predicates.schema_valid,true);assert.equal(engineReceipt.predicates.total_tokens_valid,true);
   assert.deepEqual(engineReceipt.usage,{prompt_tokens:500,completion_tokens:100,total_tokens:null});
+  // Run the very same verifier that will consume a real smoke receipt.
+  // All inputs here are explicitly controlled-provider fixtures.
+  const smokeReceipt={fixture_only:true,status:SMOKE_MODEL_RETURNED,container_stopped:true,single_reservation:true,inference:engineReceipt,model:smokeModel};
+  const verified=await verifyQuantitative(smokeReceipt);
+  assert.deepEqual(verified.Inventory,[10,15,20,25,30]);
+  await assert.rejects(verifyQuantitative({...smokeReceipt,inference:{...engineReceipt,schema_sha256:'0'.repeat(64)}}),/EXACT_ORIGINAL_SCHEMA_HASH/);
+  const wrongModel=structuredClone(smokeModel);wrongModel.variables.find(v=>v.name==='Demand').equation='6';
+  await assert.rejects(verifyQuantitative({...smokeReceipt,model:wrongModel}));
+  console.log('FULL_QUANTITATIVE_SMOKE_VERIFIER_OFFLINE '+JSON.stringify({time:verified.time,Inventory:verified.Inventory,Demand:verified.Demand,Inflow:verified.Inflow}));
   const repeatReceipt=await (await mf.dispatchFetch('http://localhost/project/inference/2')).json();
   assert.equal(repeatReceipt.status,'OK');assert.equal(repeatReceipt.request_sha256,engineReceipt.request_sha256);
   assert.notEqual(repeatReceipt.invocation_id,engineReceipt.invocation_id);

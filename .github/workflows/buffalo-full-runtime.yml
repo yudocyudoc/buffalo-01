@@ -5,6 +5,7 @@ on:
       - 'infra/full-runtime/**'
       - '.github/workflows/buffalo-full-runtime.yml'
       - '.github/workflows/buffalo-full-edit-manual.yml'
+      - '.github/workflows/buffalo-full-quantitative-manual.yml'
       - 'app.js'
       - 'agent/**'
       - 'routes/**'
@@ -32,6 +33,13 @@ jobs:
           test "$(docker inspect --format '{{.Config.User}}' full)" = node
           docker exec full node infra/full-runtime/test-rest.mjs
           docker exec full node infra/full-runtime/test-simulation-image.mjs
+          docker exec full node infra/full-runtime/test-smoke-receipt-fixture.mjs > "$RUNNER_TEMP/quantitative-fixture.json"
+          chmod 644 "$RUNNER_TEMP/quantitative-fixture.json"
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,source=$RUNNER_TEMP/quantitative-fixture.json,target=/tmp/remote-receipt.json,readonly" \
+            buffalo-full:offline node infra/full-runtime/verify-remote-quantitative.mjs /tmp/remote-receipt.json --fixture > "$RUNNER_TEMP/quantitative-fixture-result.json"
+          node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(x.status!=="FULL_REMOTE_QUANTITATIVE_PYSD_PASS"||x.evidence_source!=="controlled-provider-fixture") process.exit(1); console.log("FULL_QUANTITATIVE_SMOKE_VERIFIER_IMAGE_OFFLINE "+JSON.stringify(x))' "$RUNNER_TEMP/quantitative-fixture-result.json"
   native:
     runs-on: ubuntu-latest
     timeout-minutes: 15

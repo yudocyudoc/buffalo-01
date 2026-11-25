@@ -20,7 +20,7 @@ export function validInference(r){
  validInvocationId(r.invocation_id)&&/^[a-f0-9]{64}$/.test(r.request_sha256)&&
  /^[a-f0-9]{64}$/.test(r.schema_sha256)&&r.predicates?.schema_valid===true&&r.predicates?.total_tokens_valid===true&&
  r.predicates?.json_valid===true&&Array.isArray(r.failed_predicates)&&r.failed_predicates.length===0&&
- integer(r.usage?.prompt_tokens)&&integer(r.usage?.completion_tokens)&&r.usage.completion_tokens<=r.max_completion_tokens&&
+ integer(r.usage?.prompt_tokens)&&integer(r.usage?.completion_tokens)&&integer(r.max_completion_tokens)&&r.usage.completion_tokens<=r.max_completion_tokens&&
  r.max_completion_tokens<=8192&&Number.isFinite(r.neurons)&&r.neurons>=0;
 }
 export async function runQuantitative(env){

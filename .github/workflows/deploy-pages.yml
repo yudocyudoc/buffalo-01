@@ -4,24 +4,40 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-pages.yml'
 
-# Allow the GITHUB_TOKEN to deploy to Pages.
+# Deployment permissions are granted only to the deployment job.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Allow one concurrent deployment; don't cancel an in-progress run.
 concurrency:
-  group: pages
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Pages
+        if: github.event_name != 'pull_request'
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Test base-path rules
+        run: node --test frontend/scripts/pages-base.test.mjs
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
@@ -41,19 +57,30 @@ jobs:
       # Runs scripts/generateData.mjs (discovers engines/agents/evals and
       # emits src/generated/*.json) and then `vite build`.
       - name: Build site
-        run: npm run build
+        env:
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          # PRs validate the project-page path without consulting or publishing Pages.
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            export PAGES_BASE_PATH="/${GITHUB_REPOSITORY#*/}"
+          fi
+          npm run build
+          node scripts/check-pages-build.mjs
         working-directory: frontend
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment:
       name: github-pages

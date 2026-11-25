@@ -91,6 +91,4 @@ installs root + frontend dependencies, runs `npm run build`, and publishes
 **One-time repo setup:** in the repository's **Settings → Pages**, set
 **Source** to **"GitHub Actions"**. No manual `gh-pages` step is needed.
 
-The site is served as a project page under `/sd-ai/`; the Vite `base` is set to
-`/sd-ai/` and routing uses `HashRouter`, so it works on GitHub Pages without any
-server-side rewrite configuration.
+The deployment reads the actual site base path from `actions/configure-pages` and passes it to Vite as `PAGES_BASE_PATH` (including an empty value for root/custom-domain sites). Upstream uses `/sd-ai/`; the Buffalo fork uses `/buffalo-01/` when configured as a project page. Local development retains the upstream default unless the variable is set. Routing uses `HashRouter`, so no server-side rewrite is needed. PRs changing the frontend or workflow build and verify generated index asset paths without deploying; push/manual builds use the configured Pages path. Documentation links identifying upstream remain upstream links. The static documentation site is not the Buffalo runtime UI.

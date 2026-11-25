@@ -11,7 +11,7 @@ from benchmark import load_native, cycle
 
 XMILE = """<?xml version="1.0"?>
 <xmile xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" version="1.0">
-<header><name>A1 pulse</name></header>
+<header><smile version="1.0" namespace="std"/><name>A1 pulse</name><vendor>Buffalo research</vendor><product version="1.0">A1 synthetic control</product></header>
 <sim_specs method="Euler" time_units="Day"><start>0</start><stop>5</stop><dt>1</dt></sim_specs>
 <model><variables>
 <stock name="x"><eqn>2</eqn><inflow>f</inflow></stock>

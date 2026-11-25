@@ -12,8 +12,9 @@ import {GEMMA} from '../private-merlin/gemma-response.mjs';
 import {rest} from './test-rest.mjs';
 import {session,assertDemand} from './test-session.mjs';
 import {simulationModel,simulationScenario} from './simulation-fixture.mjs';
+import {createSimulationClient} from './simulation-client.mjs';
 import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
-import {quantitativeFixture,testOriginalEngine} from './test-engine.mjs';
+import {quantitativeFixture,testOriginalEngine,agentPrompt} from './test-engine.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -45,10 +46,10 @@ const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'16',ENGINE_INFERENCE_ENABLED:'true',
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'22',ENGINE_INFERENCE_ENABLED:'true',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk};
-let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0;
+let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null;
 const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
 const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...options,
@@ -79,14 +80,17 @@ const simulationSteps=[
 ];
 function fixture(model,wire){
   assert.equal(model,GEMMA);
-  if(wire.response_format){engineCalls++;return quantitativeFixture(model,wire);}
+  if(wire.response_format){engineCalls++;return quantitativeFixture(model,wire,generationOffset===null?undefined:agentPrompt);}
   calls++;
   if(!wire.tools)return {model,usage:{prompt_tokens:12,completion_tokens:2049,neurons:1.25},
     choices:[{finish_reason:'length',message:{role:'assistant',content:'truncated fixture'}}]};
-  const local=calls-scenarioOffset;
+  const local=calls-(generationOffset??scenarioOffset);
   if(local>1)assert(wire.messages.some(m=>m.role==='tool' && m.tool_call_id==='step-'+(calls-1)));
   const message={role:'assistant'};
-  const step=(scenarioOffset?simulationSteps:scriptedTools)[local-1];
+  const generationSteps=[['generate_quantitative_model',{prompt:agentPrompt,difficulty:'normal',parameters:{allowArrays:false,allowModules:false,allowSubTypes:false}}],
+    ['edit_variables',{operation:'update',data:[{name:'Demand',equation:'6'}]}],['run_model',{}],
+    ['get_variable_data',{variableNames:['Inventory'],runIds:['run-1'],detailed:true}]];
+  const step=(generationOffset!==null?generationSteps:scenarioOffset?simulationSteps:scriptedTools)[local-1];
   if(step){
     const [name,originalArgs]=step;
     let args=originalArgs;
@@ -97,7 +101,9 @@ function fixture(model,wire){
     assert(wire.tools.some(t=>t.function.name===name));
     message.tool_calls=[{type:'function',id:'step-'+calls,function:{name,arguments:JSON.stringify(args)}}];
   }else{
-    if(scenarioOffset){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
+    if(generationOffset!==null){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
+      const parsed=JSON.parse(result.content);assert.equal(typeof parsed.filePath,'string');}
+    else if(scenarioOffset){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
       const parsed=JSON.parse(result.content);assert.deepEqual(JSON.parse(parsed.content)['run-1'].Inventory,[10,15,20,25,30]);}
     message.content='Offline fixture acknowledges operation.';
   }
@@ -147,12 +153,30 @@ try{
   await session({mode:'sfd',key,model:simulationModel(),agent:'merlin',edit:true,scenario,
     save:async m=>{scenario.snapshots.push(structuredClone(m));}});
   assert.equal(calls,14);
+  // An empty client model invokes the ORIGINAL sandboxed generation tool, then
+  // edits and simulates the generated model and persists each confirmed update.
+  generationOffset=calls;
+  const sim=createSimulationClient(),snapshots=[];
+  await session({mode:'sfd',key,model:{variables:[],relationships:[]},agent:'merlin',edit:true,
+    scenario:{message:agentPrompt+' Then edit Demand to 6 and simulate.',capabilities:{supportsArrays:false,supportsModules:false,supportsSubTypes:false},
+      clientRequest:(m,model)=>sim.request(m,model),
+      verify(model,tools){
+        assertDemand(model,'6');assert(snapshots.some(m=>m.variables.some(v=>v.name==='Demand'&&v.equation==='5')));
+        for(const name of ['generate_quantitative_model','edit_variables','run_model','get_variable_data'])
+          assert(tools.some(t=>t.event==='tool_call_completed'&&t.name===name&&t.isError===false),name);
+        const data=sim.runs.get('run-1')?.data;
+        assert.deepEqual(data?.time,[0,1,2,3,4]);assert.deepEqual(data?.Inventory,[10,16,22,28,34]);
+        console.log('FULL_ORIGINAL_AGENT_GENERATE_EDIT_SIMULATE '+JSON.stringify({time:data.time,Inventory:data.Inventory}));
+      }},
+    save:async m=>{snapshots.push(structuredClone(m));const saved=await doc({method:'PUT',headers:{'if-match':etag},body:JSON.stringify(m)});
+      assert.equal(saved.status,204);etag=saved.headers.get('etag');}});
+  assert.equal(engineCalls,2);assert.equal(calls,19);
   const rejectedRequest=JSON.stringify({model:GEMMA,messages:[{role:'user',content:'fixture'}],tools:[]});
   assert.equal((await infer(rejectedRequest)).status,422);
   const lastAttempt=calls+engineCalls;
   await stop();await mf.dispose();mf=new Miniflare(options);await mf.ready;
   const saved=await doc();assert.equal(saved.headers.get('etag'),etag);
-  const recovered=await saved.json();assertDemand(recovered,'5');
+  const recovered=await saved.json();assertDemand(recovered,'6');
   const receipt=await mf.dispatchFetch('http://localhost/project/inference/'+lastAttempt);
   assert.equal(receipt.status,200);
   const diagnostic=await receipt.json();

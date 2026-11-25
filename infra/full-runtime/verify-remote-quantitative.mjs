@@ -34,9 +34,11 @@ export async function verifyQuantitative(receipt){
  assert.equal(hash(model),modelHash,'MODEL_MUTATED');
  return {status:'FULL_REMOTE_QUANTITATIVE_PYSD_PASS',schema_sha256:expectedSchemaHash,
   time:data.time,Inventory:data.Inventory,Demand:data.Demand,Inflow:data.Inflow,model_sha256:modelHash,
-  simulation_location:'github-runner-original-pysd',provider_model:receipt.inference.response_model};
+  simulation_location:'github-runner-original-pysd',provider_model:receipt.inference.response_model,
+  evidence_source:receipt.fixture_only===true?'controlled-provider-fixture':'remote-receipt'};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const receipt=JSON.parse(readFileSync(process.argv[2],'utf8'));
+ assert.equal(receipt.fixture_only===true,process.argv[3]==='--fixture','FIXTURE_MODE_MISMATCH');
  console.log(JSON.stringify(await verifyQuantitative(receipt)));
 }

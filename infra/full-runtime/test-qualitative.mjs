@@ -32,8 +32,11 @@ export function qualitativeFixture(model,wire){
   let message,finish='stop';
   if(wire.response_format){
     assert.deepEqual(wire.response_format,{type:'json_schema',json_schema:schema});
-    const example=cases.find(c=>wire.messages.some(m=>m.role==='user'&&m.content.includes(c.additionalParameters.backgroundKnowledge))
-      &&wire.messages.some(m=>m.role==='user'&&m.content===c.prompt));
+    // The upstream SDK lane joins the engine's background, user request and
+    // feedback instruction into one user message separated by blank lines.
+    const userText=wire.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n\n');
+    const example=cases.find(c=>userText.includes(c.additionalParameters.backgroundKnowledge)
+      &&userText.includes(c.prompt));
     assert(example,'original case prompt and background must reach the binding');
     const edges=example===road?roadEdges:example.expectations;
     const relationships=edges.map(edge=>({...edge,reasoning:'Controlled case',polarityReasoning:'Controlled sign'}));

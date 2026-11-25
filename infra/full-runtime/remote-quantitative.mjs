@@ -1,6 +1,6 @@
 // Private, explicitly authorized smoke operator. Not a product restriction.
 import {validInvocationId} from './engine-protocol.mjs';
-import {GEMMA,acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
+import {acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
 export const ID='one-shot-buffalo-full-quantitative-v1';
 export const PROJECT='buffalo-full-quantitative-v1';
 export const LIMIT=1;
@@ -50,7 +50,7 @@ export async function runQuantitative(env){
    stage='GENERATE';
    const response=await req('/api/v1/engines/quantitative/generate',{method:'POST',
      headers:{'content-type':'application/json'},body:JSON.stringify({prompt:PROMPT}),
-     signal:AbortSignal.timeout(Math.min(180000,g.expires-Date.now()))});
+     signal:AbortSignal.timeout(Math.max(1,Math.min(180000,g.expires-Date.now())))});
    evidence.rest_status=response.status;
    check(response.ok,'REST_HTTP');
    const result=await response.json();evidence.rest_success=result.success===true;

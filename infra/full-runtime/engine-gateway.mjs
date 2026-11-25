@@ -1,4 +1,4 @@
-import {ENGINE_ALIAS,ENGINE_ENDPOINT,ENGINE_MAX_TOKENS} from './engine-protocol.mjs';
+import {ENGINE_ALIAS,ENGINE_ENDPOINT,ENGINE_MAX_TOKENS,validInvocationId} from './engine-protocol.mjs';
 import {GEMMA,acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
 import {boundedJSON} from '../private-merlin/gateway.mjs';
 import {digest} from '../private-merlin/protocol.mjs';
@@ -9,12 +9,12 @@ const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const finishReasons=new Set(['stop','length','content_filter','tool_calls','function_call']);
 
 function engineWire(body){
-  if(!object(body)||body.model!==ENGINE_ALIAS||body.stream!==false||
+  if(!object(body)||body.model!==ENGINE_ALIAS||!validInvocationId(body.invocation_id)||body.stream!==false||
      !Array.isArray(body.messages)||!body.messages.length||
      !body.messages.every(m=>['system','user','assistant'].includes(m?.role)&&typeof m.content==='string')||
      !Number.isInteger(body.max_completion_tokens)||body.max_completion_tokens<1||
      body.max_completion_tokens>ENGINE_MAX_TOKENS||
-     Object.keys(body).some(k=>!['model','messages','stream','max_completion_tokens','response_format','chat_template_kwargs'].includes(k)))
+     Object.keys(body).some(k=>!['model','messages','stream','max_completion_tokens','response_format','chat_template_kwargs','invocation_id'].includes(k)))
     throw Error('INVALID_ENGINE_REQUEST');
   const format=body.response_format;
   if(format!==undefined&&(!object(format)||
@@ -57,11 +57,11 @@ function diagnostic(result,wire){
 }
 export async function engineCompletion(request,ai,reserve,record){
   if(request.url!==ENGINE_ENDPOINT||request.method!=='POST'||!ai?.run)return reject(403);
-  let wire;
-  try{wire=engineWire(await boundedJSON(request.body,512*1024));}catch{return reject(400);}
+  let wire,invocationId;
+  try{const body=await boundedJSON(request.body,512*1024);wire=engineWire(body);invocationId=body.invocation_id;}catch{return reject(400);}
   const text=JSON.stringify(wire),request_bytes=new TextEncoder().encode(text).length;
   if(request_bytes>131072)return reject(413);
-  const meta={channel:'original-engine',request_sha256:await digest(text),request_bytes,
+  const meta={channel:'original-engine',invocation_id:invocationId,request_sha256:await digest(text),request_bytes,
     response_format:wire.response_format?.type??'text',max_completion_tokens:wire.max_completion_tokens};
   const attempt=await reserve({...meta,stage:'BINDING_INVOKE',status:'RESERVED',usage:null});
   if(!attempt)return reject(403);

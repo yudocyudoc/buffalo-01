@@ -10,7 +10,8 @@ Port original SD-AI as a standalone private product on Cloudflare: Merlin, Socra
 
 - #79 merged: original LLMWrapper route and schema-agnostic native binding adapter; 25/25 and functional CI. Agent lane separately demonstrated a real remote Merlin edit and confirmed model recovery.
 - #80 merged: one real Gemma quantitative REST result accepted by the original engine, with observed usage and cleanup. Original workflow failed v1 structural assertion, before PySD.
-- #81 draft: independent replay of unchanged original result, exact trajectory, original schema identity, 30/30 contracts, native/image/upstream/Go all passed on `57bfbdfd`. No second inference. See [evidence](REMOTE_QUANTITATIVE_SMOKE.md).
+- #81 merged at `76a38e927f38359c3dca2be5969902239ff98907`: independent replay of unchanged original result, exact trajectory, original schema identity, 30/30 contracts, native/image/upstream/Go all passed on `57bfbdfd`. No second inference. See [evidence](REMOTE_QUANTITATIVE_SMOKE.md).
+- #82 merged at `47bf11711a0a5fb4cda9d56e48144c44685cfea4`: original qualitative REST and Merlin CLD generation/reopen, three translation and two conformance cases with controlled provider, 30/30 and all CI passed. Real qualitative inference still pending.
 - Scope: one real quantitative REST case, not broad model quality, full real agent autonomy, or Stella simulation equivalence.
 
 ## Ordered milestones (proposed)
@@ -34,10 +35,10 @@ Distinguish missing unitWarnings/errors from a checked empty list. Preserve orig
 
 ## Immediate work package
 
-1. Close #81 documentation and preserve the original failure plus replay pass (this documentation change); merge only with approval and reviewed CI.
-2. Archive authorized synthetic test model/receipt and provenance durably before the temporary artifact expires. This remains pending, no storage changes authorized here.
-3. Derive Demand=6 from the unchanged saved model, require Inflow=6 and Inventory=[10,16,22,28,34]; hard-code Inflow=5 as negative control. No new inference. Record the parent/derived revision and results separately.
-4. Implement qualitative offline path with original cases and evaluator contracts; separately budget and authorize the real remote trial.
+1. #81 documentation and merge complete; preserve original failure plus replay pass.
+2. Archive the exact synthetic receipt/model and cleanup in [repository evidence](evidence/quantitative-45551954016/README.md); do not publish unnecessary deployment metadata. This archive is proposed in the intervention PR.
+3. Intervention implementation: derive Demand=6 from the unchanged archived model, require Inflow=6 and Inventory=[10,16,22,28,34]; hard-code Inflow=5 as an executable negative control. No new inference. Record the parent/derived revision and results separately; CI outcome pending.
+4. Qualitative offline path complete (#82); separately prepare, budget and authorize the real remote trial.
 5. In parallel design the revision–run–session contract needed for minimal continuity and later Seldon. Do not implement a generalized persistent laboratory prematurely.
 
 Per PR: define contract and controls, run relevant native/image and upstream suites; preserve post-hoc criteria and historical results. Per remote trial: exact source/project/model/expiry/budget, distinct authorization, measured receipt and independently verified cleanup, no automatic retry. Per scientific result: versioned model, scenario, simulator and evidence; distinguish fixture, remote provider output and actual calculation. This roadmap grants no merge, deployment or inference authorization.

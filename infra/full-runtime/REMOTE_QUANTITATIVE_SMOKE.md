@@ -45,9 +45,9 @@ V2 acceptance changes only the smoke verifier: one stock, one flow, named target
 
 [Native and image CI](https://github.com/yudocyudoc/buffalo-01/actions/runs/45554508294) passed, including 30/30 contract tests, equivalent auxiliary factorization and negative controls, original Merlin generation/edit/simulation and model reopen. [Upstream](https://github.com/yudocyudoc/buffalo-01/actions/runs/45554508204) and [Go](https://github.com/yudocyudoc/buffalo-01/actions/runs/45554508154) passed. The historical #80 run remains FAILED under v1; v2 is a separate post-hoc evaluation, not a retroactive pass. Together the remote receipt and offline replay demonstrate one real quantitative REST case only, not generalized quality or Cloudflare-side PySD.
 
-[Replay artifact 14994769404](https://github.com/yudocyudoc/buffalo-01/actions/runs/45554508506/artifacts/14994769404) has 30-day retention (reported expiration 2026-12-25T05:36:48Z). Durable archival of authorized evidence is still pending; hashes alone are not a substitute for the original bytes.
+[Replay artifact 14994769404](https://github.com/yudocyudoc/buffalo-01/actions/runs/45554508506/artifacts/14994769404) has 30-day retention (reported expiration 2026-12-25T05:36:48Z). The subsequent intervention increment archives the exact synthetic receipt and cleanup bytes in [repository evidence](evidence/quantitative-45551954016/README.md), without unnecessary infrastructure files.
 
-## Follow-up experiment (proposed, not executed)
+## Follow-up experiment (implemented, CI outcome pending)
 
 The base trajectory alone cannot discriminate a flow dependent on Demand from a hard-coded constant 5. Preserve the remote model and receipt unchanged. In a distinct derived revision set Demand=6; require Inflow=6 and Inventory=[10,16,22,28,34] using original PySD. Negative control: set Inflow=5 in a separate derived revision and require the intervention test to fail. Record parent hash, derived revision/hash, exact equation edit, simulation settings and observed series. No additional inference or Cloudflare deployment is needed. This is a prospective intervention test, distinct from the completed base replay.
 

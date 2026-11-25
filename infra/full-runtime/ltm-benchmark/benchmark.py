@@ -177,6 +177,43 @@ def xml_specs(data):
             "dt": step, "attributes": dict(s.attrib)}
 
 
+def prepare_source_xml(name, original, report):
+    """Repair only the byte-pinned Mai-Bab display attribute, never model semantics."""
+    try:
+        report["source_specs"] = xml_specs(original)
+        report["source_specs_origin"] = "original"
+        return original
+    except ET.ParseError as error:
+        report["original_xml_error"] = {"message": str(error), "position": list(error.position)}
+        if name != "maibab":
+            raise
+        require(blob(original) == MANIFEST["fixtures"]["maibab"][1], "Mai-Bab source drift")
+        require(error.position == (237, 526), "unexpected XML parse position")
+        bad = b' header_font_family="\xd0R^\xff\x7f"'
+        require(original.count(bad) == 1, "unexpected corrupt attribute count")
+        offset = original.index(bad)
+        require(offset == 17656, "unexpected corrupt attribute offset")
+        start = original.rfind(b"<table ", 0, offset)
+        end = original.find(b"/>", offset)
+        require(start >= 0 and end > offset and b"<" not in original[start+1:end]
+                and b">" not in original[start:end], "not a self-closing table attribute")
+        derived = original[:offset] + original[offset+len(bad):]
+        require(derived[:offset] + bad + derived[offset:] == original, "nonreversible view repair")
+        root = ET.fromstring(derived)
+        table = ET.fromstring(b'<wrapper xmlns:isee="http://iseesystems.com/XMILE">' +
+                              derived[start:end-len(bad)+2] + b'</wrapper>')[0]
+        # Confirm that the exact remaining table attributes belong to a model view style.
+        candidates = root.findall(NS + "model/" + NS + "views/" + NS + "view/" + NS + "style/" + NS + "table")
+        require(sum(t.attrib == table.attrib for t in candidates) == 1, "table not uniquely identified in view style")
+        report["view_repair"] = {"kind": "maibab-invalid-view-font-attribute-removal",
+                                 "source_sha256": sha(original), "derived_sha256": sha(derived),
+                                 "removed_sha256": sha(bad), "removed_hex": bad.hex(),
+                                 "offset": offset, "removed_bytes": len(bad), "reversible": True}
+        report["source_specs"] = xml_specs(derived)
+        report["source_specs_origin"] = "view-attribute-only-derived-copy"
+        return derived
+
+
 def native_period_check(grid, reference_periods, backend_periods, reference, native):
     # SD-AI's flat period IDs are ambiguous for multiple sets (B1/R1 reused).
     # Never silently assign these to a partition.
@@ -269,14 +306,16 @@ def main(name):
               "platform": platform.platform(),
               "dependencies": sorted(d.metadata["Name"] + "==" + d.version for d in md.distributions()),
               "score_tolerance_pp": TOL_PP, "normalization_tolerance_pp": NORM_TOL_PP,
-              "source_specs": xml_specs(xb), "reference_specs": data["model"]["specs"],
+              "reference_specs": data["model"]["specs"],
               "reference_time": grid, "reference_periods": periods,
               "reference_loops": [{"cycle": list(s), **{k: v for k, v in l.items() if k != "scores"},
                                    "percent": l["scores"].tolist()} for s, l in reference.items()]}
-    stage = "import"
+    stage = "source_xml_preflight"
     try:
+        import_bytes = prepare_source_xml(name, xb, report)
+        stage = "import"
         with tempfile.TemporaryDirectory() as tmp:
-            model = load_native(Path(tmp) / (name + ".xmile"), xb, report)
+            model = load_native(Path(tmp) / (name + ".xmile"), import_bytes, report)
             stage = "imported_specs"
             report["imported_specs"] = json.loads(model.project.serialize_json())["simSpecs"]
             stage = "native_simulation"

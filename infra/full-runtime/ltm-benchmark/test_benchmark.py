@@ -1,7 +1,7 @@
 import unittest
 import xml.etree.ElementTree as ET
 import numpy as np
-from benchmark import cycle, reference_cycle, grid_indices, partition_equivalence, safe_import_copy, compare, xml_structure
+from benchmark import cycle, reference_cycle, grid_indices, partition_equivalence, safe_import_copy, compare, xml_structure, prepare_source_xml, REF, blob, MANIFEST
 
 class ContractTests(unittest.TestCase):
     def test_cycle_rotation_not_reversal(self):
@@ -37,6 +37,29 @@ class ContractTests(unittest.TestCase):
         before=b'\t<header/>\n'
         derived, _=safe_import_copy(prefix+before+block+suffix)
         self.assertEqual(derived,prefix+before+suffix)
+
+    def test_maibab_exact_pinned_view_attribute_repair(self):
+        raw = (REF / "maibab.stmx").read_bytes()
+        self.assertEqual(blob(raw), MANIFEST["fixtures"]["maibab"][1])
+        with self.assertRaises(ET.ParseError) as failure:
+            ET.fromstring(raw)
+        self.assertEqual(failure.exception.position, (237, 526))
+        report = {}
+        repaired = prepare_source_xml("maibab", raw, report)
+        evidence = report["view_repair"]
+        i = evidence["offset"]
+        removed = bytes.fromhex(evidence["removed_hex"])
+        self.assertEqual(removed, b' header_font_family="\xd0R^\xff\x7f"')
+        self.assertEqual(repaired[:i] + removed + repaired[i:], raw)
+        self.assertEqual(report["source_specs"]["start"], 1810)
+        self.assertEqual(report["source_specs"]["stop"], 2300)
+        self.assertEqual(report["source_specs"]["dt"], .125)
+        self.assertEqual(report["source_specs"]["attributes"]["method"], "RK4")
+        with self.assertRaises(ValueError):
+            prepare_source_xml("maibab", raw.replace(b"1810", b"1811", 1), {})
+        with self.assertRaises(ET.ParseError):
+            prepare_source_xml("other", raw, {})
+        self.assertEqual((REF / "maibab.stmx").read_bytes(), raw)
 
     def test_same_time_mismatch_and_no_cross_partition_errors(self):
         a,b=cycle(["A","B"]),cycle(["C","D"])

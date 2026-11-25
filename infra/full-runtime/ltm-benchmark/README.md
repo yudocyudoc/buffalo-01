@@ -20,3 +20,18 @@ The workflow builds a separate research image, then executes each case in its ow
 ## First execution — comparator control failure (no scientific observations)
 
 [Run 45693067519](https://github.com/yudocyudoc/buffalo-01/actions/runs/45693067519), job 139483285377, head 8da1563ac1bd7fb5922089566cf6a89fc3456b45. The pinned wheel installed successfully; 4/5 controls passed. The unsigned-empty-metadata control failed because ElementTree stores indentation preceding a removed child in its parent's text or preceding sibling's tail. Byte-exact removal was correct, but serialized XML differed in whitespace. No fixture simulation was executed. The correction compares tag, attributes, non-whitespace text/tail and ordered children, ignoring only whitespace-only formatting; the exact known block, byte reversibility and original source hash requirements remain unchanged. Added negative equation/attribute checks and a preceding-sibling control. Prepare the artifact directory and capture build output before running Docker so future build failures retain diagnostic evidence. No score, time, topology, denominator or scientific verdict criterion changed.
+
+## Second execution — five native observations and one malformed source
+
+[Run 45693764412](https://github.com/yudocyudoc/buffalo-01/actions/runs/45693764412), job 139485700637, head 61813d0937f557f84873314f8d837f983e96dab7, artifact [15059134410](https://github.com/yudocyudoc/buffalo-01/actions/runs/45693764412/artifacts/15059134410) (ZIP SHA-256 reported by Actions: fc2988bb97fe2e77b606cdebc8d451dec47f4008849bffc6f7055397caa3dff2). All five comparator controls passed. Five cases ran in exhaustive mode with exact reference grids. These figures come from CI logs; artifact bytes have not yet been archived in git.
+
+| Case | Matched loops | Maximum comparable error pp | Observation |
+|---|---:|---:|---|
+| Arms Race | 3/3 | 5.488942633746774e-13 | Native scores and periods match |
+| Bass | 2/2 | 2.342469669229999 | Known native score and period mismatch |
+| Inventory Workforce | 3/3 | 5.139764169825867e-10 | Both denominators match; flat multi-set periods unverified |
+| Predator Prey | 5/5 | 0.17468822432812736 | Scores exceed 0.1 pp; period check fails |
+| Market Growth | 11/20 | not comparable | Nine loops include a native internal DELAY3 node; contraction is a future hypothesis, not applied |
+| Mai-Bab | not run | not measured | XML ParseError at line 237 column 526 before simulation |
+
+The malformed Mai-Bab source has an invalid UTF-8 value in a table display header_font_family attribute, raw value hex d0525eff7f. The connector's decoded text was not byte-identical; reconstructing the raw bytes from that single attribute reproduced the pinned Git blob 623ab6a83a91caa8d810b2cd4b71d7c0ba63fa3f exactly. The next run explicitly permits one reversible deletion of this exact attribute (including its leading space, offset 17656), only in that pinned source after the exact parser error, and confirms its table is uniquely located under model/views/view/style. All remaining bytes are unchanged. Original XML error, removal bytes/offset and source/derived SHA-256 are reported. The existing unsigned-AI metadata fallback remains separate. Source XML errors inside the case now produce a structured EXECUTION_FAILURE report instead of an uncaught process error, with source identity checks still hard failures. This is a derived import experiment, not evidence that Simlin imports the malformed original directly. No topology contraction, numerical tolerance adjustment, reference rewriting or generalized Bass adaptation. New CI pending.

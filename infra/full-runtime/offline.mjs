@@ -163,7 +163,7 @@ try{
   assert.deepEqual(engineReceipt.usage,{prompt_tokens:500,completion_tokens:100,total_tokens:null});
   // Run the very same verifier that will consume a real smoke receipt.
   // All inputs here are explicitly controlled-provider fixtures.
-  const smokeReceipt={status:SMOKE_MODEL_RETURNED,container_stopped:true,single_reservation:true,inference:engineReceipt,model:smokeModel};
+  const smokeReceipt={fixture_only:true,status:SMOKE_MODEL_RETURNED,container_stopped:true,single_reservation:true,inference:engineReceipt,model:smokeModel};
   const verified=await verifyQuantitative(smokeReceipt);
   assert.deepEqual(verified.Inventory,[10,15,20,25,30]);
   await assert.rejects(verifyQuantitative({...smokeReceipt,inference:{...engineReceipt,schema_sha256:'0'.repeat(64)}}),/EXACT_ORIGINAL_SCHEMA_HASH/);

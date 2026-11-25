@@ -42,7 +42,7 @@ async function zeroContainers(){
  for(const a of apps){assert.equal(a.health?.instances?.active,0);assert.equal(a.health?.instances?.starting,0);assert.deepEqual(await api('/containers/applications/'+a.id+'/instances-v2?state=active&per_page=100'),[])}
  return apps;
 }
-async function privateCheck(name,armed){
+async function privateCheck(name,armed,hasSecret=armed){
  const [sub,schedules,settings,secrets]=await Promise.all(['subdomain','schedules','settings','secrets'].map(k=>api('/workers/scripts/'+name+'/'+k)));
  assert.equal(sub.enabled,false);assert.equal(sub.previews_enabled,false);
  const bindings=settings.bindings;
@@ -53,7 +53,7 @@ async function privateCheck(name,armed){
   if(armed){const g=load('grant');assert.equal(value('AI_PROJECT'),PROJECT);assert.equal(value('AI_MAX_CALLS'),'1');assert.equal(value('AI_EXPIRES_AT'),new Date(g.expires).toISOString())}
   else for(const k of ['AI_PROJECT','AI_MAX_CALLS','AI_EXPIRES_AT'])assert(!bindings.some(b=>b.name===k));
  }else assert.equal(value('FULL_QUANTITATIVE_GRANT'),armed?JSON.stringify(load('grant')):'null');
- assert.equal(secrets.length,armed?1:0);if(armed)assert.equal(secrets[0].name,'APP_AUTH_KEY');
+ assert.equal(secrets.length,hasSecret?1:0);if(hasSecret)assert.equal(secrets[0].name,'APP_AUTH_KEY');
  assert.equal(schedules.schedules.length,armed&&name===OP?1:0);
 }
 async function cleanCheck(){
@@ -68,7 +68,14 @@ async function main(){
    const apps=await zeroContainers();await unused();const workers=await api('/workers/scripts');
    assert(!workers.some(w=>[APP,OP].includes(w.id??w.name))&&!apps.some(a=>a.name===APP),'SMOKE_RESOURCES_ALREADY_EXIST');
  }else if(phase==='configs')generate(0,randomUUID());
- else if(phase==='arm'){await unused();await zeroContainers();const g=load('grant');const next=generate(Date.parse(armExpiry()),g.run_id);assert(validGrant(next));}
+ else if(phase==='arm'){
+  await unused();await zeroContainers();await privateCheck(APP,false,true);await privateCheck(OP,false,true);
+  const g=load('grant');const next=generate(Date.parse(armExpiry()),g.run_id);assert(validGrant(next));
+ }else if(phase==='check-runtime-armed'){
+  const g=load('grant');assert(validGrant(g));await unused();await zeroContainers();
+  await privateCheck(APP,true);await privateCheck(OP,false,true);
+  assert(validGrant(g));save('preactivation',{status:'RUNTIME_ARMED_OPERATOR_DISABLED',approval:g});
+ }
  else if(phase==='remove-secrets'){
   const workers=await api('/workers/scripts');for(const n of [OP,APP]){
    if(!workers.some(w=>w.id===n||w.name===n))continue;

@@ -6,7 +6,7 @@ import {projectModel} from './project.mjs';
 const deny=()=>new Response(null,{status:404});
 const idPattern=/^[a-z0-9][a-z0-9-]{0,62}$/;
 function approved(env,project){
-  return project===env.AI_PROJECT && idPattern.test(project) && env.AI?.run &&
+  return env.RUNTIME_ENABLED==='true' && project===env.AI_PROJECT && idPattern.test(project) && env.AI?.run &&
     Number.isSafeInteger(Number(env.AI_MAX_CALLS)) && Number(env.AI_MAX_CALLS)>0 &&
     Date.parse(env.AI_EXPIRES_AT)>Date.now();
 }
@@ -18,6 +18,10 @@ export class FullApplication extends WorkerEntrypoint {
     const project=request.headers.get('x-buffalo-project');
     if(!project || !idPattern.test(project) || this.env.RUNTIME_ENABLED!=='true')return deny();
     return this.env.PROJECTS.getByName(project).fetch(request);
+  }
+  stop(project){
+    if(this.env.RUNTIME_ENABLED!=='true'||project!==this.env.AI_PROJECT||!idPattern.test(project))throw Error('STOP_NOT_AUTHORIZED');
+    return this.env.PROJECTS.getByName(project).stop(project);
   }
 }
 export class ModelProvider extends WorkerEntrypoint {
@@ -39,11 +43,21 @@ export class ProjectRuntime extends DurableObject {
       return attempt;
     }),(attempt,receipt)=>storage.put('inference:'+attempt,receipt));
   }
+  async stop(project){
+    if(this.env.RUNTIME_ENABLED!=='true'||project!==this.env.AI_PROJECT||!this.ctx.id.equals(this.env.PROJECTS.idFromName(project)))throw Error('STOP_NOT_AUTHORIZED');
+    const c=this.ctx.container;
+    if(await c.inspect()!==null)await c.destroy();
+    if(await c.inspect()!==null)throw Error('CONTAINER_STOP_UNCONFIRMED');
+    this.ready=false;return {container_stopped:true};
+  }
   async prepare(project){
     const c=this.ctx.container;
     if(!c.running){
       const ai=approved(this.env,project);
-      if(ai)await c.interceptOutboundHttp('merlin-provider.internal',this.ctx.exports.ModelProvider({props:{project}}));
+      if(ai){const intercept=this.ctx.exports.ModelProvider({props:{project}});
+        await c.interceptAllOutboundHttp(intercept);
+        await c.interceptOutboundHttps('*',intercept);
+      }
       c.start({image:c.images.base,instance:'basic',enableInternet:false,env:{
         AUTHENTICATION_KEY:this.env.APP_AUTH_KEY,PORT:'8080',WEBSOCKET_PORT:'8080',
         ...(ai?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA}:{})}});

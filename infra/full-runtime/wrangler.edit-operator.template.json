@@ -1,0 +1,27 @@
+{
+  "name": "buffalo-full-edit-operator",
+  "main": "remote-edit.mjs",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": []
+  },
+  "services": [
+    {
+      "binding": "FULL",
+      "service": "buffalo-full-private",
+      "entrypoint": "FullApplication"
+    }
+  ],
+  "vars": {
+    "FULL_EDIT_GRANT": "null"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "buffalo-control-plane-race-lab-20261121",
+      "database_id": "d1e23807-b076-4c36-8785-7b423fc41614"
+    }
+  ]
+}

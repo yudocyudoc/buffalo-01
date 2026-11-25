@@ -1,6 +1,6 @@
 ﻿import assert from 'node:assert/strict';
 import test from 'node:test';
-import {completion} from './gateway.mjs';
+import {completion,MODEL_TOOLS} from './gateway.mjs';
 import {GEMMA,GEMMA_OBSERVED_ALIAS} from '../private-merlin/gemma-response.mjs';
 import {ENDPOINT} from '../private-merlin/protocol.mjs';
 
@@ -78,4 +78,20 @@ test('accepted text and correlated tool responses pass through after recording',
     assert.deepEqual(receipt.failed_predicates,[]);
     assert.deepEqual((await response.json()).choices[0].message,result.choices[0].message);
   }
+});
+
+test('all seven editing and four simulation/data tools preserve original offered schemas; no other tools added',async()=>{
+ const names=['get_current_model','read_model_section','edit_variables','edit_relationships','edit_specs','edit_modules','update_model','run_model','get_run_info','get_variable_data','read_file'];
+ assert.deepEqual([...MODEL_TOOLS],names);
+ const definitions=names.map(name=>({type:'function',function:{name,description:'original '+name,parameters:{type:'object',properties:{value:{type:'number'}}}}}));
+ const request=new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'test'}],tools:[...definitions,tool('write_file'),tool('generate_quantitative_model')]})});
+ const response=await completion(request,{run:async(_model,wire)=>{
+  assert.deepEqual(wire.tools,definitions);
+  return {...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{type:'function',id:'simulation',function:{name:'run_model',arguments:'{}'}}]}}]};
+ }},()=>1,()=>{});
+ assert.equal(response.status,200);
+});
+test('a transport-supported tool not offered by the original session is still rejected',async()=>{
+ const {response,receipt}=await invoke(()=>({...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{type:'function',id:'x',function:{name:'run_model',arguments:'{}'}}]}}]}));
+ assert.equal(response.status,422);assert.deepEqual(receipt.failed_predicates,['tools_offered']);
 });

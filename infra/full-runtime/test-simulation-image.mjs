@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {createSimulationClient} from './simulation-client.mjs';
+import {simulationModel} from './simulation-fixture.mjs';
+const client=createSimulationClient(),model=simulationModel();
+model.variables[0].equation='5';model.specs.stopTime=4;
+const run=await client.request({type:'run_model'},model);
+assert.equal(run.simulated,true,run.error);
+const result=await client.request({type:'get_variable_data',runIds:[run.runId],variableNames:['Inventory']},model);
+assert.deepEqual(result[run.runId],{time:[0,1,2,3,4],Inventory:[10,15,20,25,30]});
+console.log('FULL_IMAGE_PYSD_SIMULATION_PASS '+JSON.stringify(result));

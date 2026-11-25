@@ -11,6 +11,7 @@ import {ENDPOINT} from '../private-merlin/protocol.mjs';
 import {GEMMA} from '../private-merlin/gemma-response.mjs';
 import {rest} from './test-rest.mjs';
 import {session,assertDemand} from './test-session.mjs';
+import {simulationModel,simulationScenario} from './simulation-fixture.mjs';
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
@@ -41,10 +42,10 @@ const options={...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project','example');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
-    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'5',
+    bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:'15',
       AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk};
-let mf,child,exited,calls=0;
+let mf,child,exited,calls=0,scenarioOffset=0;
 const key=randomUUID(),base='http://127.0.0.1:8793';
 const model={variables:[{name:'Demand',type:'variable',equation:'3'}],relationships:[]};
 const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...options,
@@ -62,20 +63,39 @@ const scriptedTools=[
   ['edit_variables',{operation:'update',data:[{name:'Demand',equation:'5'}]}],
   ['update_model',{}]
 ];
+const simulationSteps=[
+ ['edit_variables',{operation:'update',data:[{name:'Demand',equation:'5'}]}],
+ ['edit_relationships',{operation:'add',data:[{from:'Demand',to:'Inflow',polarity:'+'}]}],
+ ['edit_specs',{data:{stopTime:4}}],
+ ['edit_modules',{operation:'add',data:[{name:'Operations',parentModule:null}]}],
+ ['edit_modules',{operation:'remove',data:[{name:'Operations'}]}],
+ ['run_model',{}],
+ ['get_run_info',{}],
+ ['get_variable_data',{variableNames:['Inventory'],runIds:['run-1'],detailed:true}],
+ ['read_file',null]
+];
 function fixture(model,wire){
   assert.equal(model,GEMMA);
   calls++;
   if(!wire.tools)return {model,usage:{prompt_tokens:12,completion_tokens:2049,neurons:1.25},
     choices:[{finish_reason:'length',message:{role:'assistant',content:'truncated fixture'}}]};
-  if(calls>1)assert(wire.messages.some(m=>m.role==='tool' && m.tool_call_id==='step-'+(calls-1)));
+  const local=calls-scenarioOffset;
+  if(local>1)assert(wire.messages.some(m=>m.role==='tool' && m.tool_call_id==='step-'+(calls-1)));
   const message={role:'assistant'};
-  const step=scriptedTools[calls-1];
+  const step=(scenarioOffset?simulationSteps:scriptedTools)[local-1];
   if(step){
-    const [name,args]=step;
+    const [name,originalArgs]=step;
+    let args=originalArgs;
+    if(name==='read_file'){
+      const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
+      const parsed=JSON.parse(result.content);assert.match(parsed.filePath,/variable_data_\d+\.json$/);args={filePath:parsed.filePath};
+    }
     assert(wire.tools.some(t=>t.function.name===name));
     message.tool_calls=[{type:'function',id:'step-'+calls,function:{name,arguments:JSON.stringify(args)}}];
   }else{
-    message.content='Offline fixture acknowledges edit.';
+    if(scenarioOffset){const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='step-'+(calls-1));
+      const parsed=JSON.parse(result.content);assert.deepEqual(JSON.parse(parsed.content)['run-1'].Inventory,[10,15,20,25,30]);}
+    message.content='Offline fixture acknowledges operation.';
   }
   return {model,usage:{prompt_tokens:12,completion_tokens:8},
     choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}]};
@@ -112,6 +132,11 @@ try{
     assert.equal(saved.status,204);etag=saved.headers.get('etag');
   }});
   assert.equal((await doc({method:'PUT',headers:old,body:JSON.stringify(model)})).status,412);
+  // A second original session runs a real stock/flow simulation in the compatible client.
+  scenarioOffset=calls;const scenario=simulationScenario();
+  await session({mode:'sfd',key,model:simulationModel(),agent:'merlin',edit:true,scenario,
+    save:async m=>{scenario.snapshots.push(structuredClone(m));}});
+  assert.equal(calls,14);
   const rejectedRequest=JSON.stringify({model:GEMMA,messages:[{role:'user',content:'fixture'}],tools:[]});
   assert.equal((await infer(rejectedRequest)).status,422);
   const lastAttempt=calls;

@@ -141,6 +141,8 @@ The offline regression uses actual PySD series saved by the prior persistence te
 
 ## Document a saved model from a compatible Node client
 
+Generating polarities can reverse an existing connector sign and change the causal interpretation of a loop. The saved result includes `polarityChanges` with the endpoints and the previous and new sign for each change. A previous sign of `null` means the connector was unsigned.
+
 Call `documentProjectModel(request, key, {revision, prompt, documentConnectors, generatePolarity})` from [document-project-model.mjs](./document-project-model.mjs). Supply the revision displayed to the user and a request function bound to that project. The client reads and verifies the SD-JSON, calls the original `generate-documentation` REST engine and saves the annotated model with the source ETag. Optional `backgroundKnowledge` and `problemStatement` provide context. Variables receive documentation by default. Enable connectors to document their reasoning and opt into polarity generation to update their signs and polarity explanations.
 
 Success returns the source and saved revision numbers and SHA-256 hashes, plus the engine's summary. Coverage is checked on the resulting model, including existing annotations. Source variable names and connector lookup keys must be unambiguous for the original engine. A conflicting edit returns `DOCUMENTATION_REVISION_CHANGED`. After a lost save acknowledgement, read the current revision before submitting any new generation.

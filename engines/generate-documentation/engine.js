@@ -33,8 +33,8 @@ class Engine {
             required: false,
             uiElement: "checkbox",
             saveForUser: "local",
-            label: "Update Polarity",
-            description: "Whether or not you want to generate polarity symbols for connectors",
+            label: "Generate or replace connector polarities",
+            description: "With connector documentation enabled, the model can assign a sign or reverse an existing sign (+/−). This can change the causal interpretation of a link or feedback loop.",
         },{
             name: "problemStatement",
             type: "string",

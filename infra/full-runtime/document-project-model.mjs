@@ -18,6 +18,7 @@ function checkTargets(model, connectors) {
 
 function checkAnnotations(source, result, connectors, polarity) {
   const expected = structuredClone(source);
+  const polarityChanges = [];
   for (const [index, variable] of expected.variables.entries()) {
     const text = result?.variables?.[index]?.documentation;
     if (!hasText(text)) throw Error('MISSING_VARIABLE_DOCUMENTATION');
@@ -31,12 +32,16 @@ function checkAnnotations(source, result, connectors, polarity) {
       if (polarity) {
         if (!['+', '-'].includes(annotation.polarity) || !hasText(annotation.polarityReasoning))
           throw Error('MISSING_CONNECTOR_POLARITY');
+        if (edge.polarity !== annotation.polarity) {
+          polarityChanges.push({from: edge.from, to: edge.to, before: edge.polarity ?? null, after: annotation.polarity});
+        }
         edge.polarity = annotation.polarity;
         edge.polarityReasoning = annotation.polarityReasoning;
       }
     }
   }
   if (!isDeepStrictEqual(expected, result)) throw Error('DOCUMENTATION_CHANGED_MODEL_STRUCTURE');
+  return polarityChanges;
 }
 
 // request is bound to one authorized project, like the Seldon comparison client.
@@ -63,7 +68,7 @@ export async function documentProjectModel(request, key, {
   if (!response.ok) throw Error('DOCUMENTATION_HTTP_FAILURE');
   const result = await response.json();
   if (result.success !== true) throw Error('DOCUMENTATION_ENGINE_FAILURE');
-  checkAnnotations(currentModel, result.model, documentConnectors, generatePolarity);
+  const polarityChanges = checkAnnotations(currentModel, result.model, documentConnectors, generatePolarity);
   const updated = JSON.stringify(result.model);
   const saved = await request(modelPath, {method: 'PUT', headers: {'if-match': etag}, body: updated});
   if (saved.status === 412) throw Error('DOCUMENTATION_REVISION_CHANGED');
@@ -71,5 +76,5 @@ export async function documentProjectModel(request, key, {
   const hash = await digest(updated);
   if (saved.headers.get('x-buffalo-model-sha256') !== hash || saved.headers.get('etag') !== '"' + (revision + 1) + '"')
     throw Error('DOCUMENTATION_SAVE_UNCONFIRMED');
-  return {sourceRevision: revision, sourceHash, revision: revision + 1, hash, supportingInfo: result.supportingInfo};
+  return {sourceRevision: revision, sourceHash, revision: revision + 1, hash, supportingInfo: result.supportingInfo, polarityChanges};
 }

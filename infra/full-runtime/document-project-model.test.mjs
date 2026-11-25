@@ -56,6 +56,16 @@ test('rejects stale, damaged or ambiguous inputs before generation', async () =>
   }
 });
 
+test('explicit polarity generation reports assigned and reversed signs for the saved revision', async () => {
+  for (const before of [undefined, '+', '-']) {
+    const model = structuredClone(source);
+    model.relationships[0].polarity = before;
+    const f = await fixture({model, change: m => Object.assign(m.relationships[0], {polarity: '-', polarityReasoning: 'Fixture reason.'})});
+    const result = await documentProjectModel(f.request, 'key', {...options, generatePolarity: true});
+    assert.deepEqual(result.polarityChanges, before === '-' ? [] : [{from: 'Demand', to: 'Inflow', before: before ?? null, after: '-'}]);
+  }
+});
+
 test('concurrent edit rejects the save after one generation', async () => {
   const f = await fixture({saveStatus: 412});
   await assert.rejects(documentProjectModel(f.request, 'key', options), /REVISION_CHANGED/);

@@ -8,3 +8,6 @@ The original engines and handlers are called, with only LLMWrapper.createChatCom
 Expected discriminators: Seldon receives the complete model and feedback; LTM receives feedback, ignores lastModel; the Seldon agent wrapper adds a brevity instruction; the LTM wrapper calls the engine with an empty user prompt, while direct LTM receives the common question. Cached behavior appears only when present. If these expectations fail, retain the artifact and inspect the source, rather than adapt the benchmark to silently pass.
 
 Historical leaderboard report now preserves row-level failure types, generation errors, expected facts and tool-log metadata. Group totals alone do not establish semantic error. No provider, production changes or spend.
+
+## Harness correction
+Run 45877370870 verified the inventory but the evaluator constructor rejected missing Google credentials before the controlled completion was reached. The route step was skipped. The research-only preload supplies a literal invalid placeholder and denies network connections/fetch in both test processes. This does not configure credentials in GitHub or change upstream code. Both controls remain pending verification of the corrected run.

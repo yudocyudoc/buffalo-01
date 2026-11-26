@@ -18,9 +18,9 @@ jobs:
       - run: node research/buffalo-lab/c1/audit-reference.mjs "$RUNNER_TEMP/c1-leaderboard-inventory.json"
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Controlled evaluator checks (no real provider)
-        run: node --test research/buffalo-lab/c1/evaluator-controls.test.mjs
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test research/buffalo-lab/c1/evaluator-controls.test.mjs
       - name: Original engine and tool routes (controlled wrapper)
-        run: node research/buffalo-lab/c1/route-controls.mjs "$RUNNER_TEMP/c1-route-controls.json"
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/route-controls.mjs "$RUNNER_TEMP/c1-route-controls.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

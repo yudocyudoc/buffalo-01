@@ -8,7 +8,7 @@ const unverified = reason => ({status: 'unverified', reason});
 // pysimlin 0.8.5 Run._dominant_periods_for_group accumulates the largest
 // magnitudes in each polarity until 0.5, then compares the two prefix sums.
 // A stable sort retains Run.loops order for equal magnitudes.
-function nativeSelection(loops, index) {
+export function nativeSelection(loops, index) {
   const ranked = loops.map(loop => ({id:loop.identifier, polarity:loop.polarity, score:loop.signed?.[index]}));
   if (ranked.some(l => !Number.isFinite(l.score))) return null;
   ranked.sort((a,b) => Math.abs(b.score)-Math.abs(a.score));

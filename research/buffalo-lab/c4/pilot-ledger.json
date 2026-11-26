@@ -20,6 +20,13 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/pilot-receipts/gemma-on.json",
       "schema_valid": true
+    },
+    {
+      "id": "C4-bassDiffusion-gpt-oss-r1",
+      "config": "gpt-oss",
+      "model": "@cf/openai/gpt-oss-120b",
+      "wire_sha256": "54e6b9ed8c6b076ee3cff2826c796a27d0a01b6a256de01854a9de289a4f0b63",
+      "status": "RESERVED"
     }
   ],
   "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."

@@ -1,0 +1,58 @@
+{
+  "id": "C4-inventoryWorkforce-deepseek-low-r1",
+  "case_id": "inventoryWorkforce",
+  "config": "deepseek-low",
+  "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "wire_sha256": "5946ce39184a9c1674757a5b7a89ead395f75f1e6e9cff313543247d93642820",
+  "bytes": 268970,
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/extension-receipts/C4-inventoryWorkforce-deepseek-low-r1.json",
+  "schema_valid": true,
+  "transport": "RETURNED",
+  "elapsed_ms": 49346,
+  "result": {
+    "id": "chatcmpl-7259ef86-b5a1-4cfc-a861-c9c2c96bfdec",
+    "object": "chat.completion",
+    "created": 1795729825,
+    "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{ \"response\": \"## Step 1 — Establish what the model is doing before the loops matter\\n\\nAt t = 0 the model is exactly in equilibrium: Inventory starts at Desired Inventory (100 widgets), Workers start at desired workers (Expected Demand 20 ÷ productivity 2 = 10 people), and Expected Demand starts at demand (20 widgets/month). With no inventory gap and no workers gap, `producing` = 20 = `shipping`, `hiring or firing` = 0, and `changing expected` = 0. This is why **every loop shows 0% explanatory power from t = 0 to t = 1** — there is no behavior for any loop to explain.\\n\\nThe only exogenous disturbance in the whole run is the demand step: demand rises from 20 to 25 widgets/month between month 1 and month 2 (a +25% step) and stays there. Everything else in the simulation is the model's endogenous response to that single step.\\n\\n## Step 2 — Identify the loops and their polarity\\n\\n- **B1 (loop set 1) — the inventory–workforce loop:** Inventory → inventory gap → desired change in inventory → desired production → desired workers → workers gap → hiring or firing → Workers → producing → Inventory. Balancing (−), 2 stocks, 9 variables.\\n- **B2 (loop set 1) — the workforce loop:** workers gap → hiring or firing → Workers → workers gap. Balancing (−), 1 stock, 3 variables.\\n- **B1 (loop set 2) — the expectation loop:** Expected Demand → changing expected → Expected Demand. Balancing (−), 1 stock, 2 variables.\\n\\nTwo things follow immediately. First, **all three loops are negative**, so no reinforcing loop ever dominates — there is no mechanism in this model for exponential growth or collapse. The only possible behavior is goal-seeking, and (because of the delays) oscillation around a goal. Second, in loop set 1 the two loops' shares sum to 100% at every time, so \\\"dominance\\\" there is purely a contest between the inventory loop and the workforce loop.\\n\\n## Step 3 — Read the dominance timeline\\n\\n**Phase 1, t = 0 → 1.06: no dominance (both loops at 0%).** Equilibrium; nothing to explain.\\n\\n**Phase 2, t = 1.06 → 2: B2 dominant.** As shipping jumps, B1's share collapses from ~97% to ~49% while B2's rises from ~3% to ~51%. Interpretation: the demand step immediately opens a workers gap (desired production rises, so desired workers rises), and the *fastest* thing the system can do is hire. During this window the workers gap is large and moving, so the workforce loop is the loop actually generating the behavior; the inventory gap is still small and its contribution to *change* is comparatively minor.\\n\\n**Phase 3, t = 2 → 4.63: B1 dominant.** B1's share jumps to ~91% at t = 2.06 and then decays back through 50% at t = 4.63. Interpretation: the inventory gap is now the binding signal. Inventory has been drained by the higher shipping rate, so `desired change in inventory` is positive and large, which pushes `desired production` — and therefore `desired workers` — upward. The hiring target itself is being moved by inventory, so the inventory loop is driving the behavior, not the workforce loop.\\n\\n**Phase 4 onward: sustained alternation.** From t ≈ 4.63 the pattern locks in:\\n\\n| B1 dominant | B2 dominant |\\n|---|---|\\n| 6.50 – 12.81 | 12.81 – 14.75 |\\n| 14.75 – 20.50 | 20.50 – 22.44 |\\n| 22.44 – 28.44 | 28.44 – 30.38 |\\n| 30.38 – 36.25 | 36.25 – 38.19 |\\n| 38.19 – 44.13 | 44.13 – 46.06 |\\n| 46.06 – 52.00 | 52.00 – 53.94 |\\n| 53.94 – 59.88 | 59.88 – 60.00 |\\n\\nOnset-to-onset spacing of B1 is 7.69, 7.94, 7.81, 7.88, 7.88 months — a **steady period of roughly 7.9 months**. Within each cycle B1 holds dominance for about 6 months (~75% of the cycle) and B2 for about 1.9 months (~25%).\\n\\n## Step 4 — Explain the mechanism behind the alternation\\n\\nEach cycle is the same story:\\n\\n1. **B1 dominant:** the inventory gap is large, so `desired workers` is being pushed up (or down) hard. The hiring target is moving, and the inventory loop is the source of that movement.\\n2. **B2 dominant:** `desired workers` has (temporarily) stopped moving, so the only remaining action is the workforce closing on its target. B2's share spikes to near 100% (peaks of 99.85, 99.48, 99.70, 99.54, 99.92, 99.98, 99.68) precisely when the workers gap is being closed with a fixed target.\\n3. **The hand-off back to B1:** because hiring takes `time to hire or fire` = 6 months, the workers who were hired to fix the inventory gap arrive *after* the gap has already been corrected. `producing` overshoots, Inventory overshoots Desired Inventory, the inventory gap flips sign, and B1 reasserts itself driving `desired workers` in the opposite direction. The cycle repeats.\\n\\nSo the alternation is not two independent loops taking turns for no reason — it is a **single coupled mechanism**: the inventory loop sets the workforce target, the workforce loop chases it, the 6-month hiring delay guarantees the chase overshoots, and the overshoot re-energizes the inventory loop with the opposite sign. The 1-month `inventory adjustment time` is fast relative to the 6-month hiring delay, which is exactly the ratio that produces a persistent, undamped oscillation rather than a smooth approach to the new equilibrium.\\n\\n## Step 5 — What the analysis says about the overall behavior\\n\\n- **The system never settles.** The new equilibrium is Inventory = 100, Workers = 12.5, Expected Demand = 25, producing = shipping = 25. The model oscillates around it for the entire 60 months. The dominance peaks show no decay trend (99.85 → 99.48 → 99.70 → 99.54 → 99.92 → 99.98 → 99.68), so this is a **sustained limit cycle, not a damped transient**. A one-time 25% demand step produces permanent oscillation.\\n- **The inventory loop is the primary driver.** B1 dominates roughly three-quarters of every cycle, meaning the inventory gap — not the workers gap — is what governs hiring and firing decisions most of the time. The workforce is being used as the lever for inventory control.\\n- **No reinforcing loop ever dominates**, so the oscillation's amplitude is set by the delay structure, not by any growth mechanism.\\n- **The expectation loop (loop set 2) is a slow phase-lag contributor.** Its 100% figure simply reflects that it is the only loop in its own loop set, so it tells you the loop is active from t = 1.06 onward (i.e., expectations begin adjusting as soon as demand departs from them) — but it does **not** tell you how much of total model behavior it explains, because it is never compared against B1 or B2. Its 6-month adjustment time adds lag on top of the 6-month hiring lag, lengthening the cycle.\\n\\n## Step 6 — A caution about interpreting these numbers\\n\\nThe dominance percentages in loop set 1 are shares *within that loop set*, and loop set 2's percentages are shares *within its own single-loop set*. So the analysis tells you reliably how B1 and B2 trade off against each other, but it cannot tell you the expectation loop's share of total model behavior. If you want to know whether the expectation loop is materially amplifying the oscillation, the cleanest test is a controlled experiment: shorten `time to adjust expectations` (or hold Expected Demand fixed at demand) and see whether the ~7.9-month period and the amplitude change. If they barely move, the oscillation is being generated almost entirely by the inventory/hiring delay pair, and the expectation loop is a secondary contributor.\", \"feedbackInformationRequired\": true }"
+        },
+        "finish_reason": "stop",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 73962,
+      "completion_tokens": 6734,
+      "total_tokens": 80696,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "neurons": 2751.763671875
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning",
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 73962,
+    "completion_tokens": 6734,
+    "total_tokens": 80696,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "neurons": 2751.763671875
+  },
+  "parsed_schema_valid": true,
+  "semantic_accuracy": "NOT_MEASURED"
+}

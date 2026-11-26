@@ -16,7 +16,9 @@
       "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
       "wire_sha256": "5946ce39184a9c1674757a5b7a89ead395f75f1e6e9cff313543247d93642820",
       "bytes": 268970,
-      "status": "RESERVED"
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/extension-receipts/C4-inventoryWorkforce-deepseek-low-r1.json",
+      "schema_valid": true
     }
   ]
 }

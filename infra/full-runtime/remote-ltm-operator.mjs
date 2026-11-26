@@ -97,7 +97,7 @@ export async function runNativeLtm(env,{session=readSession}={}){
     async onToolCompleted(message){
      if(message.toolName==='generate_ltm_narrative'&&!message.isError){
       const narrativeId=crypto.randomUUID();
-      const saved=await captureNarrativeAttempt({message,selected,narrativeId,prompt,
+      const saved=await captureNarrativeAttempt({message,selected,narrativeId,prompt:presentation.message,
        async onCapture(attempt){
         e.narrative_attempts.push(attempt);
         await checkpointNarrativeAttempt(env.DB,claim,e,attempt);

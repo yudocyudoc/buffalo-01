@@ -135,7 +135,7 @@ export async function reopenLtmMatrix(request,other,key,report,save,useProvider,
           c.toolTrace.push({name:message.toolName,isError:message.isError});
           if(message.toolName==='generate_ltm_narrative'&&!message.isError){
             const id=randomUUID();
-            const saved=await captureNarrativeAttempt({message,selected,narrativeId:id,prompt,
+            const saved=await captureNarrativeAttempt({message,selected,narrativeId:id,prompt:presentation?.message??prompt,
               onCapture(attempt){c.narrative_attempts.push(attempt);save();}});
             const reopened=await (await request('/project/runs/'+c.runId+'/narratives/'+id)).json();
             assert.deepEqual(reopened,saved);

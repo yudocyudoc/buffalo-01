@@ -230,16 +230,17 @@
     },
     {
       "id": "real-onset",
-      "anchor": "a **steady period of roughly 7.9 months**",
+      "anchor": "Onset-to-onset spacing of B1 is 7.69, 7.94, 7.81, 7.88, 7.88 months — a **steady period of roughly 7.9 months**",
       "claim": {
         "kind": "onset_spacing",
         "group": 1,
         "loop": "B1",
-        "after": 6,
+        "after": 14.75,
         "lo": 7.65,
         "hi": 7.98
       },
-      "expected": "supported"
+      "expected": "supported",
+      "scope_note": "The five enumerated late intervals start at 14.75; 6.5 to 14.75 is 8.25 and is deliberately not covered by this annotation. Correction to first draft's cutoff, not a change to the archived response."
     },
     {
       "id": "real-mechanism",

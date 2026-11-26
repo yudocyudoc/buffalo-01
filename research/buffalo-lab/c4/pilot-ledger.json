@@ -47,6 +47,13 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/pilot-receipts/inkling.json",
       "schema_valid": true
+    },
+    {
+      "id": "C4-bassDiffusion-glm-r1",
+      "config": "glm",
+      "model": "@cf/zai-org/glm-5.3",
+      "wire_sha256": "2c0bfd127937ada34411489436715ef4fef2720e42ffb30f256bbb835c8d2024",
+      "status": "RESERVED"
     }
   ],
   "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."

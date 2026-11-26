@@ -1,0 +1,27 @@
+name: Buffalo Research C1 reference inventory (offline)
+on:
+  push:
+    branches: ['research/c1-reference-inventory']
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node research/buffalo-lab/c1/audit-reference.mjs "$RUNNER_TEMP/c1-leaderboard-inventory.json"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Controlled evaluator checks (no real provider)
+        run: node --test research/buffalo-lab/c1/evaluator-controls.test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffalo-c1-inventory-${{ github.run_id }}
+          path: ${{ runner.temp }}/c1-leaderboard-inventory.json
+          retention-days: 30

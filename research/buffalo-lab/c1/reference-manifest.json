@@ -1,0 +1,153 @@
+{
+  "upstream": {
+    "repository": "UB-IAD/sd-ai",
+    "commit": "58cfc86c8f2634401534fc89ff856f3f21c90bba"
+  },
+  "historical_port": "db73eedf65e177ffee38ed5b903969086d1d2130",
+  "runtime_head": "72ae78f65a4b08c0fb222ea8047600eb4186a611",
+  "comparison": {
+    "merge_base": "58cfc86c8f2634401534fc89ff856f3f21c90bba",
+    "ahead": 215,
+    "behind": 0
+  },
+  "files": [
+    {
+      "path": "engines/ltm-narrative/LTMNarrativeBrain.js",
+      "upstream": "2ad702a995361d4ae9aaf298896ec9212052a085",
+      "historical": "2ad702a995361d4ae9aaf298896ec9212052a085",
+      "runtime": "2ad702a995361d4ae9aaf298896ec9212052a085"
+    },
+    {
+      "path": "engines/ltm-narrative/engine.js",
+      "upstream": "0219bb9aa3b20499d5bffab5fa2d5186ce060d92",
+      "historical": "0219bb9aa3b20499d5bffab5fa2d5186ce060d92",
+      "runtime": "0219bb9aa3b20499d5bffab5fa2d5186ce060d92"
+    },
+    {
+      "path": "agent/tools/builtin/generateLtmNarrative.js",
+      "upstream": "f8616f51e607a397f309ad4897c6628e8a5455f5",
+      "historical": "f8616f51e607a397f309ad4897c6628e8a5455f5",
+      "runtime": "f8616f51e607a397f309ad4897c6628e8a5455f5"
+    },
+    {
+      "path": "agent/tools/builtin/getFeedbackInformation.js",
+      "upstream": "9abf7be08d34e5c40f17b28d0f82182854416e6d",
+      "historical": "9abf7be08d34e5c40f17b28d0f82182854416e6d",
+      "runtime": "9abf7be08d34e5c40f17b28d0f82182854416e6d"
+    },
+    {
+      "path": "agent/tools/builtin/toolHelpers.js",
+      "upstream": "82fd940954659b0910df1386bb9f0312e699dc63",
+      "historical": "82fd940954659b0910df1386bb9f0312e699dc63",
+      "runtime": "82fd940954659b0910df1386bb9f0312e699dc63"
+    },
+    {
+      "path": "agent/utilities/EngineWrapper.js",
+      "upstream": "e1dec22b46e6b97e058766b96945166ca64471bd",
+      "historical": "e1dec22b46e6b97e058766b96945166ca64471bd",
+      "runtime": "e1dec22b46e6b97e058766b96945166ca64471bd"
+    },
+    {
+      "path": "utilities/LLMWrapper.js",
+      "upstream": "4a977f914aec8f6080527c8e0bd4db51515d0db6",
+      "historical": "4a977f914aec8f6080527c8e0bd4db51515d0db6",
+      "runtime": "4a977f914aec8f6080527c8e0bd4db51515d0db6"
+    },
+    {
+      "path": "config.js",
+      "upstream": "81de3502038329e4cd72a77bc82aa9bc4e8efd41",
+      "historical": "81de3502038329e4cd72a77bc82aa9bc4e8efd41",
+      "runtime": "81de3502038329e4cd72a77bc82aa9bc4e8efd41"
+    },
+    {
+      "path": "agent/config/merlin.md",
+      "upstream": "d1f05ec5fa710c4b58876be61ac8cc0c7784cea4",
+      "historical": "d1f05ec5fa710c4b58876be61ac8cc0c7784cea4",
+      "runtime": "d1f05ec5fa710c4b58876be61ac8cc0c7784cea4"
+    },
+    {
+      "path": "evals/categories/feedbackExplanation.js",
+      "upstream": "0cc2703065ed69156b23c4d973f9592262be1c1a",
+      "historical": "0cc2703065ed69156b23c4d973f9592262be1c1a",
+      "runtime": "0cc2703065ed69156b23c4d973f9592262be1c1a"
+    },
+    {
+      "path": "tests/engines/ltm-narrative/LTMNarrativeBrain.test.js",
+      "upstream": "c62c36a802967328b6784a5625407bb40d0eca55",
+      "historical": "c62c36a802967328b6784a5625407bb40d0eca55",
+      "runtime": "c62c36a802967328b6784a5625407bb40d0eca55"
+    },
+    {
+      "path": "evals/categories/feedbackExplanationData/armsRace.json",
+      "upstream": "eea9fec76308e0034bfa179bf94ba8c6853115fc",
+      "historical": "eea9fec76308e0034bfa179bf94ba8c6853115fc",
+      "runtime": "eea9fec76308e0034bfa179bf94ba8c6853115fc"
+    },
+    {
+      "path": "evals/categories/feedbackExplanationData/bassDiffusion.json",
+      "upstream": "c87fc9d8369cdb0abb97bb7ba1e2a88c32df931e",
+      "historical": "c87fc9d8369cdb0abb97bb7ba1e2a88c32df931e",
+      "runtime": "c87fc9d8369cdb0abb97bb7ba1e2a88c32df931e"
+    },
+    {
+      "path": "evals/categories/feedbackExplanationData/inventoryWorkforce.json",
+      "upstream": "86b4779aea58358acaab9ed521b10af5dd55799f",
+      "historical": "86b4779aea58358acaab9ed521b10af5dd55799f",
+      "runtime": "86b4779aea58358acaab9ed521b10af5dd55799f"
+    },
+    {
+      "path": "evals/categories/feedbackExplanationData/predatorPrey.json",
+      "upstream": "f5e44a3a4273d37d589a468fdd3cf937e939a609",
+      "historical": "f5e44a3a4273d37d589a468fdd3cf937e939a609",
+      "runtime": "f5e44a3a4273d37d589a468fdd3cf937e939a609"
+    },
+    {
+      "path": "evals/categories/feedbackExplanationData/marketGrowth.json",
+      "upstream": "37299e6ee996ff19c472686d1a1acd8c8275695f",
+      "historical": "37299e6ee996ff19c472686d1a1acd8c8275695f",
+      "runtime": "37299e6ee996ff19c472686d1a1acd8c8275695f"
+    },
+    {
+      "path": "evals/categories/feedbackExplanationData/maibab.json",
+      "upstream": "f4bff97ff2de1d464afc216602734e1fef4f9183",
+      "historical": "f4bff97ff2de1d464afc216602734e1fef4f9183",
+      "runtime": "f4bff97ff2de1d464afc216602734e1fef4f9183"
+    },
+    {
+      "path": "engines/seldon/SeldonBrain.js",
+      "upstream": "8a547781d60ff1a116f6a8ec3d30274722dc8849",
+      "historical": "8a547781d60ff1a116f6a8ec3d30274722dc8849",
+      "runtime": "8a547781d60ff1a116f6a8ec3d30274722dc8849"
+    },
+    {
+      "path": "engines/seldon/engine.js",
+      "upstream": "03b5b48d35e1db4ef1234e82712fe570ced91770",
+      "historical": "03b5b48d35e1db4ef1234e82712fe570ced91770",
+      "runtime": "03b5b48d35e1db4ef1234e82712fe570ced91770"
+    },
+    {
+      "path": "agent/tools/builtin/discussModelWithSeldon.js",
+      "upstream": "376f6e9c7911643b631b5dbbe3d9e084c813ece5",
+      "historical": "376f6e9c7911643b631b5dbbe3d9e084c813ece5",
+      "runtime": "376f6e9c7911643b631b5dbbe3d9e084c813ece5"
+    },
+    {
+      "path": "evals/experiments/leaderboardDiscuss.json",
+      "upstream": "26bda711807078086ff27721e825b9157db197cc",
+      "historical": "26bda711807078086ff27721e825b9157db197cc",
+      "runtime": "26bda711807078086ff27721e825b9157db197cc"
+    },
+    {
+      "path": "evals/leaderboardGenerations.js",
+      "upstream": "49406ec1c06e25ca015aca40d8ee8c24653e48ef",
+      "historical": "49406ec1c06e25ca015aca40d8ee8c24653e48ef",
+      "runtime": "49406ec1c06e25ca015aca40d8ee8c24653e48ef"
+    },
+    {
+      "path": "evals/results/leaderboard_discussion_full_results.json.gz",
+      "upstream": "2f9093e8a8e1efe3c03b4988f6fda4ada87900f1",
+      "historical": "2f9093e8a8e1efe3c03b4988f6fda4ada87900f1",
+      "runtime": "2f9093e8a8e1efe3c03b4988f6fda4ada87900f1"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+name: Buffalo Research C4 provider pilot (offline)
+on:
+  push:
+    branches: ['research/c4-seldon-provider-pilot']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test research/buffalo-lab/c4/wire.test.mjs
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c4/prepare.mjs "$RUNNER_TEMP/c4-pilot"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffalo-c4-pilot-${{ github.run_id }}
+          path: ${{ runner.temp }}/c4-pilot/
+          retention-days: 30
+          if-no-files-found: warn

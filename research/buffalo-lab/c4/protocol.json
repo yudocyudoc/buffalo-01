@@ -1,0 +1,100 @@
+{
+  "protocol": "C4-seldon-v1",
+  "reference_commit": "58cfc86c8f2634401534fc89ff856f3f21c90bba",
+  "source_commit": "8daaed5366c8dc338f4ef5b1b4db83e9d4f3e392",
+  "case_ids": [
+    "bassDiffusion",
+    "inventoryWorkforce",
+    "maibab"
+  ],
+  "configs": [
+    {
+      "id": "gemma-off",
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "context": 256000,
+      "price": [
+        0.1,
+        0.3
+      ],
+      "reasoning": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      },
+      "limit": "max_completion_tokens"
+    },
+    {
+      "id": "gemma-on",
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "context": 256000,
+      "price": [
+        0.1,
+        0.3
+      ],
+      "reasoning": {
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        }
+      },
+      "limit": "max_completion_tokens"
+    },
+    {
+      "id": "gpt-oss",
+      "model": "@cf/openai/gpt-oss-120b",
+      "context": 128000,
+      "price": [
+        0.35,
+        0.75
+      ],
+      "reasoning": {},
+      "reasoning_note": "provider default medium per docs; direct run schema does not expose reasoning_effort",
+      "limit": "max_tokens"
+    },
+    {
+      "id": "deepseek",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "context": 1048576,
+      "price": [
+        0.3,
+        1.2
+      ],
+      "reasoning": {
+        "reasoning_effort": "high"
+      },
+      "limit": "max_completion_tokens"
+    },
+    {
+      "id": "inkling",
+      "model": "@cf/thinkingmachines/inkling-2-small",
+      "context": 1048576,
+      "price": [
+        0.3,
+        1
+      ],
+      "reasoning": {
+        "reasoning_effort": "high"
+      },
+      "limit": "max_completion_tokens"
+    },
+    {
+      "id": "glm",
+      "model": "@cf/zai-org/glm-5.3",
+      "context": 1048576,
+      "price": [
+        1.4,
+        4.4
+      ],
+      "reasoning": {
+        "reasoning_effort": "high"
+      },
+      "limit": "max_completion_tokens"
+    }
+  ],
+  "temperature": 0.6,
+  "max_output_tokens": 8192,
+  "repetitions": 3,
+  "max_pilot_calls": 6,
+  "max_matrix_calls": 54,
+  "live": false,
+  "documentation_date": "2026-11-26"
+}

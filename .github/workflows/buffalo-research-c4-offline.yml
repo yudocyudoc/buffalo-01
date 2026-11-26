@@ -18,6 +18,8 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test research/buffalo-lab/c4/wire.test.mjs
       - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c4/prepare.mjs "$RUNNER_TEMP/c4-pilot"
+      - name: Verify six pilot receipts and export remaining 48 calls
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c4/matrix-gate.mjs "$RUNNER_TEMP/c4-pilot"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

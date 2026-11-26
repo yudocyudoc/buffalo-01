@@ -10,3 +10,5 @@ Gemma OFF exaggerates R1 share; ON largely avoids that specific claim. GPT-OSS i
 
 ## Matrix gate
 Pilot transport passed for Bass only. Remaining 48 attempts still require per-case input checks and a separately bounded ledger. Do not assume GPT-OSS 128k context is sufficient for larger cases based on bytes or token ratio. If a provider rejects context or returns length, record failure, no truncation or retry. Do not run new judge inference automatically.
+
+Gemma alias confirmed: infra/private-merlin/gemma-response.mjs explicitly accepts @cf/google/gemma-4-26b-a4b-it-external from a historical native binding run; this is an observed accepted alias, not independent proof of identical model weights. Offline matrix gate verifies source hashes, six receipts, model IDs/known alias, usage and quote anchors, and exports only the 48 remaining scheduled calls with per-payload files. No automatic live execution.

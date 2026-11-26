@@ -1,0 +1,23 @@
+name: Buffalo Inventory P0 (offline)
+on:
+  push:
+    branches: ['research/inventory-inference-p0']
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test research/buffalo-lab/p0/inventory.test.mjs infra/full-runtime/ltm-fidelity.test.mjs
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/p0/inventory.mjs > "$RUNNER_TEMP/inventory-p0.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inventory-p0
+          path: ${{ runner.temp }}/inventory-p0.json

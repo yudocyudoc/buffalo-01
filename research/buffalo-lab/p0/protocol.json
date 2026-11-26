@@ -1,0 +1,290 @@
+{
+  "schema": "buffalo-inventory-p0/1",
+  "scope": "known-fixture regression, manual proposition annotation; not an automatic extractor or a blinded evaluation",
+  "source": {
+    "commit": "e4fb73261ce2dcbb83624deacf271fba63c6c975",
+    "wire_sha256": "5946ce39184a9c1674757a5b7a89ead395f75f1e6e9cff313543247d93642820",
+    "historical_run": "historical-stella-scores-only",
+    "analytic_run": "continuous-fixed-demand",
+    "euler_run": "independent-euler-linear-demand"
+  },
+  "tolerance": {
+    "period_months": 0.03,
+    "share_pp": 0.01,
+    "euler_stock": 0.00001,
+    "modal_ratio": 0.000001
+  },
+  "controls": [
+    {
+      "id": "share-correct",
+      "text": "At 1.0625 months, B1 in Feedback Loop Set 1 has 3.03%.",
+      "claim": {
+        "kind": "share",
+        "group": 1,
+        "loop": "B1",
+        "time": 1.0625,
+        "value": 3.03
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "share-swapped",
+      "text": "At 1.0625 months, B1 in Feedback Loop Set 2 has 3.03%.",
+      "claim": {
+        "kind": "share",
+        "group": 2,
+        "loop": "B1",
+        "time": 1.0625,
+        "value": 3.03
+      },
+      "expected": "contradicted"
+    },
+    {
+      "id": "share-missing-group",
+      "text": "At 1.0625 months, B1 has 100%.",
+      "claim": {
+        "kind": "share",
+        "loop": "B1",
+        "time": 1.0625,
+        "value": 100
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "share-inactive",
+      "text": "At time zero, B1 in Feedback Loop Set 2 is at 100%.",
+      "claim": {
+        "kind": "share",
+        "group": 2,
+        "loop": "B1",
+        "time": 0,
+        "value": 100
+      },
+      "expected": "contradicted"
+    },
+    {
+      "id": "peak-recurrence",
+      "text": "Successive late B1 share maxima in set 1 are about 7.8–7.9 months apart.",
+      "claim": {
+        "kind": "peak_spacing",
+        "group": 1,
+        "loop": "B1",
+        "after": 3,
+        "lo": 7.8,
+        "hi": 7.95
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "modal-period",
+      "text": "Under constant demand, the continuous oscillatory mode has a period of 15.72 months.",
+      "claim": {
+        "kind": "modal_period",
+        "value": 15.72,
+        "condition": "constant_demand"
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "wrong-modal-period",
+      "text": "Under constant demand, the continuous oscillatory mode has a period of 7.9 months.",
+      "claim": {
+        "kind": "modal_period",
+        "value": 7.9,
+        "condition": "constant_demand"
+      },
+      "expected": "contradicted"
+    },
+    {
+      "id": "historical-period",
+      "text": "The inventory period measured in the historical Stella trajectory was 15.72 months.",
+      "claim": {
+        "kind": "historical_stock_period",
+        "value": 15.72
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "wrong-historical-period",
+      "text": "The inventory period measured in the historical Stella trajectory was 7.9 months.",
+      "claim": {
+        "kind": "historical_stock_period",
+        "value": 7.9
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "limit-cycle",
+      "text": "Under constant demand, this system has a sustained nonzero limit cycle.",
+      "claim": {
+        "kind": "limit_cycle",
+        "value": true,
+        "condition": "constant_demand"
+      },
+      "expected": "contradicted"
+    },
+    {
+      "id": "negation",
+      "text": "Under constant demand, this system does not have a sustained nonzero limit cycle.",
+      "claim": {
+        "kind": "limit_cycle",
+        "value": false,
+        "condition": "constant_demand"
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "conditional",
+      "text": "If demand is constant, deviations from equilibrium decay.",
+      "claim": {
+        "kind": "stable",
+        "value": true,
+        "condition": "constant_demand"
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "missing-condition",
+      "text": "The inventory must converge for any demand signal.",
+      "claim": {
+        "kind": "stable",
+        "value": true,
+        "condition": "arbitrary_demand"
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "mechanism",
+      "text": "Delayed workforce adjustment can produce inventory overcorrection under the reconstructed demand ramp.",
+      "claim": {
+        "kind": "possible_overcorrection",
+        "condition": "euler_ramp"
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "hypothesis",
+      "text": "Perhaps changing the expectation adjustment time changes the observed overshoot.",
+      "claim": {
+        "kind": "intervention_hypothesis"
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "quoted-error",
+      "text": "A prior analyst called it a sustained limit cycle; this quote is not an assertion by the current author.",
+      "claim": {
+        "kind": "reported_speech"
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "no-cross-run",
+      "text": "The reconstructed Euler stock period is an observed historical Stella period.",
+      "claim": {
+        "kind": "historical_stock_period",
+        "value": 15.643019,
+        "evidence_run": "independent-euler-linear-demand"
+      },
+      "expected": "unverified"
+    },
+    {
+      "id": "early-onset-negative",
+      "text": "All B1 dominance onset spacings from month 6.5 onward lie between 7.65 and 7.98 months.",
+      "claim": {
+        "kind": "onset_spacing",
+        "group": 1,
+        "loop": "B1",
+        "after": 6,
+        "lo": 7.65,
+        "hi": 7.98
+      },
+      "expected": "contradicted"
+    }
+  ],
+  "real": [
+    {
+      "id": "real-limit",
+      "anchor": "this is a **sustained limit cycle, not a damped transient**",
+      "claim": {
+        "kind": "limit_cycle",
+        "value": true,
+        "condition": "constant_demand"
+      },
+      "expected": "contradicted"
+    },
+    {
+      "id": "real-share",
+      "anchor": "it cannot tell you the expectation loop's share of total model behavior",
+      "claim": {
+        "kind": "independent_denominators"
+      },
+      "expected": "supported"
+    },
+    {
+      "id": "real-peaks",
+      "anchor": "B2's share spikes to near 100% (peaks of 99.85, 99.48, 99.70, 99.54, 99.92, 99.98, 99.68)",
+      "claim": {
+        "kind": "peak_values",
+        "group": 1,
+        "loop": "B2",
+        "after": 3,
+        "values": [
+          99.85,
+          99.48,
+          99.7,
+          99.54,
+          99.92,
+          99.98,
+          99.68
+        ]
+      },
+      "expected": "contradicted"
+    },
+    {
+      "id": "real-onset",
+      "anchor": "Onset-to-onset spacing of B1 is 7.69, 7.94, 7.81, 7.88, 7.88 months — a **steady period of roughly 7.9 months**",
+      "claim": {
+        "kind": "onset_spacing",
+        "group": 1,
+        "loop": "B1",
+        "after": 14.75,
+        "lo": 7.65,
+        "hi": 7.98
+      },
+      "expected": "supported",
+      "scope_note": "The five enumerated late intervals start at 14.75; 6.5 to 14.75 is 8.25 and is deliberately not covered by this annotation. Correction to first draft's cutoff, not a change to the archived response."
+    },
+    {
+      "id": "real-mechanism",
+      "anchor": "the inventory loop sets the workforce target, the workforce loop chases it",
+      "claim": {
+        "kind": "feedback_structure"
+      },
+      "expected": "supported"
+    }
+  ],
+  "mixed": {
+    "text": "Under constant demand, deviations decay, but the system has a sustained nonzero limit cycle.",
+    "claims": [
+      {
+        "anchor": "Under constant demand, deviations decay",
+        "claim": {
+          "kind": "stable",
+          "value": true,
+          "condition": "constant_demand"
+        },
+        "expected": "supported"
+      },
+      {
+        "anchor": "the system has a sustained nonzero limit cycle",
+        "claim": {
+          "kind": "limit_cycle",
+          "value": true,
+          "condition": "constant_demand"
+        },
+        "expected": "contradicted"
+      }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 import {readProjectBody} from './project.mjs';
 import {RUN_ID, storedRun} from './project-runs.mjs';
 import {digest} from './provider-wire.mjs';
-import {narrativeAssessment, validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
+import {assessRunFeedback, validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
 
 import {readNativeText} from './native-ltm-storage.mjs';
 
@@ -47,11 +47,12 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
     const feedback = lookup('feedback');
     if (!feedback) return empty(404);
     if (value.feedback_sha256 !== await digest(feedback.body)) return empty(409);
-    const {content} = JSON.parse(feedback.body);
+    const savedFeedback = JSON.parse(feedback.body);
+    const {content} = savedFeedback;
     if (typeof value.prompt !== 'string' || !value.prompt.trim() || !validNarrative(value, content)) return empty(422);
     // New records must carry the exact server-derived assessment. Only the
     // byte-identical historical acknowledgement above can bypass this check.
-    const assessment = narrativeAssessment(content, JSON.parse(run.body).series.time);
+    const assessment = await assessRunFeedback(JSON.parse(run.body),savedFeedback,()=>readNativeText(sql,runId,'ltm'));
     if (assessment.dominance.status === 'contradicted' ||
         !Object.hasOwn(value, 'assessment') || !matchesAssessment(value.assessment, assessment)) return empty(422);
   }

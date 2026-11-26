@@ -22,11 +22,12 @@ export function validFeedback(content, time) {
   const grid = new Set(time);
   const ends = new Map();
   for (const p of content.dominantLoopsByPeriod) {
-    if (!grid.has(p?.startTime) || !grid.has(p.endTime) || p.endTime < p.startTime || p.startTime < (ends.get(p.partition) ?? -Infinity) ||
+    const group = p?.partition === null ? p.dominantLoops?.[0] : p?.partition;
+    if (!grid.has(p?.startTime) || !grid.has(p.endTime) || p.endTime < p.startTime || p.startTime < (ends.get(group) ?? -Infinity) ||
         !Array.isArray(p.dominantLoops) || !p.dominantLoops.length ||
         new Set(p.dominantLoops).size !== p.dominantLoops.length || !p.dominantLoops.every(id => ids.has(id))) return false;
     if (p.partition !== undefined && !p.dominantLoops.every(id => content.feedbackLoops.find(l=>l.identifier===id)?.partition === p.partition)) return false;
-    ends.set(p.partition,p.endTime);
+    ends.set(group,p.endTime);
   }
   return true;
 }
@@ -61,7 +62,11 @@ export async function generateRunNarrative(request, key, runId, prompt) {
   if (feedback.run_id !== runId || feedback.run_sha256 !== runHash ||
       !validFeedbackSource(feedback.source) || !validFeedback(feedback.content, run.series.time))
     throw Error('NARRATIVE_FEEDBACK_MISMATCH');
-  const assessment = narrativeAssessment(feedback.content, run.series.time);
+  const assessment = await assessRunFeedback(run, feedback, async () => {
+    const res = await request(path+'/ltm');
+    if (!res.ok) throw Error('NARRATIVE_NATIVE_EVIDENCE_UNAVAILABLE');
+    return res.text();
+  });
   if (assessment.dominance.status === 'contradicted')
     throw Error('NARRATIVE_DOMINANCE_CONTRADICTED', {cause: assessment.dominance});
   const provenance = {run_id: runId, run_sha256: runHash, revision: run.revision,
@@ -79,6 +84,17 @@ export async function generateRunNarrative(request, key, runId, prompt) {
     output: generated.output, feedbackLoops: generated.feedbackLoops, assessment};
 }
 
-export function narrativeAssessment(content, time) {
-  return {dominance: assessDominance(content, time), prose: 'not_semantically_verified'};
+export function narrativeAssessment(content,time,evidence) {
+  return {dominance:assessDominance(content,time,evidence),prose:'not_semantically_verified'};
+}
+
+export async function assessRunFeedback(run, feedback, readEvidence) {
+  if (run.simulator?.source!=='server') return narrativeAssessment(feedback.content,run.series.time);
+  const body=await readEvidence();
+  if (!body || await digest(body)!==feedback.source.evidence_sha256) throw Error('NATIVE_EVIDENCE_HASH_MISMATCH');
+  const evidence=JSON.parse(body);
+  if (evidence.run_id!==feedback.run_id || evidence.run_sha256!==feedback.run_sha256 ||
+      evidence.model_sha256!==run.model_sha256 || evidence.revision!==run.revision ||
+      evidence.source.name!=='pysimlin' || evidence.source.version!=='0.8.5') throw Error('NATIVE_EVIDENCE_IDENTITY_MISMATCH');
+  return narrativeAssessment(feedback.content,run.series.time,evidence);
 }

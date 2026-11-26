@@ -97,6 +97,10 @@ export async function reopenNativeLtm(request,other,key,records,useProvider) {
     assert.equal(narrated,1);
     const saved=await (await request('/project/runs/'+id+'/narratives/'+narrativeId)).json();
     assert.equal(saved.run_sha256,selected.feedback.run_sha256);
+    assert.deepEqual(saved.assessment,selected.assessment);
+    assert.equal(saved.assessment.dominance.status,'supported_by_partition_scores');
+    assert.equal(saved.assessment.dominance.checkedSamples,name==='maibab'?490:400);
+    assert.equal(saved.assessment.prose,'not_semantically_verified');
     assert.match(saved.output.textContent,/Analysis of the saved Simlin run/);
   }
   console.log('FULL_NATIVE_SIMLIN_ARMS_RACE_MAIBAB_REOPENED_ORIGINAL_MERLIN_TOOLS');

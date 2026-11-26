@@ -4,6 +4,7 @@
  * a temp session directory, in the same idiom as RagStore.test.js.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { jest } from '@jest/globals';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
@@ -114,6 +115,46 @@ describe('MediaStore', () => {
       // Oldest gone, newest kept.
       expect(store.exists(metas[0].mediaId)).toBe(false);
       expect(store.exists(metas[metas.length - 1].mediaId)).toBe(true);
+    });
+
+    it('preserves FIFO across store instances even with identical timestamps and reversed handle order', () => {
+      const other = new MediaStore(sessionManager, sessionId);
+      const cap = config.mediaMaxItemsPerSession;
+      const handles = jest.spyOn(MediaStore, 'newMediaId');
+      let serial = BigInt(cap + 4);
+      handles.mockImplementation(() => 'med_' + (serial--).toString(16).padStart(16, '0'));
+      jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+      try {
+        const metas = [];
+        for (let i = 0; i < cap + 3; i++) {
+          metas.push((i % 2 ? other : store).put(Buffer.concat([PNG_1x1, Buffer.from([i, i >> 8])]),
+            { name: `same-clock-${i}.png` }));
+        }
+        expect(new Set(metas.map(m => m.createdAt)).size).toBe(1);
+        expect(store.list().map(m => m.mediaId)).toEqual(metas.slice(-cap).map(m => m.mediaId));
+        expect(other.list().map(m => m.mediaId)).toEqual(metas.slice(-cap).map(m => m.mediaId));
+        expect(metas.slice(0, 3).every(m => !store.exists(m.mediaId))).toBe(true);
+      } finally {
+        jest.useRealTimers();
+        handles.mockRestore();
+      }
+    });
+
+    it('orders legacy metadata without a creationOrder before a later same-clock put', () => {
+      jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+      try {
+        const first = store.put(PNG_1x1);
+        const path = join(tempDir, 'media', first.mediaId, 'meta.json');
+        const legacy = JSON.parse(readFileSync(path, 'utf8'));
+        delete legacy.creationOrder;
+        writeFileSync(path, JSON.stringify(legacy));
+        const second = new MediaStore(sessionManager, sessionId).put(Buffer.concat([PNG_1x1, Buffer.from([1])]));
+        expect(first.createdAt).toBe(second.createdAt);
+        expect(second.creationOrder).toBeGreaterThan(Date.parse(legacy.createdAt));
+        expect(store.list().map(m => m.mediaId)).toEqual([first.mediaId, second.mediaId]);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('reports a pruned handle as missing with an actionable message', () => {

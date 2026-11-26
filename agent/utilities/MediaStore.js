@@ -42,6 +42,15 @@ import config from '../../config.js';
 // the client, so this is the path-traversal guard as much as a format check.
 export const MEDIA_ID_RE = /^med_[0-9a-f]{16}$/;
 
+// The ISO timestamp has millisecond resolution, so it cannot establish FIFO
+// within a burst of synchronous puts. Persist a logical ordering key alongside
+// the actual creation timestamp; old records still use their timestamp.
+function creationOrder(meta) {
+  if (Number.isSafeInteger(meta.creationOrder) && meta.creationOrder >= 0) return meta.creationOrder;
+  const timestamp = Date.parse(meta.createdAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 export class MediaError extends Error {
   constructor(message, code) {
     super(message);
@@ -100,11 +109,18 @@ export class MediaStore {
     }
 
     const sha256 = createHash('sha256').update(buffer).digest('hex');
-    const existing = this.list().find(meta => meta.sha256 === sha256);
+    const metas = this.list();
+    const existing = metas.find(meta => meta.sha256 === sha256);
     if (existing) {
       return existing;
     }
 
+    // Derive order from shared on-disk metadata, not per-instance memory.
+    // Sequential puts across store instances remain FIFO even if the wall
+    // clock ties or moves backwards. Truly simultaneous writers may tie;
+    // the handle tie-break below is deterministic, not a cross-process lock.
+    const now = new Date();
+    const order = Math.max(now.getTime(), ...metas.map(meta => creationOrder(meta) + 1));
     this.#pruneTo(config.mediaMaxItemsPerSession - 1);
 
     const mediaId = MediaStore.newMediaId();
@@ -123,7 +139,8 @@ export class MediaStore {
       source,
       description,
       prompt,
-      createdAt: new Date().toISOString()
+      createdAt: now.toISOString(),
+      creationOrder: order
     };
     writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
 
@@ -182,7 +199,8 @@ export class MediaStore {
       }
     }
 
-    return metas.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    return metas.sort((a, b) => creationOrder(a) - creationOrder(b) ||
+      String(a.mediaId).localeCompare(String(b.mediaId)));
   }
 
   count() {

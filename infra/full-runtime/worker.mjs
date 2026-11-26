@@ -5,6 +5,7 @@ import {engineCompletion} from './engine-gateway.mjs';
 import {ENGINE_ENDPOINT} from './engine-protocol.mjs';
 import {projectModel} from './project.mjs';
 import {projectRuns} from './project-runs.mjs';
+import {projectNativeLtm} from './native-ltm.mjs';
 import {projectRunArtifact} from './project-run-artifacts.mjs';
 import {projectConversations} from './project-conversations.mjs';
 
@@ -72,7 +73,7 @@ export class ProjectRuntime extends DurableObject {
         await c.interceptOutboundHttps('*',intercept);
       }
       c.start({image:c.images.base,instance:'basic',enableInternet:false,env:{
-        AUTHENTICATION_KEY:this.env.APP_AUTH_KEY,PORT:'8080',WEBSOCKET_PORT:'8080',
+        AUTHENTICATION_KEY:this.env.APP_AUTH_KEY,PORT:'8080',WEBSOCKET_PORT:'8080',BUFFALO_NATIVE_LTM:'true',
         ...(ai?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA}:{ }),
         ...(ai&&this.env.ENGINE_INFERENCE_ENABLED==='true'?{BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
     }
@@ -93,8 +94,17 @@ export class ProjectRuntime extends DurableObject {
     this.ready=true;
     return port;
   }
+  async simulateNative(project,body){
+    if(!this.env.APP_AUTH_KEY)return new Response(null,{status:503});
+    try{
+      await this.applicationPort(project);
+      return await this.ctx.container.getTcpPort(8081).fetch(new Request('http://container/simulate',{method:'POST',body}));
+    }catch{return new Response(null,{status:503});}
+  }
   async fetch(request){
     const url=new URL(request.url);
+    const native=/^\/project\/runs\/([^/]+)\/ltm$/.exec(url.pathname);
+    if(native)return projectNativeLtm(request,this.ctx.storage,native[1],body=>this.simulateNative(request.headers.get('x-buffalo-project'),body));
     if(url.pathname==='/project/model')return projectModel(request,this.ctx.storage);
     const revision=/^\/project\/model\/revisions\/([1-9]\d{0,15})$/.exec(url.pathname);
     if(revision&&Number.isSafeInteger(Number(revision[1])))return projectModel(request,this.ctx.storage,Number(revision[1]));

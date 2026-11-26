@@ -1,9 +1,14 @@
 import {readProjectBody} from './project.mjs';
 import {RUN_ID, storedRun} from './project-runs.mjs';
 import {digest} from './provider-wire.mjs';
-import {narrativeAssessment, validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
+import {assessRunFeedback, validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
+
+import {readNativeText} from './native-ltm-storage.mjs';
 
 const empty = status => new Response(null, {status});
+export function initRunArtifacts(sql) {
+  sql.exec('CREATE TABLE IF NOT EXISTS run_artifacts (run_id TEXT NOT NULL, artifact_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,artifact_id))');
+}
 
 // Compare JSON objects by field and arrays in order. The expected shape is server-generated.
 function matchesAssessment(actual, expected) {
@@ -21,8 +26,11 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
   const sql = storage.sql;
   const run = storedRun(sql, runId);
   if (!run) return empty(404);
-  sql.exec('CREATE TABLE IF NOT EXISTS run_artifacts (run_id TEXT NOT NULL, artifact_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,artifact_id))');
-  const lookup = id => sql.exec('SELECT body FROM run_artifacts WHERE run_id=? AND artifact_id=?', runId, id).toArray()[0];
+  initRunArtifacts(sql);
+  const lookup = id => {
+    const row = sql.exec('SELECT body FROM run_artifacts WHERE run_id=? AND artifact_id=?',runId,id).toArray()[0];
+    return row?.body === '' ? {body:readNativeText(sql,runId,id)} : row;
+  };
   const id = narrativeId ?? 'feedback';
   if (request.method === 'GET') {
     const row = lookup(id);
@@ -39,11 +47,12 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
     const feedback = lookup('feedback');
     if (!feedback) return empty(404);
     if (value.feedback_sha256 !== await digest(feedback.body)) return empty(409);
-    const {content} = JSON.parse(feedback.body);
+    const savedFeedback = JSON.parse(feedback.body);
+    const {content} = savedFeedback;
     if (typeof value.prompt !== 'string' || !value.prompt.trim() || !validNarrative(value, content)) return empty(422);
     // New records must carry the exact server-derived assessment. Only the
     // byte-identical historical acknowledgement above can bypass this check.
-    const assessment = narrativeAssessment(content, JSON.parse(run.body).series.time);
+    const assessment = await assessRunFeedback(JSON.parse(run.body),savedFeedback,()=>readNativeText(sql,runId,'ltm'));
     if (assessment.dominance.status === 'contradicted' ||
         !Object.hasOwn(value, 'assessment') || !matchesAssessment(value.assessment, assessment)) return empty(422);
   }

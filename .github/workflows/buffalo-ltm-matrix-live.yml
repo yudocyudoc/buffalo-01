@@ -1,0 +1,92 @@
+name: Buffalo LTM complete matrix (manual real Gemma)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact selected checkout SHA
+        required: true
+        type: string
+      approval:
+        description: Enter RUN_LTM_MATRIX_MAX_64
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buffalo-ltm-matrix-live
+  cancel-in-progress: false
+jobs:
+  live:
+    if: ${{ inputs.source_commit == github.sha && inputs.approval == 'RUN_LTM_MATRIX_MAX_64' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check required Workers AI credential before building
+        env:
+          BUFFALO_WORKERS_AI_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_AI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BUFFALO_WORKERS_AI_TOKEN" ]; then
+            echo "::error title=Missing Workers AI credential::Configure the repository Actions secret BUFFALO_CF_WORKERS_AI_TOKEN. No inference attempted."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test infra/full-runtime/*.test.mjs
+      - run: npm install --prefix "$RUNNER_TEMP/full-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r third-party/PySD-simulator/requirements.txt
+      - run: |
+          python -m venv "$RUNNER_TEMP/simlin"
+          "$RUNNER_TEMP/simlin/bin/python" -m pip install --only-binary=:all: pysimlin==0.8.5
+          echo "BUFFALO_SIMLIN_PYTHON=$RUNNER_TEMP/simlin/bin/python" >> "$GITHUB_ENV"
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
+      - name: Produce original Bass evidence offline
+        run: |
+          docker build -f infra/full-runtime/ltm-candidate/Dockerfile -t buffalo-ltm:narrative .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 buffalo-ltm:narrative > "$RUNNER_TEMP/narrative-bass.json"
+          echo "FULL_LTM_REPORT=$RUNNER_TEMP/narrative-bass.json" >> "$GITHUB_ENV"
+          echo "FULL_LTM_IMAGE=$(docker image inspect --format '{{.Id}}' buffalo-ltm:narrative)" >> "$GITHUB_ENV"
+      - name: Exact original runtime with controlled baseline and live matrix
+        env:
+          BUFFALO_WORKERS_AI_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_AI_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: e0cb52526a69c0f48f001901a5b9a640
+        run: |
+          set -euo pipefail
+          test -n "$BUFFALO_WORKERS_AI_TOKEN"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          export FULL_LTM_LIVE_APPROVAL=RUN_LTM_MATRIX_MAX_64
+          export FULL_LTM_LIVE_SOCKET="$RUNNER_TEMP/ltm-live.sock" FULL_LTM_BROKER_REPORT="$RUNNER_TEMP/ltm-broker.json"
+          export FULL_LTM_MATRIX_REPORT="$RUNNER_TEMP/ltm-matrix.json"
+          export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools" FULL_PYTHON_PATH="$(dirname "$(command -v python3)")"
+          node infra/full-runtime/ltm-live-broker.mjs &
+          broker=$!
+          trap 'kill "$broker" 2>/dev/null || true; wait "$broker" 2>/dev/null || true; rm -f "$FULL_LTM_LIVE_SOCKET"' EXIT
+          unset BUFFALO_WORKERS_AI_TOKEN CLOUDFLARE_ACCOUNT_ID
+          for i in $(seq 1 50); do test -S "$FULL_LTM_LIVE_SOCKET" && break; sleep .1; done
+          test -S "$FULL_LTM_LIVE_SOCKET"
+          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,FULL_LTM_REPORT,FULL_LTM_IMAGE,BUFFALO_SIMLIN_PYTHON,FULL_LTM_MATRIX_REPORT,FULL_LTM_LIVE_SOCKET,FULL_LTM_LIVE_APPROVAL unshare --net --mount --propagation private sh -ec '
+            ip link set lo up
+            sysctl -qw net.ipv4.ip_unprivileged_port_start=0
+            hosts=$(mktemp)
+            cat /etc/hosts > "$hosts"
+            echo "127.0.0.1 merlin-provider.internal" >> "$hosts"
+            chmod 644 "$hosts"
+            mount --bind "$hosts" /etc/hosts
+            exec runuser -u runner -- env PATH="$FULL_PYTHON_PATH:$PATH" "$FULL_NODE" infra/full-runtime/offline.mjs'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ltm-live-matrix-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/ltm-matrix.json
+            ${{ runner.temp }}/ltm-broker.json
+          retention-days: 14
+          if-no-files-found: warn

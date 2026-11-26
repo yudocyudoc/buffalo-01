@@ -2,6 +2,7 @@
 // identity, not the scientific truth of client-reported results.
 import {modelRevision,readProjectBody} from './project.mjs';
 import {digest} from './provider-wire.mjs';
+import {readNativeText} from './native-ltm-storage.mjs';
 
 export const RUN_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -17,12 +18,12 @@ const specKeys=['startTime','stopTime','dt','timeUnits','integrationMethod'];
 
 // First contract: completed scalar finite trajectories, no runtime parameter
 // overrides. An intervention is represented by its own stored model revision.
-export function validRun(value){
+export function validRun(value,source='client'){
  if(!exactKeys(value,['revision','model_sha256','simulator','settings','execution','series'],['unitWarnings','errors']))return false;
  const {simulator,settings,execution,series}=value;
  if(!revision(value.revision)||typeof value.model_sha256!=='string'||!SHA.test(value.model_sha256))return false;
  if(!exactKeys(simulator,['name','version','source','implementation_sha256'])||
-  !str(simulator.name)||!str(simulator.version)||simulator.source!=='client'||
+  !str(simulator.name)||!str(simulator.version)||simulator.source!==source||
   typeof simulator.implementation_sha256!=='string'||!SHA.test(simulator.implementation_sha256))return false;
  if(!exactKeys(settings,specKeys)||![settings.startTime,settings.stopTime,settings.dt].every(finite)||
   settings.stopTime<settings.startTime||settings.dt<=0||!str(settings.timeUnits)||!str(settings.integrationMethod))return false;
@@ -43,7 +44,8 @@ function init(sql){
 }
 export function storedRun(sql,id){
  init(sql);
- return sql.exec('SELECT body FROM simulation_runs WHERE run_id=?',id).toArray()[0];
+ const row=sql.exec('SELECT body FROM simulation_runs WHERE run_id=?',id).toArray()[0];
+ return row?.body==='' ? {body:readNativeText(sql,id,'run')} : row;
 }
 export async function projectRuns(request,storage,runId=null){
  const sql=storage.sql;

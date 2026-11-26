@@ -8,12 +8,12 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
  if(edit&&!scenario)assertDemand(model,'3');
  if(scenario)check(edit&&typeof scenario.message==='string'&&typeof scenario.verify==='function','INVALID_SCENARIO');
  return new Promise((resolve,reject)=>{
-  let id,stage='created',queue=Promise.resolve(),done=false,updated=0,output=null;
+  let id,stage='created',queue=Promise.resolve(),done=false,updated=0,output=null,rawOutput=null,fidelity=null;
   const finish=error=>{
    if(done)return;done=true;clearTimeout(timer);
    for(const [type,listener] of [['message',message],['error',fail],['close',closed]])ws.removeEventListener(type,listener);
    if(error){try{ws.close(1008,'SESSION_FAILED')}catch{}reject(error)}
-   else resolve({session_id:id,updated,output,tools});
+   else resolve({session_id:id,updated,output,tools,...(scenario?.finalizeOutput?{rawOutput,fidelity}:{})});
   };
   const send=(type,body={})=>ws.send(JSON.stringify({type,sessionId:id,...body}));
   const dispatch=async event=>{
@@ -44,11 +44,12 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
      check(stage==='chat','UNEXPECTED_MODEL_REQUEST');
      send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
     case 'update_model':
-     check(stage==='chat'&&typeof save==='function','UNEXPECTED_UPDATE');
+     check(stage==='chat'&&!scenario?.readOnly&&typeof save==='function','UNEXPECTED_UPDATE');
      const saved=await save(m.modelData);
      if(journal)await journal.modelAccepted(m.requestId,saved);
      model=m.modelData;updated++;
      send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
+    case 'feedback_request':
     case 'run_model':
     case 'get_run_info':
     case 'get_variable_data':{
@@ -60,20 +61,33 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
     case 'tool_call_completed':
      check(tools.length<256,'TOOL_TRACE_LIMIT');
      tools.push({event:m.type,callId:m.callId,name:m.toolName,isError:m.isError});
+     if (m.type==='tool_call_completed' && scenario?.onToolCompleted) await scenario.onToolCompleted(m);
      if(journal)await journal.event(m.type==='tool_call_notification'?
        {type:'tool_started',call_id:m.callId,tool_name:m.toolName,...(m.arguments===undefined?{}:{arguments:m.arguments})}:
        {type:'tool_completed',call_id:m.callId,tool_name:m.toolName,is_error:m.isError,...(m.result===undefined?{}:{result:m.result})});
      break;
     case 'agent_text':
      if(stage==='chat'&&!m.isThinking&&typeof m.content==='string'){
-      output=m.content.slice(0,24000);
-      if(journal&&!m.isProgress&&m.content.length)await journal.event({type:'assistant_text',content:m.content});
+      if(scenario?.finalizeOutput){
+       // The factual client does not stream or journal unvalidated model text.
+       // Only the final non-progress frame is eligible for reference selection.
+       if(!m.isProgress)rawOutput=m.content.length<=24000?m.content:null;
+      }else{
+       output=m.content.slice(0,24000);
+       if(journal&&!m.isProgress&&m.content.length)await journal.event({type:'assistant_text',content:m.content});
+      }
      }
      break;
     case 'agent_complete':
      check(stage==='chat'&&m.status==='success','AGENT_NOT_SUCCESS');
      if(scenario)await scenario.verify(model,tools);else assertDemand(model,'5');
-     check(updated>0,'MODEL_NOT_UPDATED');
+     if (!scenario?.readOnly) check(updated>0,'MODEL_NOT_UPDATED');
+     if(scenario?.finalizeOutput){
+      fidelity=await scenario.finalizeOutput(rawOutput);
+      check(typeof fidelity?.output==='string'&&fidelity.output.length>0,'INVALID_FINALIZED_OUTPUT');
+      output=fidelity.output;
+      if(journal)await journal.event({type:'assistant_text',content:output});
+     }
      if(journal)await journal.complete();
      stage='disconnect';send('disconnect');break;
     case 'error':throw Error('ORIGINAL_AGENT_ERROR');

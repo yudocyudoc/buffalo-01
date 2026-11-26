@@ -27,6 +27,9 @@ import {createBassFixture,exerciseBassReference} from './test-seldon-bass-refere
 import {exerciseDocumentation} from './test-document-project-model.mjs';
 import {seedNarrativeRuns, exerciseRunNarratives} from './test-run-narrative.mjs';
 
+import {seedNativeLtm,reopenNativeLtm} from './test-native-ltm.mjs';
+import {seedLtmMatrix,reopenLtmMatrix,matrixReport} from './test-native-ltm-matrix.mjs';
+
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
 const {build}=deps('esbuild');
@@ -48,17 +51,18 @@ export class LocalProject extends ProjectRuntime {
     }
     return super.fetch(r);
   }
+  async simulateNative(project,body){return fetch('http://127.0.0.1:8081/simulate',{method:'POST',body});}
   async applicationPort(){return {fetch(r){const u=new URL(r.url);u.host='127.0.0.1:8080';return fetch(new Request(u,r));}};}
 }`;
 const script=(await build({stdin:{contents:testModule,resolveDir:process.cwd()},bundle:true,write:false,
   format:'esm',target:'es2022',external:['cloudflare:workers']})).outputFiles[0].text;
 const disk=await mkdtemp(join(tmpdir(),'buffalo-full-test-'));
-const fixtureOptions=(limit=27)=>({...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793,workers:[
+const fixtureOptions=(limit=27,ttl=600000)=>({...convertV4MiniflareOptions({cf:false,host:'127.0.0.1',port:8793,workers:[
   {name:'client',modules:true,compatibilityDate:'2026-11-19',serviceBindings:{FULL:{name:'full',entrypoint:'FullApplication'}},
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project',q.headers.get('x-fixture-project')==='other'?'other':'example');q.headers.delete('x-fixture-project');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
     bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:String(limit),ENGINE_INFERENCE_ENABLED:'true',
-      AI_EXPIRES_AT:new Date(Date.now()+600000).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
+      AI_EXPIRES_AT:new Date(Date.now()+ttl).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk});
 const options=fixtureOptions();
 let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null,lastEngineRequest=null,failNextEngine=false,invalidNextEngine=null;
@@ -69,7 +73,8 @@ const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...op
 function start(edit){
   child=spawn('/usr/bin/setpriv',['--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',process.execPath,
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
-      PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,
+      PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,BUFFALO_NATIVE_LTM:'true',
+      BUFFALO_SIMLIN_PYTHON:process.env.BUFFALO_SIMLIN_PYTHON,
       ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
@@ -310,7 +315,10 @@ try{
   });
   await stop();await mf.dispose();mf=new Miniflare(cldOptions);await mf.ready;
   const cld=await doc();assert.equal(cld.status,200);assert.equal(cld.headers.get('etag'),cldTag);
-  start(false);await rest(base,key);await reopenQualitative(key,await cld.json());
+  // Consume the Miniflare response before starting the app and awaiting its REST checks.
+  // Keep the recovered model, not the response stream, across asynchronous boundaries.
+  const recoveredCLD=await cld.json();
+  start(false);await rest(base,key);await reopenQualitative(key,recoveredCLD);
   console.log('FULL_ORIGINAL_CLD_REST_MERLIN_AND_PROJECT_REOPENED_OFFLINE');
   // Return to the preexisting quantitative model-only storage; do not
   // start the original app or invoke the controlled provider in this test.
@@ -363,4 +371,31 @@ try{
     assert.deepEqual(await (await request(c.path+'/feedback')).json(),c.feedback);
   }
   console.log('FULL_LTM_NARRATIVE_BASS_AND_JOINT_DOMINANCE_REOPENED');
+  await mf.dispose();
+  const nativeOptions={...fixtureOptions(10),resourcePersistencePath:join(disk,'native-ltm')};
+  mf=new Miniflare(nativeOptions);await mf.ready;
+  start(false);await rest(base,key);
+  const nativeRuns=await seedNativeLtm(request,other);
+  await stop();await mf.dispose();
+  mf=new Miniflare(nativeOptions);await mf.ready;
+  start(true);await rest(base,key);
+  await reopenNativeLtm(request,other,key,nativeRuns,provider=>{engineFixture=provider;});
+  // Keep the earlier two-case regression intact. The separate matrix has its own
+  // fresh local storage and budget. Live mode affects ONLY this matrix.
+  if(process.env.FULL_LTM_MATRIX_REPORT){
+    await stop();await mf.dispose();
+    const socket=process.env.FULL_LTM_LIVE_SOCKET??null;
+    if(socket)assert.equal(process.env.FULL_LTM_LIVE_APPROVAL,'RUN_LTM_MATRIX_MAX_64');
+    const matrixOptions={...fixtureOptions(64,socket?1800000:600000),resourcePersistencePath:join(disk,'native-ltm-matrix')};
+    // The original local expiry is 10 min; allow up to 30 min only for the
+    // explicitly opted-in matrix, still with a 64-call durable ceiling.
+    const {report,save}=matrixReport(process.env.FULL_LTM_MATRIX_REPORT,socket);
+    save();
+    mf=new Miniflare(matrixOptions);await mf.ready;
+    start(false);await rest(base,key);
+    await seedLtmMatrix(request,other,report,save);
+    await stop();await mf.dispose();mf=new Miniflare(matrixOptions);await mf.ready;
+    start(true);await rest(base,key);
+    await reopenLtmMatrix(request,other,key,report,save,provider=>{engineFixture=provider;},{socket});
+  }
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

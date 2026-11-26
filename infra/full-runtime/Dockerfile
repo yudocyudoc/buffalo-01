@@ -12,7 +12,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY . .
 RUN python3 -m venv /opt/buffalo-python && /opt/buffalo-python/bin/pip install --no-cache-dir -r third-party/PySD-simulator/requirements.txt
-ENV PATH=/opt/buffalo-python/bin:$PATH
+RUN python3 -m venv /opt/buffalo-simlin && /opt/buffalo-simlin/bin/pip install --only-binary=:all: --no-cache-dir pysimlin==0.8.5
+ENV PATH=/opt/buffalo-python/bin:$PATH BUFFALO_SIMLIN_PYTHON=/opt/buffalo-simlin/bin/python
 COPY --from=chains /out/causal-chains ./third-party/causal-chains/causal-chains
 ENV NODE_ENV=production PORT=8080 WEBSOCKET_PORT=8080 ALLOW_UNSANDBOXED_FALLBACK=false
 USER node

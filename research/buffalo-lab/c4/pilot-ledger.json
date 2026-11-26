@@ -29,6 +29,13 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/pilot-receipts/gpt-oss.json",
       "schema_valid": true
+    },
+    {
+      "id": "C4-bassDiffusion-deepseek-r1",
+      "config": "deepseek",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "2c0bfd127937ada34411489436715ef4fef2720e42ffb30f256bbb835c8d2024",
+      "status": "RESERVED"
     }
   ],
   "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."

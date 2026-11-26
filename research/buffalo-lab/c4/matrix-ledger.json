@@ -14,6 +14,16 @@
     "retries": 0,
     "reason": "First large-input probes use same 1M-context Inkling configuration (observed low latency and cost on Bass); move these two pre-existing matrix rows ahead of planned order; no candidate elimination or change to wire."
   },
-  "attempts": [],
+  "attempts": [
+    {
+      "id": "C4-inventoryWorkforce-inkling-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "inkling",
+      "model": "@cf/thinkingmachines/inkling-2-small",
+      "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+      "bytes": 268971,
+      "status": "RESERVED"
+    }
+  ],
   "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded."
 }

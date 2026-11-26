@@ -21,6 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
+      - name: Check required Workers AI credential before building
+        env:
+          BUFFALO_WORKERS_AI_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_AI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BUFFALO_WORKERS_AI_TOKEN" ]; then
+            echo "::error title=Missing Workers AI credential::Configure the repository Actions secret BUFFALO_CF_WORKERS_AI_TOKEN. No inference attempted."
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

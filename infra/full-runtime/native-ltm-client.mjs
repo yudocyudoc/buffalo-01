@@ -1,6 +1,7 @@
 import {digest} from './provider-wire.mjs';
 import {RUN_ID} from './project-runs.mjs';
 import {assessRunFeedback,diagnoseNarrative} from './run-narrative.mjs';
+import {prepareFidelityPresentation} from './ltm-fidelity-presentation.mjs';
 
 // Bind the original SD-AI client protocol to one immutable project run.
 // Reopening by UUID reloads both the model revision and the matching evidence.
@@ -19,7 +20,8 @@ export async function openNativeLtmRun(request,runId) {
       feedback.run_sha256!==await digest(runBody) || run.model_sha256!==await digest(modelBody))
     throw Error('NATIVE_RUN_IDENTITY_MISMATCH');
   const model=JSON.parse(modelBody);
-  const assessment=await assessRunFeedback(run,feedback,()=>read(path+'/ltm'));
+  const evidenceBody=await read(path+'/ltm');
+  const assessment=await assessRunFeedback(run,feedback,()=>evidenceBody);
   const requireConsistentPeriods=()=>{
     if (assessment.dominance.status==='contradicted') throw Error('NARRATIVE_DOMINANCE_CONTRADICTED',{cause:assessment.dominance});
   };
@@ -34,7 +36,12 @@ export async function openNativeLtmRun(request,runId) {
     if (!res.ok) throw Error('NATIVE_NARRATIVE_SAVE_FAILED_'+res.status);
     return record;
   }
-  return {model,runId,run,feedback,assessment,saveNarrative, async clientRequest(message) {
+  function prepareFidelity(prompt) {
+    requireConsistentPeriods();
+    return prepareFidelityPresentation({runId,run,feedback,evidence:JSON.parse(evidenceBody),
+      stockNames:model.variables.filter(v=>v.type==='stock').map(v=>v.name),prompt});
+  }
+  return {model,runId,run,feedback,assessment,saveNarrative,prepareFidelity, async clientRequest(message) {
     if ((message.runIds??[]).some(id=>id!==runId)) throw Error('RUN_OUTSIDE_SELECTED_ANALYSIS');
     if (message.type==='feedback_request') {
       requireConsistentPeriods();

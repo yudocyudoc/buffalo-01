@@ -97,7 +97,7 @@ export async function reopenLtmMatrix(request,other,key,report,save,useProvider,
       const actions=[['get_feedback_information',{runIds:[c.runId]}],
         ['get_variable_data',{runIds:[c.runId],variableNames:[stock],detailed:false}],
         ['generate_ltm_narrative',{difficulty:'normal',parameters:{runIds:[c.runId],problemStatement:'Explain the feedback in the saved run.'}}]];
-      let turn=0;
+      let turn=0, presentation;
       useProvider(async(model,wire)=>{
         assert.equal(model,GEMMA);
         assert(c.providerCalls.length<8,'case inference ceiling');
@@ -116,7 +116,7 @@ export async function reopenLtmMatrix(request,other,key,report,save,useProvider,
               const [name,args]=actions[turn++];
               assert(wire.tools.some(t=>t.function.name===name));
               message.tool_calls=[{type:'function',id:'matrix-'+turn,function:{name,arguments:JSON.stringify(args)}}];
-            }else message.content='Controlled matrix acknowledgement.';
+            }else message.content=presentation?'BUFFALO_FACTS_V1 '+c.runId+' F1 F2':'Controlled matrix acknowledgement.';
             response={model,usage:{prompt_tokens:50,completion_tokens:20},choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}]};
           }
           call.status='RETURNED';call.response=response;save();return response;
@@ -125,8 +125,12 @@ export async function reopenLtmMatrix(request,other,key,report,save,useProvider,
       const prompt='Analyze the immutable saved simulation '+c.runId+
         '. Use get_feedback_information for that run, get_variable_data for '+stock+
         ', and generate_ltm_narrative for that run. Explain structure, activity and dominance separately. Do not edit or rerun the model. Do not invent periods or equate individual maxima with dominance.';
+      // F4 is exercised with the controlled provider, not the retired REST
+      // broker path. Historical live captures remain on the prior contract.
+      if(!socket)presentation=selected.prepareFidelity(prompt);
       const result=await session({key,mode:'sfd',agent:'merlin',edit:true,deadline:Date.now()+180000,model:selected.model,scenario:{
-        readOnly:true,message:prompt,clientRequest:selected.clientRequest,
+        readOnly:true,message:presentation?.message??prompt,clientRequest:selected.clientRequest,
+        ...(presentation?{finalizeOutput:presentation.finalize}:{}),
         async onToolCompleted(message){
           c.toolTrace.push({name:message.toolName,isError:message.isError});
           if(message.toolName==='generate_ltm_narrative'&&!message.isError){
@@ -147,6 +151,15 @@ export async function reopenLtmMatrix(request,other,key,report,save,useProvider,
         }
       }});
       c.finalText=result.output;
+      if(presentation){
+        c.rawFinalText=result.rawOutput;
+        c.finalFidelity=result.fidelity;
+        assert.equal(result.fidelity.status,'model_selection_accepted');
+        assert.equal(result.fidelity.identity.run_id,c.runId);
+        assert.equal(result.fidelity.identity.evidence_sha256,c.evidenceHash);
+        assert(result.fidelity.claims.some(x=>x.claim.kind==='dominance'));
+        assert(!result.output.includes('BUFFALO_FACTS_V1'));
+      }
       assert(c.narratives.length>0,'no saved narrative');
       c.status='PASS';
     }catch(e){c.status='REOPEN_OR_NARRATIVE_FAILED';c.error=err(e);}

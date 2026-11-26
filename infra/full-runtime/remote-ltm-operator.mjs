@@ -81,17 +81,19 @@ export async function runNativeLtm(env,{session=readSession}={}){
   check(selected.assessment.dominance.status==='supported_by_partition_scores','DOMINANCE_NOT_SUPPORTED');
   check(validGrant(g),'GRANT_EXPIRED');
   const stock=model.variables.find(v=>v.type==='stock').name;
-  // Identical user prompt to the controlled matrix; no injected tool calls.
+  // Preserve the original tool exercise, then add the factual final-output contract.
   const prompt='Analyze the immutable saved simulation '+e.simulation_id+
    '. Use get_feedback_information for that run, get_variable_data for '+stock+
    ', and generate_ltm_narrative for that run. Explain structure, activity and dominance separately. Do not edit or rerun the model. Do not invent periods or equate individual maxima with dominance.';
-  e.prompt=prompt;
+  const presentation=selected.prepareFidelity(prompt);
+  e.prompt=presentation.message;
   stage='MERLIN';e.container_stopped=false;
   const ws=await req('/api/v1',{headers:{Upgrade:'websocket'}});
   check(ws.status===101&&ws.webSocket,'WS_UPGRADE');
   const result=await session(ws.webSocket,{mode:'sfd',key:env.APP_AUTH_KEY,agent:'merlin',edit:true,
    model:selected.model,tools:e.tools,deadline:Math.min(g.expires,Date.now()+300000),scenario:{
-    readOnly:true,message:prompt,clientRequest:selected.clientRequest,
+    readOnly:true,message:presentation.message,clientRequest:selected.clientRequest,
+    finalizeOutput:presentation.finalize,
     async onToolCompleted(message){
      if(message.toolName==='generate_ltm_narrative'&&!message.isError){
       const narrativeId=crypto.randomUUID();
@@ -108,7 +110,9 @@ export async function runNativeLtm(env,{session=readSession}={}){
      check(REQUIRED_TOOLS.every(name=>completed(tools,name)),'REQUIRED_TOOL_MISSING');
     }
    }});
-  e.session={session_id:result.session_id,updated:result.updated,output:result.output};
+  e.session={session_id:result.session_id,updated:result.updated,output:result.output,
+   raw_output:result.rawOutput,fidelity:result.fidelity};
+  check(result.fidelity?.identity.run_id===e.simulation_id,'FINAL_FIDELITY_IDENTITY');
   check(e.narratives.length>0,'NO_SAVED_NARRATIVE');
   stage='RECOVERY';await stop();
   for(const n of e.narratives){

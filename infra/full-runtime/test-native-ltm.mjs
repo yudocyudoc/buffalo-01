@@ -16,7 +16,7 @@ export async function seedNativeLtm(request,other) {
     const saved=await request('/project/model',{method:'PUT',headers:etag?{'if-match':etag}:{'if-none-match':'*'},body:JSON.stringify(model)});
     assert.equal(saved.status,etag?204:201);
     etag=saved.headers.get('etag');
-    const identity={revision:JSON.parse(etag),model_sha256:saved.headers.get('x-buffalo-model-sha256')};
+    const identity={revision:Number(JSON.parse(etag)),model_sha256:saved.headers.get('x-buffalo-model-sha256')};
     const id=randomUUID(), path='/project/runs/'+id+'/ltm';
     const init={method:'PUT',body:JSON.stringify(identity)};
     assert.equal((await other(path,init)).status,404);
@@ -48,6 +48,7 @@ export async function reopenNativeLtm(request,other,key,records,useProvider) {
     const {content}=selected.feedback;
     assert.equal(content.feedbackLoops.filter(l=>l.activity==='zero_on_saved_grid').length,name==='maibab'?3:0);
     let turn=0,narrated=0;
+    const narrativeId=randomUUID(),prompt='Explain the feedback in the saved run '+id;
     const actions=[['get_feedback_information',{runIds:[id]}],
       ['get_variable_data',{runIds:[id],variableNames:[name==='maibab'?'Deer Population':'Our Weapons'],detailed:false}],
       ['generate_ltm_narrative',{difficulty:'normal',parameters:{runIds:[id],problemStatement:'Explain the saved run.'}}]];
@@ -70,12 +71,20 @@ export async function reopenNativeLtm(request,other,key,records,useProvider) {
         finish_reason:message.tool_calls?'tool_calls':'stop',message}]};
     });
     await session({key,mode:'sfd',agent:'merlin',edit:true,model:selected.model,scenario:{
-      readOnly:true,message:'Explain the feedback in the saved run '+id,clientRequest:selected.clientRequest,
+      readOnly:true,message:prompt,clientRequest:selected.clientRequest,
+      async onToolCompleted(message){
+        if(message.toolName==='generate_ltm_narrative'&&!message.isError){
+          await selected.saveNarrative(narrativeId,prompt,JSON.parse(message.result[0].text));
+        }
+      },
       verify(model,tools){
         assert.deepEqual(model,selected.model);
         for(const [name] of actions) assert(tools.some(t=>t.event==='tool_call_completed'&&t.name===name&&!t.isError),name);
       }}});
     assert.equal(narrated,1);
+    const saved=await (await request('/project/runs/'+id+'/narratives/'+narrativeId)).json();
+    assert.equal(saved.run_sha256,selected.feedback.run_sha256);
+    assert.match(saved.output.textContent,/Analysis of the saved Simlin run/);
   }
   console.log('FULL_NATIVE_SIMLIN_ARMS_RACE_MAIBAB_REOPENED_ORIGINAL_MERLIN_TOOLS');
 }

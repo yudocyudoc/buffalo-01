@@ -61,6 +61,7 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
     case 'tool_call_completed':
      check(tools.length<256,'TOOL_TRACE_LIMIT');
      tools.push({event:m.type,callId:m.callId,name:m.toolName,isError:m.isError});
+     if (m.type==='tool_call_completed' && scenario?.onToolCompleted) await scenario.onToolCompleted(m);
      if(journal)await journal.event(m.type==='tool_call_notification'?
        {type:'tool_started',call_id:m.callId,tool_name:m.toolName,...(m.arguments===undefined?{}:{arguments:m.arguments})}:
        {type:'tool_completed',call_id:m.callId,tool_name:m.toolName,is_error:m.isError,...(m.result===undefined?{}:{result:m.result})});

@@ -101,6 +101,7 @@ export async function projectNativeLtm(request, storage, runId, simulate) {
     const identity = {run_id:runId,run_sha256:await digest(runBody)};
     evidenceBody = JSON.stringify({...identity, revision, model_sha256, source, xmile_sha256:data.xmile_sha256,
       specs:actual, mode:data.mode, time:data.series.time, links:data.links, loops:data.loops, periods:data.periods});
+    content.provenance = {...identity,revision,model_sha256,engine:source.name,version:source.version};
     feedbackBody = JSON.stringify({...identity,source:{...source,evidence_sha256:await digest(evidenceBody)},content});
   } catch { return empty(422); }
   return storage.transactionSync(()=>{

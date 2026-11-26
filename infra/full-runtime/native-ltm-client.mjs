@@ -1,5 +1,6 @@
 import {digest} from './provider-wire.mjs';
 import {RUN_ID} from './project-runs.mjs';
+import {narrativeAssessment,validNarrative} from './run-narrative.mjs';
 
 // Bind the original SD-AI client protocol to one immutable project run.
 // Reopening by UUID reloads both the model revision and the matching evidence.
@@ -18,7 +19,15 @@ export async function openNativeLtmRun(request,runId) {
       feedback.run_sha256!==await digest(runBody) || run.model_sha256!==await digest(modelBody))
     throw Error('NATIVE_RUN_IDENTITY_MISMATCH');
   const model=JSON.parse(modelBody);
-  return {model,runId,run,feedback, async clientRequest(message) {
+  async function saveNarrative(narrativeId,prompt,result) {
+    if (!RUN_ID.test(narrativeId) || !validNarrative(result,feedback.content)) throw Error('INVALID_NATIVE_NARRATIVE');
+    const record={run_id:runId,run_sha256:feedback.run_sha256,feedback_sha256:await digest(feedbackBody),
+      prompt,output:result.output,feedbackLoops:result.feedbackLoops,assessment:narrativeAssessment(feedback.content,run.series.time)};
+    const res=await request(path+'/narratives/'+narrativeId,{method:'PUT',body:JSON.stringify(record)});
+    if (!res.ok) throw Error('NATIVE_NARRATIVE_SAVE_FAILED_'+res.status);
+    return record;
+  }
+  return {model,runId,run,feedback,saveNarrative, async clientRequest(message) {
     if ((message.runIds??[]).some(id=>id!==runId)) throw Error('RUN_OUTSIDE_SELECTED_ANALYSIS');
     if (message.type==='feedback_request') return {runIds:[runId],feedbackContent:feedback.content};
     if (message.type==='get_run_info') return {runs:[{id:runId,name:'Simlin revision '+run.revision,

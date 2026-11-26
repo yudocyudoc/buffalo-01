@@ -19,6 +19,15 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/extension-receipts/C4-inventoryWorkforce-deepseek-low-r1.json",
       "schema_valid": true
+    },
+    {
+      "id": "C4-maibab-deepseek-low-r1",
+      "case_id": "maibab",
+      "config": "deepseek-low",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "4e17617182d5ba4c2192d66069b71951b6d88687755695fa8c3dbcf5e8f3c83c",
+      "bytes": 334278,
+      "status": "RESERVED"
     }
   ]
 }

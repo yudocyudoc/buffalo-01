@@ -7,12 +7,14 @@
   "pilot_attempts": 6,
   "authorized_increment": {
     "ids": [
-      "C4-inventoryWorkforce-inkling-r1",
-      "C4-maibab-inkling-r1"
+      "C4-inventoryWorkforce-deepseek-r1",
+      "C4-maibab-deepseek-r1",
+      "C4-inventoryWorkforce-glm-r1",
+      "C4-maibab-glm-r1"
     ],
-    "max_attempts": 2,
+    "max_attempts": 4,
     "retries": 0,
-    "reason": "First large-input probes use same 1M-context Inkling configuration (observed low latency and cost on Bass); move these two pre-existing matrix rows ahead of planned order; no candidate elimination or change to wire."
+    "reason": "Advance DeepSeek and GLM high r1 large-input rows, as requested; reuse exact Inkling high wire with model identifier changed only at endpoint. No prompt changes."
   },
   "attempts": [
     {
@@ -36,7 +38,27 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-maibab-inkling-r1.json",
       "schema_valid": true
+    },
+    {
+      "id": "C4-inventoryWorkforce-deepseek-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "deepseek",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+      "bytes": 268971,
+      "status": "RESERVED"
     }
   ],
-  "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded."
+  "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded.",
+  "prior_increments": [
+    {
+      "ids": [
+        "C4-inventoryWorkforce-inkling-r1",
+        "C4-maibab-inkling-r1"
+      ],
+      "max_attempts": 2,
+      "retries": 0,
+      "reason": "First large-input probes use same 1M-context Inkling configuration (observed low latency and cost on Bass); move these two pre-existing matrix rows ahead of planned order; no candidate elimination or change to wire."
+    }
+  ]
 }

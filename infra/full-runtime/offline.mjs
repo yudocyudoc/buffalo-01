@@ -315,7 +315,10 @@ try{
   });
   await stop();await mf.dispose();mf=new Miniflare(cldOptions);await mf.ready;
   const cld=await doc();assert.equal(cld.status,200);assert.equal(cld.headers.get('etag'),cldTag);
-  start(false);await rest(base,key);await reopenQualitative(key,await cld.json());
+  // Consume the Miniflare response before starting the app and awaiting its REST checks.
+  // Keep the recovered model, not the response stream, across asynchronous boundaries.
+  const recoveredCLD=await cld.json();
+  start(false);await rest(base,key);await reopenQualitative(key,recoveredCLD);
   console.log('FULL_ORIGINAL_CLD_REST_MERLIN_AND_PROJECT_REOPENED_OFFLINE');
   // Return to the preexisting quantitative model-only storage; do not
   // start the original app or invoke the controlled provider in this test.

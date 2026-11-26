@@ -92,7 +92,10 @@
       "model": "@cf/google/gemma-4-26b-a4b-it",
       "wire_sha256": "ca43528968108440a660abd6547395326c46ddc126892dae09bf9700ed7f38ca",
       "bytes": 268994,
-      "status": "RESERVED"
+      "status": "API_ERROR",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-gemma-off-r1.json",
+      "schema_valid": false,
+      "http_status": 408
     }
   ],
   "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded.",

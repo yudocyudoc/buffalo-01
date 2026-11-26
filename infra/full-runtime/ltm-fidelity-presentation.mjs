@@ -10,7 +10,11 @@ const bytes=s=>new TextEncoder().encode(s).length;
 const escape=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;')
   .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const exact=n=>String(n);
-const times=a=>a.map(exact).join(', ');
+// Keep every tied time in the machine-readable observed record, but do not
+// replicate thousands of times for a constant variable in prompt/display text.
+const times=a=>a.length<=8?a.map(exact).join(', '):
+  a.length+' tied saved samples (first '+exact(a[0])+', last '+exact(a.at(-1))+
+  '; all tied times are in the evidence record)';
 const groupName=p=>typeof p==='number'?'Partition '+p:'Unpartitioned loop '+p;
 
 function renderClaim(claim,observed){
@@ -65,13 +69,25 @@ export function prepareFidelityPresentation({runId,run,evidence,feedback,stockNa
  const identity={run_id:runId,revision:run.revision,run_sha256:feedback.run_sha256,
    evidence_sha256:feedback.source.evidence_sha256};
  const catalog={contract:CONTRACT,identity,samples:facts.time.length,
-   time_units:run.settings.timeUnits,rows:rows.map(({id,text})=>({id,text})),unknown};
+   time_units:run.settings.timeUnits,
+   // Compact tuple schemas avoid repeating prose and key names in the prompt.
+   // For tied extrema only count and outer times are transmitted; no assertion
+   // is made that every sample in between is tied.
+   rows:rows.map(({id,claim:c,observed:o})=>{
+     if(c.kind==='min'||c.kind==='max')return [id,c.kind,c.variable,o.value,o.times[0],o.times.at(-1),o.times.length];
+     if(c.kind==='value')return [id,c.kind,c.variable,o.value,o.time];
+     if(c.kind==='dominance')return [id,c.kind,c.partition,c.start,c.end,o.loops];
+     return [id,c.kind,c.loop,o.activeSamples,o.observedSamples,o.totalSamples];
+   }),unknown};
  const instruction='\n\nFor the final reply ONLY, select references from the following computed facts. '+
    'Do not rewrite values or periods. Continue using the required original tools. '+
    'Return a single line exactly in this format: '+CONTRACT+' '+runId+' F1 F2 (choose one to '+MAX_SELECTION+' valid IDs). '+
    'No Markdown fences, explanations, extra text or new facts. Buffalo will render the factual answer. '+
    'Partition timelines and activity will be rendered in full regardless of your selection. '+
-   'The original narrative is retained separately as unverified interpretation.\n'+JSON.stringify(catalog);
+   'The original narrative is retained separately as unverified interpretation. '+
+   'Catalog tuples: [ID,min|max,variable,value,firstTiedTime,lastTiedTime,tieCount]; '+
+   '[ID,value,variable,value,time]; [ID,dominance,partition,start,end,exactCoalition]; '+
+   '[ID,active,loop,nonzeroSamples,observedSamples,totalSavedSamples]. Ties need not be contiguous.\n'+JSON.stringify(catalog);
  if(bytes(instruction)>MAX_PROMPT_BYTES||unknown.length>MAX_ROWS)throw Error('FIDELITY_CATALOG_TOO_LARGE');
  const byId=new Map(rows.map(r=>[r.id,r]));
  const requiredSet=new Set(mandatory);

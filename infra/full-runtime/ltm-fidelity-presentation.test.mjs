@@ -59,3 +59,15 @@ test('eight archived real outputs replay safely without claiming an accuracy imp
   assert.equal(answer.claims.filter(x=>x.claim.kind==='dominance').length,expected,c.name);
  }
 });
+
+test('constant and heavily tied variables use a bounded prompt without losing exact evidence',()=>{
+ const grid=Array.from({length:961},(_,i)=>i/16);
+ const series={time:grid,...Object.fromEntries(Array.from({length:21},(_,i)=>['constant_'+i,grid.map(()=>i)]))};
+ const p=prep({run:{revision:1,settings:{timeUnits:'Month'},series},
+   evidence:{time:grid,mode:'exhaustive',loops:[{id:'b1',partition:0,polarity:'B',signed:grid.map((_,i)=>i?-1:0)}]}});
+ const a=p.finalize('BUFFALO_FACTS_V1 '+runId+' F3');
+ assert.equal(a.status,'model_selection_accepted');
+ assert.equal(a.claims.find(x=>x.id==='F3').observed.times.length,961);
+ assert(a.output.includes('961 tied saved samples'));
+ assert(new TextEncoder().encode(p.message).length<24576);
+});

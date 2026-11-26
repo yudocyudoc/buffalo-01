@@ -1,15 +1,8 @@
-name: Buffalo LTM complete matrix (manual real Gemma)
+name: Buffalo LTM one-shot real Gemma (isolated experimental branch)
 on:
-  workflow_dispatch:
-    inputs:
-      source_commit:
-        description: Exact selected checkout SHA
-        required: true
-        type: string
-      approval:
-        description: Enter RUN_LTM_MATRIX_MAX_64
-        required: true
-        type: string
+  push:
+    branches:
+      - 'experiment/ltm-live-one-shot-df85a34'
 permissions:
   contents: read
 concurrency:
@@ -17,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   live:
-    if: ${{ inputs.source_commit == github.sha && inputs.approval == 'RUN_LTM_MATRIX_MAX_64' && github.run_attempt == 1 }}
+    if: ${{ github.ref == 'refs/heads/experiment/ltm-live-one-shot-df85a34' && github.event.before == 'df85a345f729f5b2d4fa5d166403ea271c522df7' && github.event.head_commit.message == 'Authorize one isolated LTM live matrix at df85a34' && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

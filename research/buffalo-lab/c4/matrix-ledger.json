@@ -49,6 +49,15 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-deepseek-r1.json",
       "schema_valid": false
+    },
+    {
+      "id": "C4-maibab-deepseek-r1",
+      "case_id": "maibab",
+      "config": "deepseek",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410",
+      "bytes": 334279,
+      "status": "RESERVED"
     }
   ],
   "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded.",

@@ -2,6 +2,14 @@
   "protocol": "C4-seldon-v1",
   "source_commit": "7adbc113a268b59ea50c50f92b5a94b2d4ed810c",
   "max_attempts": 6,
-  "attempts": [],
+  "attempts": [
+    {
+      "id": "C4-bassDiffusion-gemma-off-r1",
+      "config": "gemma-off",
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "wire_sha256": "9afb3fd3ce87230fbfcfdba9ba863f818161719cf700e1dc838d5062cd5591d4",
+      "status": "RESERVED"
+    }
+  ],
   "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."
 }

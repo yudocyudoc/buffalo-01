@@ -21,6 +21,10 @@ jobs:
         run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test research/buffalo-lab/c1/evaluator-controls.test.mjs
       - name: Original engine and tool routes (controlled wrapper)
         run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/route-controls.mjs "$RUNNER_TEMP/c1-route-controls.json"
+      - name: Original Merlin agent routes and Buffalo gateway (controlled)
+        env:
+          AGENT_SESSION_TEMP_DIR: ${{ runner.temp }}/c1-agent-sessions
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/agent-route-controls.mjs "$RUNNER_TEMP/c1-agent-routes.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -28,4 +32,5 @@ jobs:
           path: |
             ${{ runner.temp }}/c1-leaderboard-inventory.json
             ${{ runner.temp }}/c1-route-controls.json
+            ${{ runner.temp }}/c1-agent-routes.json
           retention-days: 30

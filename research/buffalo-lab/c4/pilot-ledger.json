@@ -1,0 +1,7 @@
+{
+  "protocol": "C4-seldon-v1",
+  "source_commit": "7adbc113a268b59ea50c50f92b5a94b2d4ed810c",
+  "max_attempts": 6,
+  "attempts": [],
+  "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."
+}

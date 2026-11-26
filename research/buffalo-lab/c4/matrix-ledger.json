@@ -1,0 +1,19 @@
+{
+  "protocol": "C4-seldon-v1",
+  "source_commit": "1f827ab5c22d5fa8dd9088fbb78a8686a6ac45d4",
+  "source_artifact": 15151674907,
+  "max_additional_attempts": 48,
+  "max_cumulative_attempts": 54,
+  "pilot_attempts": 6,
+  "authorized_increment": {
+    "ids": [
+      "C4-inventoryWorkforce-inkling-r1",
+      "C4-maibab-inkling-r1"
+    ],
+    "max_attempts": 2,
+    "retries": 0,
+    "reason": "First large-input probes use same 1M-context Inkling configuration (observed low latency and cost on Bass); move these two pre-existing matrix rows ahead of planned order; no candidate elimination or change to wire."
+  },
+  "attempts": [],
+  "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded."
+}

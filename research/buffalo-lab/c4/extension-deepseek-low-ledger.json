@@ -1,1 +1,22 @@
-{"protocol":"C4-seldon-v1-extension-deepseek-low-v1","parent_protocol":"C4-seldon-v1","source_commit":"d1e082001f386a0b5a180918404ea7fcbb14be6f","design":"Exploratory rescue: same DeepSeek model, messages, schema, temperature and 8192-token generation cap; only reasoning_effort high -> low. Not part of original 54; no retries, 2 additional calls, compare descriptively, do not substitute failed high rows.","max_attempts":2,"authorized_ids":["C4-inventoryWorkforce-deepseek-low-r1","C4-maibab-deepseek-low-r1"],"attempts":[]}
+{
+  "protocol": "C4-seldon-v1-extension-deepseek-low-v1",
+  "parent_protocol": "C4-seldon-v1",
+  "source_commit": "d1e082001f386a0b5a180918404ea7fcbb14be6f",
+  "design": "Exploratory rescue: same DeepSeek model, messages, schema, temperature and 8192-token generation cap; only reasoning_effort high -> low. Not part of original 54; no retries, 2 additional calls, compare descriptively, do not substitute failed high rows.",
+  "max_attempts": 2,
+  "authorized_ids": [
+    "C4-inventoryWorkforce-deepseek-low-r1",
+    "C4-maibab-deepseek-low-r1"
+  ],
+  "attempts": [
+    {
+      "id": "C4-inventoryWorkforce-deepseek-low-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "deepseek-low",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "5946ce39184a9c1674757a5b7a89ead395f75f1e6e9cff313543247d93642820",
+      "bytes": 268970,
+      "status": "RESERVED"
+    }
+  ]
+}

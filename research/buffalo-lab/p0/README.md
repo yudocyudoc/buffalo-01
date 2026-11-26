@@ -1,0 +1,14 @@
+# P0 Inventory inference regression — review increment
+
+Base e4fb73261ce2dcbb83624deacf271fba63c6c975. Astra review 2026-11-26. Research only. C4 stopped at 13/54, 10 valid JSON; 408 terminal, LOW Mai-Bab reserved without receipt, no re-send. Neither ledger modified.
+
+This is a deliberately narrow, manually annotated regression built on F1–F3 conventions, not a semantic parser, repair engine or production guard. The frozen protocol declares positive, negative, unknown, conditional, negated and quoted controls. The same synthetic text is checked on two labeled surfaces; these are NOT actual Merlin responses. Existing F1–F3 paired native narrative/final anchors are separately replayed on their original run. Selected C4 LOW passages are replayed on the exact historical wire, with uncovered text spans reported. No cross-run stock data is supplied to the historical source.
+
+The analytic witness is for the fixed-demand affine system; a mode can have zero amplitude and an external periodic demand can force oscillation. The Euler reconstruction assumes linear interpolation and held final demand; it is not Stella or Simlin. The recurrence of strict local share maxima is distinguished from starts in the flat calendar (conditional group assignment) and from a measured stock period. The latter is unknown. No proof of exact discrete LTM half-period is claimed. The check of possible overcorrection is a constructive example, not an isolated intervention. Exact-half tie is tested against existing nativeSelection, not assigned retrospectively to historical Stella.
+
+Run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test research/buffalo-lab/p0/inventory.test.mjs infra/full-runtime/ltm-fidelity.test.mjs
+Report: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/p0/inventory.mjs
+
+C3 amendments (design only): T/C/S from one identified native run; historical wire separate; C analytical only (no trajectory-derived System Change), S incremental semantically general, no case answers. Preserve baseline wording and explicitly test >50 vs >=50 vs inactive. Compare 101–100 and 110–100; record lengths, positions, hashes, context and failures; one block descriptive only. Freeze different-period and no-stimulus variants before any inference. No dispatch authorized. C1 independent review stays blinded. C5 later tests evidence vs evidence+counterexample on unchanged parent and same run, including false positives, omissions and lost correct explanations. Defer new composer, ATMS, Loop Impact and OMC.
+
+Acceptance requires green tests and Astra review. A passing known-case regression does not demonstrate improved LLM reasoning or free-text extraction. Real Merlin paired semantic inference checks beyond existing annotations remain pending. No changes to Runtime.

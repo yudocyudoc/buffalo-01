@@ -94,7 +94,8 @@ jobs:
         run: |
           set -euo pipefail
           export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools" FULL_PYTHON_PATH="$(dirname "$(command -v python3)")"
-          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,FULL_LTM_REPORT,FULL_LTM_IMAGE,BUFFALO_SIMLIN_PYTHON unshare --net --mount --propagation private sh -ec '
+          export FULL_LTM_MATRIX_REPORT="$RUNNER_TEMP/ltm-matrix.json"
+          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,FULL_LTM_REPORT,FULL_LTM_IMAGE,BUFFALO_SIMLIN_PYTHON,FULL_LTM_MATRIX_REPORT unshare --net --mount --propagation private sh -ec '
             ip link set lo up
             sysctl -qw net.ipv4.ip_unprivileged_port_start=0
             hosts=$(mktemp)
@@ -103,3 +104,11 @@ jobs:
             chmod 644 "$hosts"
             mount --bind "$hosts" /etc/hosts
             exec runuser -u runner -- env PATH="$FULL_PYTHON_PATH:$PATH" "$FULL_NODE" infra/full-runtime/offline.mjs'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ltm-complete-matrix-${{ github.run_id }}
+          path: ${{ runner.temp }}/ltm-matrix.json
+          retention-days: 30
+          if-no-files-found: warn

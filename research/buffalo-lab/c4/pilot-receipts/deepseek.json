@@ -1,0 +1,56 @@
+{
+  "id": "C4-bassDiffusion-deepseek-r1",
+  "config": "deepseek",
+  "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "wire_sha256": "2c0bfd127937ada34411489436715ef4fef2720e42ffb30f256bbb835c8d2024",
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/pilot-receipts/deepseek.json",
+  "schema_valid": true,
+  "transport": "RETURNED",
+  "elapsed_ms": 24766,
+  "result": {
+    "id": "chatcmpl-9c2570cd-582c-470b-8599-7e6a1bd2e788",
+    "object": "chat.completion",
+    "created": 1795725434,
+    "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\"response\": \"## Step 1 — What the model actually is\\n\\nBefore reading the dominance chart, it helps to name the structure. This is a classic **word‑of‑mouth (Bass‑style, no advertising) diffusion model**:\\n\\n- `Potential Adopters` = `Market_Size - Adopters` (a stock that only drains)\\n- `Adopters` = a stock that only fills\\n- The single flow `adopting = adoption_fraction × potentials_contacts_with_adopters`\\n- `potentials_contacts_with_adopters = (Potential_Adopters/Market_Size) × contact_rate × Adopters`\\n\\nSo the flow is a **product of the two stocks**:\\n\\n> adopting = 0.015 × 100 × Adopters × (Potential_Adopters / 1,000,000)\\n> = 1.5 × Adopters × (Potential_Adopters / 1,000,000)\\n\\nThat product form is the whole story of the loop dominance you're seeing.\\n\\n## Step 2 — The two loops and what each one \\\"owns\\\"\\n\\nBoth loops run through the *same* variable chain (`potentials contacts with adopters → adoption from word of mouth → adopting`). They differ only in **which stock closes the circle**:\\n\\n| Loop | Path back to the flow | Polarity | What it represents |\\n|---|---|---|---|\\n| **R1** | `Adopters → adopter contacts → contacts with potentials → adoption → Adopters` | + | Each adopter generates contacts that create *more* adopters. **Exponential growth engine.** |\\n| **B1** | `adopting → Potential Adopters (−) → probability of contact with potentials → contacts → adoption` | − | Every adoption shrinks the pool of people left to convert. **Saturation brake.** |\\n\\nBecause the flow is literally `Adopters × Potential Adopters`, R1's strength is proportional to **Adopters** and B1's strength is proportional to **Potential Adopters**. That single fact predicts the entire dominance crossover.\\n\\n## Step 3 — Phase 1 (t = 0 → 9.625): R1 is dominant\\n\\nAt t = 0, `Adopters` = 1 and `Potential Adopters` = 999,999, so `probability of contact with potentials` ≈ 1.0. Essentially **every contact an adopter makes lands on a fresh prospect**, so the brake has nothing to grip. R1 explains **99.9999%** of behavior at t = 0.0625 and stays above 99% out to about t = 6.\\n\\nWith `probability of contact ≈ 1`, the flow collapses to pure exponential growth:\\n\\n> adopting ≈ 1.5 × Adopters  →  growth rate ≈ 150%/year  →  **doubling time ≈ 0.46 years**\\n\\nThis is why the dominance curve for R1 decays so slowly at first — the model is running almost unopposed. Notice R1's share is still 97.8% at t = 7 and 91.2% at t = 8. The erosion only becomes visible once `Potential Adopters` has been materially drawn down.\\n\\n## Step 4 — The crossover at t = 9.625 is the inflection point\\n\\nThis is the key structural insight, and it's worth being precise about it:\\n\\n- R1's contribution ∝ `Adopters`\\n- B1's contribution ∝ `Potential Adopters`\\n- The two are **equal exactly when `Adopters` = `Potential Adopters` = 500,000**\\n\\nThat is precisely the point where the *net* adoption rate peaks (the logistic inflection point), and it is precisely where the two dominance curves cross at ~50/50 (R1 = 48.83%, B1 = 51.17% at t = 9.625).\\n\\nSo the dominance switch is **not** an arbitrary artifact of the analysis — it is the model's own inflection point. Before 9.625 the model is accelerating; after it, the model is decelerating. The peak adoption rate at that moment is:\\n\\n> 1.5 × 500,000 × 0.5 = **375,000 customers/year**\\n\\nThat is the maximum the model can ever produce, and it occurs at the crossover.\\n\\n## Step 5 — Phase 2 (t = 9.625 → 15): B1 is dominant\\n\\nOnce more than half the market has adopted, the average adopter's contacts increasingly hit **other adopters** rather than prospects. `probability of contact with potentials` falls below 0.5 and keeps falling, so each additional adopter is progressively less productive. B1's share climbs steeply — 60% by t ≈ 9.875, 80% by t ≈ 10.5, 95% by t ≈ 11.5 — and R1's share collapses symmetrically.\\n\\nBy t = 15, B1 explains **99.98%** of behavior and R1 essentially nothing. The stock `Adopters` has asymptotically approached `Market_Size` (the logistic solution puts it within a fraction of a customer of 1,000,000 by t = 15), and the flow `adopting` has decayed to near zero. **The system is at equilibrium, and the loop that produced that equilibrium is the balancing one.**\\n\\n## Step 6 — Summary of the behavior\\n\\n| Period | Dominant loop | Regime | Signature |\\n|---|---|---|---|\\n| 0 → 9.625 yr | **R1** (single loop, >50% alone) | Reinforcing / exponential take‑off | `Adopters` doubles ≈ every 0.46 yr; adoption rate rising |\\n| 9.625 → 15 yr | **B1** (single loop, >50% alone) | Balancing / saturation | Adoption rate falling from 375k/yr to ~0; `Adopters` → 1,000,000 |\\n\\nThis is the textbook **S‑shaped diffusion curve**, and the loop dominance analysis is a clean, unambiguous confirmation of it: exactly one loop dominates in each period, they hand off at the inflection point, and their shares sum to 100% throughout (a good internal consistency check on the analysis).\\n\\n## Step 7 — Two things to keep in mind\\n\\n1. **There are no delays in this model.** The S‑shape comes entirely from the finite market and the stock accumulation — not from any lag between contact and adoption. That is why the take‑off is so violent (a 0.46‑year doubling time is very fast for a real market). If you wanted a more realistic adoption curve, the natural next step would be to add a stock representing prospects who have been contacted but not yet converted (an awareness/adoption pipeline), which would introduce a genuine delay and soften the transition.\\n2. **The dominance crossover is a property of the structure, not the parameters.** Because the flow is `Adopters × Potential Adopters`, the 50/50 crossover will always sit at half‑saturation regardless of `contact rate` or `adoption fraction` — those parameters only change *when* you get there, not *where* the handoff occurs. That's a robust, testable prediction of this model.\\n\\nOne note on units: the simulation engine reports no unit warnings for this model, so the units are dimensionally consistent as far as the authoritative check is concerned.\", \"feedbackInformationRequired\": true}"
+        },
+        "finish_reason": "stop",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 15338,
+      "completion_tokens": 3268,
+      "total_tokens": 18606,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "neurons": 774.8182373046875
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning",
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 15338,
+    "completion_tokens": 3268,
+    "total_tokens": 18606,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "neurons": 774.8182373046875
+  },
+  "parsed_schema_valid": true,
+  "semantic_accuracy": "NOT_MEASURED"
+}

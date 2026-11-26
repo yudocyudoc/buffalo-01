@@ -1,0 +1,31 @@
+{
+  "id": "C4-inventoryWorkforce-gemma-off-r1",
+  "case_id": "inventoryWorkforce",
+  "config": "gemma-off",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "wire_sha256": "ca43528968108440a660abd6547395326c46ddc126892dae09bf9700ed7f38ca",
+  "bytes": 268994,
+  "status": "API_ERROR",
+  "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-gemma-off-r1.json",
+  "schema_valid": false,
+  "transport": "HTTP_ERROR",
+  "http_status": 408,
+  "elapsed_ms": null,
+  "result": null,
+  "reasoning_fields_omitted": [],
+  "api_success": false,
+  "errors": [
+    {
+      "message": "AiError: AiError: Request timeout (0a19b593-b19c-4cc3-aba8-3d266cba1224)",
+      "code": 3046
+    }
+  ],
+  "ray_id": "a60c410e1cae4b8d-ORD",
+  "observed_model": null,
+  "finish_reason": null,
+  "usage": null,
+  "parsed_schema_valid": false,
+  "semantic_accuracy": "NOT_EVALUABLE",
+  "provider_compute_or_billing": "UNKNOWN",
+  "note": "The Cloudflare connector threw with HTTP 408 and a structured provider timeout. No result or usage was returned. Account identifier omitted. One reserved attempt consumed; no retry."
+}

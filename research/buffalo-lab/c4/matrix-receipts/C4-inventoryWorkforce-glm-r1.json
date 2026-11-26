@@ -1,0 +1,58 @@
+{
+  "id": "C4-inventoryWorkforce-glm-r1",
+  "case_id": "inventoryWorkforce",
+  "config": "glm",
+  "model": "@cf/zai-org/glm-5.3",
+  "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+  "bytes": 268971,
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-glm-r1.json",
+  "schema_valid": true,
+  "transport": "RETURNED",
+  "elapsed_ms": 13212,
+  "result": {
+    "id": "chatcmpl-ad4fa518-d8ed-449a-b119-19e011c80982",
+    "object": "chat.completion",
+    "created": 1795728800,
+    "model": "@cf/zai-org/glm-5.3",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\n  \"response\": \"Below is my reading of how this model behaves over the 60-month simulation, based on the feedback loop dominance analysis you provided. I'll walk through my reasoning step by step.\",\n  \"feedbackInformationRequired\": false\n}"
+        },
+        "finish_reason": "stop",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 82372,
+      "completion_tokens": 1127,
+      "total_tokens": 83499,
+      "prompt_tokens_details": {
+        "cached_tokens": 832
+      },
+      "neurons": 10848.283203125
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning",
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/zai-org/glm-5.3",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 82372,
+    "completion_tokens": 1127,
+    "total_tokens": 83499,
+    "prompt_tokens_details": {
+      "cached_tokens": 832
+    },
+    "neurons": 10848.283203125
+  },
+  "parsed_schema_valid": true,
+  "semantic_accuracy": "NOT_MEASURED"
+}

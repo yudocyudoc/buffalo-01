@@ -1,0 +1,53 @@
+{
+  "id": "C4-bassDiffusion-gemma-off-r1",
+  "config": "gemma-off",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "wire_sha256": "9afb3fd3ce87230fbfcfdba9ba863f818161719cf700e1dc838d5062cd5591d4",
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/pilot-receipts/gemma-off.json",
+  "schema_valid": true,
+  "transport": "RETURNED",
+  "elapsed_ms": 17041,
+  "result": {
+    "id": "807723d93ef541278f098666d196d63d",
+    "object": "chat.completion",
+    "created": 1795724383,
+    "model": "@cf/google/gemma-4-26b-a4b-it-external",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\n  \"response\": \"Based on the feedback loop dominance analysis, the model exhibits a classic S-shaped (sigmoidal) growth pattern, transitioning from a period of rapid acceleration to a period of stabilization. This behavior is driven by the shifting dominance between a reinforcing loop and a balancing loop.\\n\\n### Step-by-Step Reasoning:\\n\\n1.  **Identification of the Growth Phase (0 to 9.625 years):**\\n    *   **Dominant Loop:** The analysis shows that **R1 (Reinforcing Loop)** is the dominant driver for the first 9.625 years, explaining nearly 100% of the model behavior.\\n    *   **Mechanism:** R1 is a positive feedback loop where more `Adopters` lead to more `adopter contacts`, which increases `potentials contacts with adopters`, thereby increasing the `adoption from word of mouth` flow. This flow increases the `Adopters` stock, which in turn further increases the number of contacts. This creates a \\\"virtuous cycle\\\" of exponential-like growth.\\n    *   **Result:** During this period, the number of adopters increases at an accelerating rate as the word-of-mouth effect takes hold.\\n\\n2.  **Identification of the Transition/Saturation Phase (9.625 to 15 years):**\\n    *   **Dominant Loop:** At approximately year 9.625, the dominance shifts. **B1 (Balancing Loop)** becomes the dominant driver for the remainder of the simulation.\\n    *   **Mechanism:** B1 is a negative feedback loop that acts as a constraint on the growth. As the `Adopters` stock grows, the `Potential Adopters` stock (the pool of people left to adopt) decreases. Because the `probability of contact with potentials` is calculated as `Potential_Adopters / Market_Size`, the depletion of the potential pool reduces the effectiveness of every contact made by an adopter. \\n    *   **Result:** Even though there are many adopters making contacts, they are increasingly likely to contact people who have already adopted. This slows down the `adoption from word of mouth` flow, causing the growth rate to decelerate and the `Adopters` stock to approach the `Market Size` asymptote (saturation).\\n\\n3.  **Summary of Dynamics:**\\n    *   The model begins with **Reinforcing dominance**, causing a rapid takeoff in adoption. \\n    *   As the market becomes crowded, the **Balancing dominance** takes over, representing the limiting factor of a finite market size. \\n    *   The shift at year 9.625 marks the inflection point where the depletion of potential customers begins to outweigh the momentum gained from the growing number of adopters.\",\n  \"feedbackInformationRequired\": false\n}"
+        },
+        "finish_reason": "stop",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 22901,
+      "completion_tokens": 596,
+      "total_tokens": 23497,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "neurons": 224.44544982910156
+    }
+  },
+  "reasoning_fields_omitted": [],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/google/gemma-4-26b-a4b-it-external",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 22901,
+    "completion_tokens": 596,
+    "total_tokens": 23497,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "neurons": 224.44544982910156
+  },
+  "parsed_schema_valid": true,
+  "semantic_accuracy": "NOT_MEASURED"
+}

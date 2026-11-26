@@ -8,7 +8,9 @@
       "config": "gemma-off",
       "model": "@cf/google/gemma-4-26b-a4b-it",
       "wire_sha256": "9afb3fd3ce87230fbfcfdba9ba863f818161719cf700e1dc838d5062cd5591d4",
-      "status": "RESERVED"
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/pilot-receipts/gemma-off.json",
+      "schema_valid": true
     }
   ],
   "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."

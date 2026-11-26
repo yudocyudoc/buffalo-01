@@ -1,0 +1,58 @@
+{
+  "id": "C4-maibab-glm-r1",
+  "case_id": "maibab",
+  "config": "glm",
+  "model": "@cf/zai-org/glm-5.3",
+  "wire_sha256": "35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410",
+  "bytes": 334279,
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-maibab-glm-r1.json",
+  "schema_valid": true,
+  "transport": "RETURNED",
+  "elapsed_ms": 21070,
+  "result": {
+    "id": "chatcmpl-55f36f1e-b6a5-4ee6-99de-4f15bd8fe184",
+    "object": "chat.completion",
+    "created": 1795728838,
+    "model": "@cf/zai-org/glm-5.3",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\n  \"response\": \"## Model Behavior Over Time: A Feedback-Dominance Narrative\\n\\nThis is a classic predator–prey–food system, and the loop dominance analysis tells a rich story of shifting control across the 490-year simulation. Let me walk through my reasoning step by step.\\n\\n### Step 1: Identify the loops and what they do\\n\\n**Loop Set 1 (predator–prey system):**\\n- **R1** (reinforcing): Deer Population → Deer Net Growth Rate → Deer Population. Pure exponential deer growth, unchecked.\\n- **B1** (balancing): Deer Density → Deer Kill Rate Per Predator → Deer Predation Rate → Deer Population. More deer make hunting easier per predator, which removes more deer.\\n- **B2** (balancing, 2 stocks): The full predator–prey loop — predators eat deer, deer density drives predator growth fraction, which grows the predator stock. This is the classic oscillation-generating loop.\\n- **U1** (undefined polarity): Predator Population → Predator Net Growth Rate → Predator Population. Its polarity is undefined because the Predator Growth Fraction graphical function crosses zero (from -0.04 to +0.055). Depending on deer density, this loop acts as either a reinforcer or balancer of predator numbers.\\n- **B3** (balancing): Predator Population → Predator Hunting Rate → Predator Population. This loop is dormant until the STEP function activates predator hunting in **1963**.\\n\\n**Loop Set 2 (food subsystem):**\\n- **B1** (Set 2): Food → Food Regeneration Rate — the gap-closing loop pulling Food toward Food Capacity.\\n- **R1** (Set 2): Food → Food Capacity Utilization → Food Regeneration Time → Regeneration Rate → Food — a minor reinforcing loop in the regeneration time.\\n\\n### Step 2: Read the dominance timeline\\n\\n**1810–1818 — Exponential deer growth (R1 dominant).** The deer population, starting at 4,000 with abundant food (Food Availability = 1, so Deer Growth Fraction = 0), grows exponentially. Predation is negligible because deer density is too low for predators to hunt efficiently.\\n\\n**1818–1830 — Predation takes over (B1, B2 dominant).** As deer density rises, the kill rate per predator climbs steeply (the graphical function rises from 0 to 10 kills/predator between densities of 0 and 0.1). Predation overtakes deer births, and the first deer population peak and decline occur. This is the onset of predator–prey oscillation.\\n\\n**1830–1964 — Sustained predator–prey oscillations.** The dominant loops alternate among B1, B2, R1, and U1 in a repeating cycle:\\n- **B1/B2 dominance** (e.g., 1834–1865, 1893–1905, 1909–1941, 1946–1957) corresponds to the *swings* of the oscillation, when predation and predator growth are actively driving deer and predator populations up or down.\\n- **R1 dominance** (e.g., 1881–1893, 1957–1964) corresponds to the *recovery phases*, when deer have been depressed below predation capacity and rebound exponentially.\\n- **U1 dominance** appears at the *turning points* (1830–1833, 1865–1869, 1905–1909, 1941–1946), when the predator population itself peaks or troughs and the sign of the predator's net growth flips. This is exactly what we'd expect from a loop whose polarity is undefined — it dominates precisely when the system is deciding which direction the predator stock will go.\\n\\nThese oscillations are the signature of the **two-stock structure with delays**: the predator stock integrates the kill rate, so predator numbers respond *late* to changes in deer density, overshooting and undershooting repeatedly.\\n\\n**1964–1972 — The hunting intervention.** Predator hunting begins in 1963 (STEP function, 5%/month). Immediately, **B3** enters the dominant set (1964–1970, paired with B1 and B2). Hunting drains the predator stock, which relieves predation pressure on deer — visible in **R1 returning to dominance 1957–1964 and again 1970–1972** as deer rebound. The brief U1/R1 dominance at 1970–1972 marks the predator population's turning point as hunting and food-driven growth rebalance.\\n\\n**1972–2300 — Long-run settling (B1, B2 dominant).** After the hunting shock works through the system, B1 dominates alone briefly (1972–1980) and then B1+B2 dominate for the remaining 320 years. The oscillations damp out — the dominance data shows the loop influence percentages nearly constant after ~2000 (B1 ≈ 48%, R1 ≈ 18%, B2 ≈ 26%, U1 ≈ 4%, B3 ≈ 4%), indicating the system converges toward a dynamic equilibrium where deer births balance predation and predator growth balances hunting and natural decline.\\n\\n### Step 3: The food subsystem's role\\n\\nIn Loop Set 2, the gap-closing loop **B1** explains ~87–97% of Food's behavior throughout, with the nonlinear regeneration-time loop R1 contributing only ~3–12%. The Food stock tracks close to its 350,000 capacity the entire run. This makes sense: Food Availability stays near 1, so the Deer Growth Fraction hovers near zero and the food subsystem acts as a *steady supporting platform* rather than a driver of oscillation. The deer–predator interaction, not food scarcity, is the engine of this system's dynamics.\\n\\n### Summary of the behavior\\n\\n1. **Initial exponential growth** of deer (R1).\\n2. **Predator–prey oscillations** driven by the interplay of B1, B2, R1, and U1, with U1 flagging each turning point — a textbook two-stock delay-driven limit cycle.\\n3. **A structural intervention** in 1963 (predator hunting) activates B3, temporarily suppressing predators and boosting deer (R1).\\n4. **Eventual damping to equilibrium** under B1/B2 dominance, with the food stock stably near capacity throughout.\\n\\nThe model is behaviorally rich but structurally explainable: every phase transition in the dominance data corresponds to a real mechanism — the saturation of the kill-rate function, the zero-crossing of predator growth, and the 1963 hunting policy change.\",\n  \"feedbackInformationRequired\": false\n}"
+        },
+        "finish_reason": "stop",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 105106,
+      "completion_tokens": 2314,
+      "total_tokens": 107420,
+      "prompt_tokens_details": {
+        "cached_tokens": 832
+      },
+      "neurons": 14216.5009765625
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning",
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/zai-org/glm-5.3",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 105106,
+    "completion_tokens": 2314,
+    "total_tokens": 107420,
+    "prompt_tokens_details": {
+      "cached_tokens": 832
+    },
+    "neurons": 14216.5009765625
+  },
+  "parsed_schema_valid": true,
+  "semantic_accuracy": "NOT_MEASURED"
+}

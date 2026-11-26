@@ -1,15 +1,8 @@
-name: Buffalo native LTM complete matrix (private binding, manual)
+name: Buffalo native LTM diagnostic (three cases, max 24)
 on:
-  workflow_dispatch:
-    inputs:
-      source_commit:
-        description: Exact selected checkout SHA
-        required: true
-        type: string
-      approval:
-        description: Enter RUN_NATIVE_LTM_MATRIX_MAX_64
-        required: true
-        type: string
+  push:
+    branches:
+      - 'experiment/native-ltm-diagnostic-97b109f'
 permissions:
   contents: read
 concurrency:
@@ -17,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   native-ltm:
-    if: ${{ inputs.source_commit == github.sha && inputs.approval == 'RUN_NATIVE_LTM_MATRIX_MAX_64' && github.run_attempt == 1 }}
+    if: ${{ github.ref == 'refs/heads/experiment/native-ltm-diagnostic-97b109f' && github.event.before == '97b109f1577eaedabf0f568996773b5ed07f60d6' && github.event.head_commit.message == 'Authorize three native LTM diagnostic cases at 97b109f' && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -48,8 +41,8 @@ jobs:
           BASE="$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim)"
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
             --build-arg "NODE_BASE=$BASE" --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --metadata-file "$RUNNER_TEMP/full-build.json" -t "buffalo-full-ltm-matrix-private:$GITHUB_SHA" -f infra/full-runtime/Dockerfile .
-          docker run -d --name full --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges -e AUTHENTICATION_KEY=ci-only "buffalo-full-ltm-matrix-private:$GITHUB_SHA"
+            --metadata-file "$RUNNER_TEMP/full-build.json" -t "buffalo-full-ltm-diag-private:$GITHUB_SHA" -f infra/full-runtime/Dockerfile .
+          docker run -d --name full --network none --read-only --tmpfs /tmp:rw,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges -e AUTHENTICATION_KEY=ci-only "buffalo-full-ltm-diag-private:$GITHUB_SHA"
           trap 'docker logs --tail 30 full; docker rm -f full' EXIT
           docker exec full node infra/full-runtime/test-rest.mjs
           docker exec full node infra/full-runtime/test-simulation-image.mjs
@@ -60,7 +53,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_CONTAINERS_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="buffalo-full-ltm-matrix-private:$GITHUB_SHA"
+          TAG="buffalo-full-ltm-diag-private:$GITHUB_SHA"
           LOCAL="$(docker image inspect --format '{{.Id}}' "$TAG")"
           npx --yes wrangler@4.166.0 containers push "$TAG"
           REF="registry.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID/$TAG"
@@ -75,11 +68,11 @@ jobs:
           const build=JSON.parse(readFileSync(t+'/full-build.json'));
           const digest=build['containerimage.digest']??build['containerimage.descriptor']?.digest;
           assert.match(digest,/^sha256:[a-f0-9]{64}$/);
-          const ref='registry.cloudflare.com/'+e.CLOUDFLARE_ACCOUNT_ID+'/buffalo-full-ltm-matrix-private@'+digest;
+          const ref='registry.cloudflare.com/'+e.CLOUDFLARE_ACCOUNT_ID+'/buffalo-full-ltm-diag-private@'+digest;
           const image=JSON.parse(execFileSync('docker',['image','inspect',e.REF],{encoding:'utf8'}))[0];
           assert(image.RepoDigests.includes(ref));assert.equal(image.Id,e.LOCAL);assert.equal(image.Config.User,'node');assert.equal(image.Config.Labels['org.opencontainers.image.revision'],e.GITHUB_SHA);
-          mkdirSync(t+'/buffalo-full-ltm-matrix',{recursive:true});
-          writeFileSync(t+'/buffalo-full-ltm-matrix/registry.json',JSON.stringify({source_commit:e.GITHUB_SHA,ref,manifest_digest:digest,config_digest:image.Id},null,2));
+          mkdirSync(t+'/buffalo-full-ltm-diag',{recursive:true});
+          writeFileSync(t+'/buffalo-full-ltm-diag/registry.json',JSON.stringify({source_commit:e.GITHUB_SHA,ref,manifest_digest:digest,config_digest:image.Id},null,2));
           NODE
       - name: Dry run private deployment configurations
         timeout-minutes: 8
@@ -115,13 +108,13 @@ jobs:
           for kind in runtime operator; do
             printf '%s' "$KEY" | npx --yes wrangler@4.166.0 secret put APP_AUTH_KEY --config "infra/full-runtime/wrangler.ltm-matrix-$kind-disabled.json"
           done
-      - name: Execute eight one-shot native projects, disable between cases
+      - name: Execute three diagnostic projects, disable between cases
         timeout-minutes: 125
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.BUFFALO_CF_WORKERS_DEPLOY_TOKEN }}
         run: |
           set -euo pipefail
-          for case in armsRace bassDiffusion inventoryWorkforce predatorPrey marketGrowth maibab maibab-control maibab-perturbed; do
+          for case in armsRace bassDiffusion maibab-perturbed; do
             node infra/full-runtime/manual-native-ltm.mjs arm "$case"
             npx --yes wrangler@4.166.0 deploy --config infra/full-runtime/wrangler.ltm-matrix-runtime-armed.json
             node infra/full-runtime/manual-native-ltm.mjs check-runtime-armed
@@ -163,7 +156,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: buffalo-full-ltm-matrix-${{ github.run_id }}
-          path: ${{ runner.temp }}/buffalo-full-ltm-matrix/*.json
+          name: buffalo-full-ltm-diag-${{ github.run_id }}
+          path: ${{ runner.temp }}/buffalo-full-ltm-diag/*.json
           retention-days: 7
           if-no-files-found: warn

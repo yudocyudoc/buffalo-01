@@ -11,11 +11,11 @@ const specs=[
  ['marketGrowth',marketGrowth,'Euler',5,20],['maibab',maibab,'RK4',1,10],
  ['maibab-control',maibab,'RK4',.125,10],['maibab-perturbed',maibab,'RK4',.125,10]
 ];
-export const CASES=specs.map(([name])=>name);
+export const CASES=['armsRace','bassDiffusion','maibab-perturbed'];
 export const LIMIT=8;
-export const PREFIX='one-shot-buffalo-native-ltm-v1-';
+export const PREFIX='one-shot-buffalo-native-ltm-diag-v2-';
 export const probeId=name=>PREFIX+name.toLowerCase();
-export const projectId=name=>'buffalo-native-ltm-v1-'+name.toLowerCase();
+export const projectId=name=>'buffalo-native-ltm-diag-v2-'+name.toLowerCase();
 export function fixture(name){
  const row=specs.find(x=>x[0]===name);if(!row)throw Error('UNKNOWN_LTM_CASE');
  const [,source,method,saveStep,expectedCycles]=row;

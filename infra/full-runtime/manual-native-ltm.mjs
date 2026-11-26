@@ -9,8 +9,8 @@ import {CLEANUP_WAIT_MS} from '../buffalo-r1/timing.mjs';
 import {CASES,LIMIT,PREFIX,probeId,projectId,validGrant} from './remote-ltm-cases.mjs';
 import {PASS,validReceipts} from './remote-ltm-operator.mjs';
 const ACCOUNT='e0cb52526a69c0f48f001901a5b9a640';
-export const APP='buffalo-full-ltm-matrix-private',OP='buffalo-full-ltm-matrix-operator';
-const folder='infra/full-runtime/',out=process.env.RUNNER_TEMP+'/buffalo-full-ltm-matrix';
+export const APP='buffalo-full-ltm-diag-private',OP='buffalo-full-ltm-diag-operator';
+const folder='infra/full-runtime/',out=process.env.RUNNER_TEMP+'/buffalo-full-ltm-diag';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const save=(name,x)=>{mkdirSync(out,{recursive:true});writeFileSync(out+'/'+name+'.json',JSON.stringify(x,null,2)+'\n')};
 const load=name=>JSON.parse(readFileSync(out+'/'+name+'.json'));
@@ -82,11 +82,21 @@ async function main(){
  if(phase==='preflight'){
   const apps=await zeroContainers();await unused();const workers=await api('/workers/scripts');
   assert(!workers.some(w=>[APP,OP].includes(w.id??w.name))&&!apps.some(a=>a.name===APP),'MATRIX_RESOURCES_ALREADY_EXIST');
-  save('preflight',{status:'UNUSED_AND_ZERO_ACTIVE'});
+  const old=await query('SELECT probe_id,status,receipt_json FROM buffalo_stage3b8r1_receipts WHERE probe_id LIKE ?',['one-shot-buffalo-native-ltm-v1-%']);
+  assert.equal(old.length,8);
+  for(const row of old){
+    const x=JSON.parse(row.receipt_json);
+    const rejected=CASES.includes(x.case_name);
+    assert.equal(x.approval.source_commit,'1438f9ef33f7a7cf481610bd8d4721b51552ffe3');
+    assert.equal(x.container_stopped,true);
+    assert.equal(row.status,rejected?'RUNTIME_FAILURE':PASS);
+    if(rejected)assert.equal(x.failure_code,'INVALID_NATIVE_NARRATIVE');
+  }
+  save('preflight',{status:'UNUSED_AND_ZERO_ACTIVE',historical:old.map(x=>({id:x.probe_id,status:x.status}))});
  }else if(phase==='configs')generate(CASES[0],0,randomUUID());
  else if(phase==='arm'){
   assert(CASES.includes(name));await unused(name);await waitClean(true,120000);
-  const g=generate(name,Date.now()+10*60000,randomUUID());assert(validGrant(g));
+  const g=generate(name,Date.now()+20*60000,randomUUID());assert(validGrant(g));
  }else if(phase==='check-runtime-armed'){
   const g=load('grant');assert(validGrant(g));await unused(g.case_name);await zeroContainers();await privateCheck(APP,true);await privateCheck(OP,false,true);
  }else if(phase==='observe'){
@@ -115,15 +125,17 @@ async function main(){
   await waitClean(false,CLEANUP_WAIT_MS);save('cleanup',{status:'ZERO_ACTIVE_AND_DISABLED_NO_AI_OR_SECRETS'});
  }else if(phase==='summary'){
   const cases=CASES.map(name=>{try{return load(name)}catch{return {case_name:name,status:'NOT_OBSERVED'}}});
-  const pair=comparison(cases[6],cases[7]);
+  const pair=null;
   const report={mode:'native_workers_ai_binding',cases:cases.map(c=>({name:c.case_name,status:c.status,
     failure_stage:c.failure_stage,failure_code:c.failure_code,calls:c.inferences?.length??0,
     checked:c.assessment?.dominance?.checkedSamples,container_stopped:c.container_stopped,
     narrative_attempts:c.narrative_attempts?.map(({status,call_id,raw_sha256,error,diagnostic})=>({
       status,call_id,raw_sha256,error,diagnostic}))})),
     pair,prose:'not_semantically_verified',total_calls:cases.reduce((s,c)=>s+(c.inferences?.length??0),0)};
-  report.complete=cases.every(c=>c.status===PASS&&validReceipts(c.inferences)&&c.container_stopped)&&pair?.sameStructuralCycles===true&&pair.reactivated.length===3;
-  save('summary',report);console.log('FULL_REMOTE_LTM_MATRIX '+JSON.stringify(report));assert(report.complete,'MATRIX_HAS_FAILED_CASES');
+  report.complete=cases.every(c=>c.status===PASS&&validReceipts(c.inferences)&&c.container_stopped);
+  report.diagnostic_complete=cases.every(c=>c.container_stopped&&c.narrative_attempts?.length&&c.narrative_attempts.every(a=>a.status==='ACCEPTED'||(a.status==='REJECTED'&&typeof a.raw==='string'&&a.diagnostic?.valid===false)));
+  save('summary',report);console.log('FULL_REMOTE_LTM_DIAGNOSTIC '+JSON.stringify(report));
+  assert(report.diagnostic_complete,'MISSING_DIAGNOSTIC_EVIDENCE');assert(report.complete,'DIAGNOSTIC_CASES_REJECTED');
  }else throw Error('UNKNOWN_PHASE');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.error(e.message);process.exitCode=1});

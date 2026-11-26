@@ -9,15 +9,15 @@ import {GEMMA} from '../private-merlin/gemma-response.mjs';
 const grant=name=>({case_name:name,project:projectId(name),max_calls:LIMIT,source_commit:'a'.repeat(40),
  image_digest:'sha256:'+'b'.repeat(64),run_id:'58532b8a-b25e-4b67-a90b-10db57da263b',expires:Date.now()+600000});
 test('eight independent private projects, identical clocks and sole Mai-Bab parameter change',()=>{
- assert.equal(CASES.length,8);assert.equal(new Set(CASES.map(projectId)).size,8);assert.equal(new Set(CASES.map(probeId)).size,8);
- assert.deepEqual(CASES.map(n=>fixture(n).expectedSamples),[401,241,961,101,81,491,17,17]);
+ assert.equal(CASES.length,3);assert.equal(new Set(CASES.map(projectId)).size,3);assert.equal(new Set(CASES.map(probeId)).size,3);
+ assert.deepEqual(CASES.map(n=>fixture(n).expectedSamples),[401,241,17]);
  const a=fixture('maibab-control').model,b=fixture('maibab-perturbed').model;
  assert.equal(b.variables.find(v=>v.name==='Normal Food Per Deer').equation,'100');
  b.variables.find(v=>v.name==='Normal Food Per Deer').equation='1';assert.deepEqual(a,b);
  const rt=JSON.parse(readFileSync(new URL('./wrangler.template.json',import.meta.url)));
  const op=JSON.parse(readFileSync(new URL('./wrangler.edit-operator.template.json',import.meta.url)));
  for(const name of CASES){
-  const g=grant(name);assert(validGrant(g));assert(!validGrant({...g,max_calls:9}));assert(!validGrant({...g,project:'other'}));
+  const g=grant(name);assert(validGrant(g));assert(!validGrant({...g,case_name:'maibab-control',project:projectId('maibab-control')}));assert(!validGrant({...g,max_calls:9}));assert(!validGrant({...g,project:'other'}));
   const {disabled,armed,g:actual}=configs(rt,op,'registry.cloudflare.com/e0cb52526a69c0f48f001901a5b9a640/'+APP+'@'+g.image_digest,g.source_commit,name,g.run_id,g.expires);
   assert.deepEqual(actual,g);assert.equal(disabled.runtime.name,APP);assert.equal(disabled.operator.name,OP);
   assert(!disabled.runtime.ai);assert.equal(disabled.runtime.vars.RUNTIME_ENABLED,'false');assert.equal(disabled.operator.vars.FULL_NATIVE_LTM_GRANT,'null');

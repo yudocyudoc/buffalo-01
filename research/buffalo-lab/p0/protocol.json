@@ -187,6 +187,19 @@
         "evidence_run": "independent-euler-linear-demand"
       },
       "expected": "unverified"
+    },
+    {
+      "id": "early-onset-negative",
+      "text": "All B1 dominance onset spacings from month 6.5 onward lie between 7.65 and 7.98 months.",
+      "claim": {
+        "kind": "onset_spacing",
+        "group": 1,
+        "loop": "B1",
+        "after": 6,
+        "lo": 7.65,
+        "hi": 7.98
+      },
+      "expected": "contradicted"
     }
   ],
   "real": [

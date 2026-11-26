@@ -73,6 +73,7 @@ function start(edit){
   child=spawn('/usr/bin/setpriv',['--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',process.execPath,
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
       PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,BUFFALO_NATIVE_LTM:'true',
+      BUFFALO_SIMLIN_PYTHON:process.env.BUFFALO_SIMLIN_PYTHON,
       ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }

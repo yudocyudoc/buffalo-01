@@ -73,6 +73,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r third-party/PySD-simulator/requirements.txt
+      - run: python -m pip install --only-binary=:all: pysimlin==0.8.5
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
       - name: Produce Bass trajectories and feedback in one isolated simulation
         shell: bash

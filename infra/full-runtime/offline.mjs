@@ -27,6 +27,8 @@ import {createBassFixture,exerciseBassReference} from './test-seldon-bass-refere
 import {exerciseDocumentation} from './test-document-project-model.mjs';
 import {seedNarrativeRuns, exerciseRunNarratives} from './test-run-narrative.mjs';
 
+import {seedNativeLtm,reopenNativeLtm} from './test-native-ltm.mjs';
+
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
 const {build}=deps('esbuild');
@@ -48,6 +50,7 @@ export class LocalProject extends ProjectRuntime {
     }
     return super.fetch(r);
   }
+  async simulateNative(project,body){return fetch('http://127.0.0.1:8081/simulate',{method:'POST',body});}
   async applicationPort(){return {fetch(r){const u=new URL(r.url);u.host='127.0.0.1:8080';return fetch(new Request(u,r));}};}
 }`;
 const script=(await build({stdin:{contents:testModule,resolveDir:process.cwd()},bundle:true,write:false,
@@ -69,7 +72,7 @@ const doc=(options={})=>mf.dispatchFetch('http://localhost/project/model',{...op
 function start(edit){
   child=spawn('/usr/bin/setpriv',['--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',process.execPath,
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
-      PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,
+      PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,BUFFALO_NATIVE_LTM:'true',
       ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
@@ -363,4 +366,13 @@ try{
     assert.deepEqual(await (await request(c.path+'/feedback')).json(),c.feedback);
   }
   console.log('FULL_LTM_NARRATIVE_BASS_AND_JOINT_DOMINANCE_REOPENED');
+  await mf.dispose();
+  const nativeOptions={...fixtureOptions(10),resourcePersistencePath:join(disk,'native-ltm')};
+  mf=new Miniflare(nativeOptions);await mf.ready;
+  start(false);await rest(base,key);
+  const nativeRuns=await seedNativeLtm(request,other);
+  await stop();await mf.dispose();
+  mf=new Miniflare(nativeOptions);await mf.ready;
+  start(true);await rest(base,key);
+  await reopenNativeLtm(request,other,key,nativeRuns,provider=>{engineFixture=provider;});
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

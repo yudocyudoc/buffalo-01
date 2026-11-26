@@ -2,6 +2,14 @@
 
 The container starts upstream `app.js` with Express and WebSocket sharing port 8080. A non-root entrypoint drops inherited capabilities, verifies the Linux launch context, and requires authenticated sessions and bubblewrap. It uses the existing private provider bootstrap only when Workers AI is explicitly configured. Private 3B-8 retains its own image and receipts.
 
+## Native Simlin analysis for a project run
+
+Through the authorized project binding, send `PUT /project/runs/{uuid}/ltm` with the saved model's `revision` and `model_sha256` as a JSON object. Buffalo loads that immutable SD-JSON, converts it with the upstream XMILE converter and runs pysimlin 0.8.5 in the container. The effective integration method defaults to Euler when absent; use the revision's `specs.integrationMethod` and optional `specs.saveStep` to specify another integration or output grid. A successful response is 201, or 204 for the same completed invocation. A different parent on an occupied UUID returns 409. Obtain a new UUID for a new experiment.
+
+Read the trajectory from `GET /project/runs/{uuid}`, the native evidence from `GET /project/runs/{uuid}/ltm` and the SD-AI feedback from `GET /project/runs/{uuid}/feedback`. One transaction saves all three. Native evidence includes signed relative scores on every saved sample, raw link scores where available, partition membership and native periods. The feedback tool carries the full periods and an explicitly sampled score grid of up to 100 instants. Activity classifications cover the full saved grid. A null series denotes unavailable evidence. The source records engine version, installed distribution fingerprint and the evidence hash. Inference has a separate authorization and budget.
+
+A compatible client can reopen an analysis with `openNativeLtmRun(request, runId)` from `native-ltm-client.mjs`. Use the returned model in the new session and pass its `clientRequest` handler the original `feedback_request`, `get_run_info` and `get_variable_data` messages. Send the returned object in the original `tool_call_response`. Merlin's `get_feedback_information` and `generate_ltm_narrative` then consume the selected run.
+
 ## Private client integration
 
 Configure a trusted client-facing Worker to use a service binding to the named `FullApplication` entrypoint. That caller must authenticate the user, authorize the project and **overwrite** the `x-buffalo-project` header with its own verified project slug. Each project maps to one Container and SQLite-backed Durable Object. The default public handler returns 404. The private binding preserves original HTTP methods, paths and WebSocket frames. Use the original application authentication key in the REST header or session initialization. The router needs the `APP_AUTH_KEY` secret and an explicitly enabled runtime to start a container.

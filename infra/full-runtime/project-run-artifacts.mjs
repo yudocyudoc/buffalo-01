@@ -3,7 +3,12 @@ import {RUN_ID, storedRun} from './project-runs.mjs';
 import {digest} from './provider-wire.mjs';
 import {narrativeAssessment, validFeedback, validFeedbackSource, validNarrative} from './run-narrative.mjs';
 
+import {readNativeText} from './native-ltm-storage.mjs';
+
 const empty = status => new Response(null, {status});
+export function initRunArtifacts(sql) {
+  sql.exec('CREATE TABLE IF NOT EXISTS run_artifacts (run_id TEXT NOT NULL, artifact_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,artifact_id))');
+}
 
 // Compare JSON objects by field and arrays in order. The expected shape is server-generated.
 function matchesAssessment(actual, expected) {
@@ -21,8 +26,11 @@ export async function projectRunArtifact(request, storage, runId, narrativeId) {
   const sql = storage.sql;
   const run = storedRun(sql, runId);
   if (!run) return empty(404);
-  sql.exec('CREATE TABLE IF NOT EXISTS run_artifacts (run_id TEXT NOT NULL, artifact_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,artifact_id))');
-  const lookup = id => sql.exec('SELECT body FROM run_artifacts WHERE run_id=? AND artifact_id=?', runId, id).toArray()[0];
+  initRunArtifacts(sql);
+  const lookup = id => {
+    const row = sql.exec('SELECT body FROM run_artifacts WHERE run_id=? AND artifact_id=?',runId,id).toArray()[0];
+    return row?.body === '' ? {body:readNativeText(sql,runId,id)} : row;
+  };
   const id = narrativeId ?? 'feedback';
   if (request.method === 'GET') {
     const row = lookup(id);

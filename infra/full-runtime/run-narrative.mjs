@@ -20,12 +20,13 @@ export function validFeedback(content, time) {
     }
   }
   const grid = new Set(time);
-  let previousEnd = -Infinity;
+  const ends = new Map();
   for (const p of content.dominantLoopsByPeriod) {
-    if (!grid.has(p?.startTime) || !grid.has(p.endTime) || p.endTime < p.startTime || p.startTime < previousEnd ||
+    if (!grid.has(p?.startTime) || !grid.has(p.endTime) || p.endTime < p.startTime || p.startTime < (ends.get(p.partition) ?? -Infinity) ||
         !Array.isArray(p.dominantLoops) || !p.dominantLoops.length ||
         new Set(p.dominantLoops).size !== p.dominantLoops.length || !p.dominantLoops.every(id => ids.has(id))) return false;
-    previousEnd = p.endTime;
+    if (p.partition !== undefined && !p.dominantLoops.every(id => content.feedbackLoops.find(l=>l.identifier===id)?.partition === p.partition)) return false;
+    ends.set(p.partition,p.endTime);
   }
   return true;
 }

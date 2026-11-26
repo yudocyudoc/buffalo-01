@@ -44,11 +44,12 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
      check(stage==='chat','UNEXPECTED_MODEL_REQUEST');
      send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
     case 'update_model':
-     check(stage==='chat'&&typeof save==='function','UNEXPECTED_UPDATE');
+     check(stage==='chat'&&!scenario?.readOnly&&typeof save==='function','UNEXPECTED_UPDATE');
      const saved=await save(m.modelData);
      if(journal)await journal.modelAccepted(m.requestId,saved);
      model=m.modelData;updated++;
      send('tool_call_response',{callId:m.requestId,result:model,isError:false});break;
+    case 'feedback_request':
     case 'run_model':
     case 'get_run_info':
     case 'get_variable_data':{
@@ -73,7 +74,7 @@ export function readSession(ws,{mode,key,model,agent,edit=false,save,tools=[],sc
     case 'agent_complete':
      check(stage==='chat'&&m.status==='success','AGENT_NOT_SUCCESS');
      if(scenario)await scenario.verify(model,tools);else assertDemand(model,'5');
-     check(updated>0,'MODEL_NOT_UPDATED');
+     if (!scenario?.readOnly) check(updated>0,'MODEL_NOT_UPDATED');
      if(journal)await journal.complete();
      stage='disconnect';send('disconnect');break;
     case 'error':throw Error('ORIGINAL_AGENT_ERROR');

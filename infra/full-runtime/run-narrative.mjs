@@ -33,12 +33,49 @@ export function validFeedback(content, time) {
 }
 
 // Checks output shape and loop identifiers only. Arbitrary text may contradict the evidence.
-export function validNarrative(result, feedback) {
-  const loops = result?.feedbackLoops;
-  if (!text(result?.output?.textContent) || !Array.isArray(loops)) return false;
+// Keep the boolean gate and its explanation on one code path. Bound diagnostic
+// amplification independently of the exact rejected tool-result evidence.
+export function diagnoseNarrative(result, feedback) {
   const expected = new Set(feedback.feedbackLoops.map(loop => loop.identifier));
-  return loops.length === expected.size && loops.every(loop =>
-    text(loop?.name) && text(loop.description) && expected.delete(loop.identifier));
+  const loops = result?.feedbackLoops;
+  const issues = [];
+  let issueCount = 0;
+  const add = (code, path, identifier) => {
+    issueCount++;
+    if (issues.length >= 128) return;
+    const issue = {code, path};
+    if (typeof identifier === 'string') {
+      issue.identifier = identifier.slice(0, 256);
+      if (identifier.length > 256) issue.identifier_truncated = true;
+    }
+    issues.push(issue);
+  };
+  if (!text(result?.output?.textContent)) add('MISSING_OR_EMPTY_TEXT', 'output.textContent');
+  const seen = new Set();
+  if (!Array.isArray(loops)) add('EXPECTED_LOOP_ARRAY', 'feedbackLoops');
+  else {
+    if (loops.length !== expected.size) add('LOOP_COUNT_MISMATCH', 'feedbackLoops.length');
+    for (let i = 0; i < loops.length; i++) {
+      const loop = loops[i], path = 'feedbackLoops[' + i + ']';
+      const id = loop?.identifier;
+      if (typeof id !== 'string') add('INVALID_IDENTIFIER_TYPE', path + '.identifier');
+      else {
+        if (!expected.has(id)) add('UNEXPECTED_IDENTIFIER', path + '.identifier', id);
+        if (seen.has(id)) add('DUPLICATE_IDENTIFIER', path + '.identifier', id);
+        seen.add(id);
+      }
+      if (!text(loop?.name)) add('MISSING_OR_EMPTY_NAME', path + '.name', id);
+      if (!text(loop?.description)) add('MISSING_OR_EMPTY_DESCRIPTION', path + '.description', id);
+    }
+  }
+  for (const id of expected) if (!seen.has(id)) add('MISSING_IDENTIFIER', 'feedbackLoops', id);
+  return {valid: issueCount === 0, expectedCount: expected.size,
+    receivedCount: Array.isArray(loops) ? loops.length : null,
+    issueCount, issues, omittedIssueCount: issueCount - issues.length};
+}
+
+export function validNarrative(result, feedback) {
+  return diagnoseNarrative(result, feedback).valid;
 }
 
 export function validFeedbackSource(source) {
@@ -79,7 +116,9 @@ export async function generateRunNarrative(request, key, runId, prompt) {
   });
   if (!result.ok) throw Error('LTM_NARRATIVE_HTTP_FAILURE');
   const generated = await result.json();
-  if (generated.success !== true || !validNarrative(generated, feedback.content)) throw Error('LTM_NARRATIVE_INVALID_RESULT');
+  const diagnostic = diagnoseNarrative(generated, feedback.content);
+  if (generated?.success !== true || !diagnostic.valid)
+    throw Error('LTM_NARRATIVE_INVALID_RESULT', {cause: {...diagnostic, engineSuccess: generated?.success === true}});
   return {run_id: runId, run_sha256: runHash, feedback_sha256: provenance.feedback_sha256, prompt,
     output: generated.output, feedbackLoops: generated.feedbackLoops, assessment};
 }

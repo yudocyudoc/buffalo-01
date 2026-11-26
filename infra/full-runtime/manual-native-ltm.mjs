@@ -118,7 +118,9 @@ async function main(){
   const pair=comparison(cases[6],cases[7]);
   const report={mode:'native_workers_ai_binding',cases:cases.map(c=>({name:c.case_name,status:c.status,
     failure_stage:c.failure_stage,failure_code:c.failure_code,calls:c.inferences?.length??0,
-    checked:c.assessment?.dominance?.checkedSamples,container_stopped:c.container_stopped})),
+    checked:c.assessment?.dominance?.checkedSamples,container_stopped:c.container_stopped,
+    narrative_attempts:c.narrative_attempts?.map(({status,call_id,raw_sha256,error,diagnostic})=>({
+      status,call_id,raw_sha256,error,diagnostic}))})),
     pair,prose:'not_semantically_verified',total_calls:cases.reduce((s,c)=>s+(c.inferences?.length??0),0)};
   report.complete=cases.every(c=>c.status===PASS&&validReceipts(c.inferences)&&c.container_stopped)&&pair?.sameStructuralCycles===true&&pair.reactivated.length===3;
   save('summary',report);console.log('FULL_REMOTE_LTM_MATRIX '+JSON.stringify(report));assert(report.complete,'MATRIX_HAS_FAILED_CASES');

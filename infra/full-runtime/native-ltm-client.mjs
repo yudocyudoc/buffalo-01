@@ -1,6 +1,6 @@
 import {digest} from './provider-wire.mjs';
 import {RUN_ID} from './project-runs.mjs';
-import {assessRunFeedback,validNarrative} from './run-narrative.mjs';
+import {assessRunFeedback,diagnoseNarrative} from './run-narrative.mjs';
 
 // Bind the original SD-AI client protocol to one immutable project run.
 // Reopening by UUID reloads both the model revision and the matching evidence.
@@ -25,7 +25,9 @@ export async function openNativeLtmRun(request,runId) {
   };
   async function saveNarrative(narrativeId,prompt,result) {
     requireConsistentPeriods();
-    if (!RUN_ID.test(narrativeId) || !validNarrative(result,feedback.content)) throw Error('INVALID_NATIVE_NARRATIVE');
+    if (!RUN_ID.test(narrativeId)) throw Error('INVALID_NATIVE_NARRATIVE_ID');
+    const diagnostic=diagnoseNarrative(result,feedback.content);
+    if (!diagnostic.valid) throw Error('INVALID_NATIVE_NARRATIVE',{cause:diagnostic});
     const record={run_id:runId,run_sha256:feedback.run_sha256,feedback_sha256:await digest(feedbackBody),
       prompt,output:result.output,feedbackLoops:result.feedbackLoops,assessment};
     const res=await request(path+'/narratives/'+narrativeId,{method:'PUT',body:JSON.stringify(record)});

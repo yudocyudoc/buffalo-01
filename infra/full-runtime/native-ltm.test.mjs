@@ -7,6 +7,8 @@ import {projectRunArtifact} from './project-run-artifacts.mjs';
 import {projectNativeLtm} from './native-ltm.mjs';
 import {openNativeLtmRun} from './native-ltm-client.mjs';
 import {generateRunNarrative} from './run-narrative.mjs';
+import {captureNarrativeAttempt} from './narrative-attempt.mjs';
+import {digest} from './provider-wire.mjs';
 
 const runId='cbdb5c99-4dd0-42d5-8de3-c2c127f40248';
 const time=[0,.5,1];
@@ -54,6 +56,28 @@ test('native evidence and client provenance survive reopening, retries and concu
     assert.equal(feedbackContent.feedbackLoops[2].activity,'zero_on_saved_grid');
     assert.equal(feedbackContent.feedbackLoops[3].activity,'incomplete');
     assert.equal((await projectRuns(request('PUT',selected.run),storage,crypto.randomUUID())).status,422);
+
+    // The actual immutable run is reopened, a schema-shaped but incomplete
+    // narrative is captured, and neither the client nor server admits it.
+    const bad={output:{textContent:'Only one loop explained.'},feedbackLoops:[
+      {identifier:'B1',name:'A loop',description:'missing partition identity'}]};
+    const raw=JSON.stringify(bad,null,2),badId=crypto.randomUUID();
+    let attempt,checkpoint;
+    await assert.rejects(captureNarrativeAttempt({
+      message:{callId:'negative-control',result:[{text:raw}]},selected,narrativeId:badId,prompt:'Explain',
+      onCapture(x){attempt=x;checkpoint=structuredClone(x);}
+    }),e=>e.message==='INVALID_NATIVE_NARRATIVE'&&e.cause.valid===false);
+    assert.equal(checkpoint.status,'CAPTURED');assert.equal(checkpoint.raw,raw);
+    assert.equal(attempt.status,'REJECTED');assert.equal(attempt.raw,raw);
+    assert.equal(attempt.raw_sha256,await digest(raw));
+    assert.equal(attempt.diagnostic.expectedCount,4);
+    assert(attempt.diagnostic.issues.some(x=>x.code==='UNEXPECTED_IDENTIFIER'&&x.identifier==='B1'));
+    assert(attempt.diagnostic.issues.some(x=>x.code==='MISSING_IDENTIFIER'&&x.identifier==='P0/B1'));
+    assert.equal((await projectRunArtifact(request(),storage,runId,badId)).status,404);
+    const invalidRecord={...bad,run_id:runId,run_sha256:selected.feedback.run_sha256,
+      feedback_sha256:await digest(await (await get('/feedback')).text()),prompt:'Explain',assessment:selected.assessment};
+    assert.equal((await projectRunArtifact(request('PUT',invalidRecord),storage,runId,badId)).status,422);
+    assert.equal((await projectRunArtifact(request(),storage,runId,badId)).status,404);
 
     const wrongId=crypto.randomUUID(), wrong=sample();
     wrong.periods[0].dominantLoops=['u1'];

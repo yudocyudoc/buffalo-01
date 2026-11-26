@@ -5,6 +5,7 @@ import {CASES,LIMIT,probeId,fixture,validGrant} from './remote-ltm-cases.mjs';
 import {readSession} from './session-client.mjs';
 import {openNativeLtmRun} from './native-ltm-client.mjs';
 import {digest} from './provider-wire.mjs';
+import {captureNarrativeAttempt} from './narrative-attempt.mjs';
 import {acceptedGemmaModel} from '../private-merlin/gemma-response.mjs';
 export const PASS='FULL_REMOTE_NATIVE_LTM_PASS';
 const table='buffalo_stage3b8r1_receipts';
@@ -21,6 +22,16 @@ export function validReceipts(rows){
   rows.some(r=>r.finish_reason==='tool_calls')&&rows.some(r=>r.channel==='original-engine'&&
   r.response_format==='json_schema'&&r.predicates?.schema_valid===true)&&rows.at(-1).finish_reason==='stop';
 }
+// Only the synthetic private experiment's D1 ledger stores rejected tool text.
+// No raw responses are added to product inference receipts or public logs.
+export async function checkpointNarrativeAttempt(db,claim,evidence,attempt){
+ const body=JSON.stringify({...claim,stage:'NARRATIVE_CAPTURED',simulation_id:evidence.simulation_id,
+  evidence_sha256:evidence.evidence_sha256,narrative_attempt:attempt});
+ const updated=await db.prepare('UPDATE '+table+' SET receipt_json=? WHERE probe_id=? AND run_id=? AND status=?')
+  .bind(body,claim.probe_id,claim.run_id,'CLAIMED').run();
+ check(updated.meta?.changes===1,'NARRATIVE_CAPTURE_CHECKPOINT_FAILED');
+}
+
 export async function runNativeLtm(env,{session=readSession}={}){
  let g;try{g=JSON.parse(env.FULL_NATIVE_LTM_GRANT??'null')}catch{return}
  if(!validGrant(g)||!env.APP_AUTH_KEY)return;
@@ -28,7 +39,7 @@ export async function runNativeLtm(env,{session=readSession}={}){
  const ins=await env.DB.prepare('INSERT INTO '+table+' (probe_id,run_id,status,receipt_json) VALUES (?,?,?,?) ON CONFLICT(probe_id) DO NOTHING')
   .bind(id,g.run_id,'CLAIMED',JSON.stringify(claim)).run();
  if(ins.meta?.changes!==1)return;
- const e={...claim,status:'RUNTIME_FAILURE',case_name:g.case_name,mode:'native_workers_ai_binding',tools:[],inferences:[],narratives:[],container_stopped:false,prose:'not_semantically_verified'};
+ const e={...claim,status:'RUNTIME_FAILURE',case_name:g.case_name,mode:'native_workers_ai_binding',tools:[],inferences:[],narratives:[],narrative_attempts:[],container_stopped:false,prose:'not_semantically_verified'};
  let stage='FRESH_PROJECT',started=false;
  const req=(path,init={})=>{
   const headers=new Headers(init.headers);headers.set('x-buffalo-project',g.project);headers.set('Authentication',env.APP_AUTH_KEY);
@@ -84,7 +95,11 @@ export async function runNativeLtm(env,{session=readSession}={}){
     async onToolCompleted(message){
      if(message.toolName==='generate_ltm_narrative'&&!message.isError){
       const narrativeId=crypto.randomUUID();
-      const saved=await selected.saveNarrative(narrativeId,prompt,JSON.parse(message.result[0].text));
+      const saved=await captureNarrativeAttempt({message,selected,narrativeId,prompt,
+       async onCapture(attempt){
+        e.narrative_attempts.push(attempt);
+        await checkpointNarrativeAttempt(env.DB,claim,e,attempt);
+       }});
       e.narratives.push({id:narrativeId,record:saved});
      }
     },
@@ -116,7 +131,12 @@ export async function runNativeLtm(env,{session=readSession}={}){
   // lose terminal status, never claim success if full artifact did not fit.
   if(new TextEncoder().encode(body).length>1500000){
    e.status='RUNTIME_FAILURE';e.failure_stage='EXPORT';e.failure_code='D1_RECEIPT_TOO_LARGE';
+   // Retain the exact rejected response and its diagnostic even on export
+   // overflow. Accepted narratives and full simulation are still in the DO.
    delete e.evidence;delete e.run;delete e.feedback;body=JSON.stringify(e);
+   if(new TextEncoder().encode(body).length>1500000){
+    delete e.model;delete e.narratives;delete e.session;body=JSON.stringify(e);
+   }
   }
   const updated=await env.DB.prepare('UPDATE '+table+' SET status=?,receipt_json=? WHERE probe_id=? AND run_id=? AND status=?')
    .bind(e.status,body,id,g.run_id,'CLAIMED').run();

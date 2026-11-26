@@ -6,6 +6,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {request as httpRequest} from 'node:http';
 import {digest} from './provider-wire.mjs';
+import {captureNarrativeAttempt} from './narrative-attempt.mjs';
 import {openNativeLtmRun} from './native-ltm-client.mjs';
 import {session} from './test-session.mjs';
 import {GEMMA} from '../private-merlin/gemma-response.mjs';
@@ -82,7 +83,7 @@ function broker(socket,caseName,model,wire){
 export async function reopenLtmMatrix(request,other,key,report,save,useProvider,{socket=null}={}){
   for(const c of report.cases){
     if(c.status!=='COMPUTED')continue;
-    c.providerCalls=[];c.toolTrace=[];c.narratives=[];
+    c.providerCalls=[];c.toolTrace=[];c.narratives=[];c.narrative_attempts=[];
     try{
       const selected=await openNativeLtmRun(request,c.runId);
       assert.equal(await digest(await (await request('/project/runs/'+c.runId+'/ltm')).text()),c.evidenceHash);
@@ -130,7 +131,8 @@ export async function reopenLtmMatrix(request,other,key,report,save,useProvider,
           c.toolTrace.push({name:message.toolName,isError:message.isError});
           if(message.toolName==='generate_ltm_narrative'&&!message.isError){
             const id=randomUUID();
-            const saved=await selected.saveNarrative(id,prompt,JSON.parse(message.result[0].text));
+            const saved=await captureNarrativeAttempt({message,selected,narrativeId:id,prompt,
+              onCapture(attempt){c.narrative_attempts.push(attempt);save();}});
             const reopened=await (await request('/project/runs/'+c.runId+'/narratives/'+id)).json();
             assert.deepEqual(reopened,saved);
             assert.equal(reopened.assessment.dominance.status,'supported_by_partition_scores');

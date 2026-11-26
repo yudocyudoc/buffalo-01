@@ -16,7 +16,7 @@ test('original evaluation inventory and controlled judge boundary',async()=>{
   };
   const cases=Object.values(groups).flat();
   assert.equal(cases.length,6);
-  assert.equal(cases.reduce((n,c)=>n+c.expectations.length,0),34);
+  assert.equal(cases.reduce((n,c)=>n+c.expectations.length,0),35);
   assert(cases.every(c=>c.additionalParameters.feedbackContent&&!c.additionalParameters.behaviorContent));
   const expectation=['There are two feedback loops.'];
   const response={output:{textContent:'There are two feedback loops. A stock equals 999999 at time 4.'}};

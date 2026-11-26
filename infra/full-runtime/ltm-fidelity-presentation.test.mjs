@@ -71,3 +71,13 @@ test('constant and heavily tied variables use a bounded prompt without losing ex
  assert(a.output.includes('961 tied saved samples'));
  assert(new TextEncoder().encode(p.message).length<24576);
 });
+
+test('selection cannot reorder a partition timeline by choosing its last period first',()=>{
+ const p=prep();
+ const late=p.catalog.rows.find(r=>r[1]==='dominance'&&r[2]===0&&r[3]===1);
+ const a=p.finalize('BUFFALO_FACTS_V1 '+runId+' '+late[0]+' F3');
+ assert.equal(a.status,'model_selection_accepted');
+ const periods=a.claims.filter(r=>r.claim.kind==='dominance'&&r.claim.partition===0);
+ assert.deepEqual(periods.map(r=>r.claim.start),[0,.25,.5,1]);
+ assert(a.output.indexOf('Partition 0 [0.25, 0.25]')<a.output.indexOf('Partition 0 [1, 1]'));
+});

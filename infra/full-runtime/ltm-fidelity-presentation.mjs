@@ -108,7 +108,9 @@ export function prepareFidelityPresentation({runId,run,evidence,feedback,stockNa
   const chosen=reason?fallback:proposed;
   // Full timeline/activity always present; a model cannot erase a transition
   // by selecting only the first or last period. Stock summary is the fallback.
-  const ids=[...new Set([...chosen,...mandatory])];
+  // Selection order is a preference only for numerical facts. The complete
+  // timeline is always emitted in native partition and chronological order.
+  const ids=[...chosen.filter(id=>!requiredSet.has(id)),...mandatory];
   const selected=ids.map(id=>byId.get(id));
   const preferred=selected.filter(r=>!requiredSet.has(r.id));
   const periods=selected.filter(r=>r.claim.kind==='dominance');

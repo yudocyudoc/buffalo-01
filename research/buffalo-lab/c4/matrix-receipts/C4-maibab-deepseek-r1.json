@@ -1,0 +1,58 @@
+{
+  "id": "C4-maibab-deepseek-r1",
+  "case_id": "maibab",
+  "config": "deepseek",
+  "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "wire_sha256": "35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410",
+  "bytes": 334279,
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-maibab-deepseek-r1.json",
+  "schema_valid": false,
+  "transport": "RETURNED",
+  "elapsed_ms": 69022,
+  "result": {
+    "id": "chatcmpl-badaed97-04de-465b-8048-f11c4c499dc5",
+    "object": "chat.completion",
+    "created": 1795728706,
+    "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": ""
+        },
+        "finish_reason": "length",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 91417,
+      "completion_tokens": 8192,
+      "total_tokens": 99609,
+      "prompt_tokens_details": {
+        "cached_tokens": 832
+      },
+      "neurons": 3364.626708984375
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning",
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 91417,
+    "completion_tokens": 8192,
+    "total_tokens": 99609,
+    "prompt_tokens_details": {
+      "cached_tokens": 832
+    },
+    "neurons": 3364.626708984375
+  },
+  "parsed_schema_valid": false,
+  "semantic_accuracy": "NOT_MEASURED"
+}

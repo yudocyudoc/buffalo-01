@@ -11,6 +11,13 @@
       "status": "RETURNED",
       "receipt": "research/buffalo-lab/c4/pilot-receipts/gemma-off.json",
       "schema_valid": true
+    },
+    {
+      "id": "C4-bassDiffusion-gemma-on-r1",
+      "config": "gemma-on",
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "wire_sha256": "92b49bc913f47d613c7952c06a296ce179802347fd914c736056dbfb8893269d",
+      "status": "RESERVED"
     }
   ],
   "note": "Reservations are spent even if provider returns an error or response is ambiguous. No retries. Only Bass r1."

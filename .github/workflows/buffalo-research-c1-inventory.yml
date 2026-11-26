@@ -25,6 +25,10 @@ jobs:
         env:
           AGENT_SESSION_TEMP_DIR: ${{ runner.temp }}/c1-agent-sessions
         run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/agent-route-controls.mjs "$RUNNER_TEMP/c1-agent-routes.json"
+      - name: Original cache identity controls
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/cache-controls.mjs "$RUNNER_TEMP/c1-cache-controls.json"
+      - name: Prepare blinded historical review sample
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/historical-review-pack.mjs "$RUNNER_TEMP/c1-review"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -33,4 +37,19 @@ jobs:
             ${{ runner.temp }}/c1-leaderboard-inventory.json
             ${{ runner.temp }}/c1-route-controls.json
             ${{ runner.temp }}/c1-agent-routes.json
+            ${{ runner.temp }}/c1-cache-controls.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffalo-c1-blind-review-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/c1-review/blind-review.json
+            ${{ runner.temp }}/c1-review/annotation-template.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffalo-c1-review-key-KEEP-SEPARATE-${{ github.run_id }}
+          path: ${{ runner.temp }}/c1-review/review-key.json
           retention-days: 30

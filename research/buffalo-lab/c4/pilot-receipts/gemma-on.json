@@ -1,0 +1,55 @@
+{
+  "id": "C4-bassDiffusion-gemma-on-r1",
+  "config": "gemma-on",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "wire_sha256": "92b49bc913f47d613c7952c06a296ce179802347fd914c736056dbfb8893269d",
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/pilot-receipts/gemma-on.json",
+  "schema_valid": true,
+  "transport": "RETURNED",
+  "elapsed_ms": 48432,
+  "result": {
+    "id": "20155a9cc91049999981c79386ad7b71",
+    "object": "chat.completion",
+    "created": 1795725307,
+    "model": "@cf/google/gemma-4-26b-a4b-it-external",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\n  \"response\": \"Based on the feedback loop dominance analysis provided, the model describes a classic S-shaped (logistic) adoption curve. The behavior of the system shifts from a period of rapid, accelerating growth to a period of slowing growth as the market reaches saturation. \\n\\nHere is the step-by-step reasoning used to arrive at this explanation:\\n\\n### 1. Identification of the Growth Phase (Reinforcing Dominance)\\n**Time Period:** 0 to 9.625 years\\n**Dominant Loop:** **R1** (Reinforcing Loop)\\n\\nDuring this initial period, the reinforcing loop **R1** is the primary driver of the model's behavior. The causal chain works as follows:\\n*   As the number of **Adopters** increases, the total number of **adopter contacts** increases.\\n*   More contacts lead to more **potentials contacts with adopters**.\\n*   This increases the rate of **adoption from word of mouth**, which increases the flow of **adopting**.\\n*   The increased flow of **adopting** further increases the stock of **Adopters**, which feeds back into the start of the loop.\\n\\n**Resulting Behavior:** Because the reinforcing loop is dominant, the model exhibits exponential-like growth. Each new adopter increases the likelihood of finding more adopters, causing the rate of adoption to accelerate over time.\\n\\n### 2. Identification of the Saturation Phase (Balancing Dominance)\\n**Time Period:** 9.625 to 15 years\\n**Dominant Loop:** **B1** (Balancing Loop)\\n\\nAs time progresses, the system hits a turning point at approximately year 9.625. At this point, the balancing loop **B1** becomes dominant. The causal chain for this loop is:\\n*   The continuous flow of **adopting** into the **Adopters** stock simultaneously depletes the **Potential Adopters** stock.\\n*   As **Potential Adopters** decreases, the **probability of contact with potentials** also decreases (because there are fewer people left to find).\\n*   A lower probability of contact reduces the effectiveness of the **adopter contacts**, which slows down the **potentials contacts with adopters**.\\n*   This ultimately reduces the **adoption from word of mouth**, slowing the rate of **adopting**.\\n\\n**Resulting Behavior:** The dominance of the balancing loop causes the growth to decelerate. The curve begins to flatten out as the number of **Adopters** approaches the total **Market Size**, representing market saturation.\\n\\n### Summary of Model Dynamics\\nThe model's behavior is defined by the transition between these two regimes. The first phase is characterized by the \\\"viral\\\" effect of word-of-mouth (R1), while the second phase is characterized by the \\\"exhaustion\\\" of the available market (B1). The point of dominance shift (9.625 years) represents the inflection point of the S-curve, where the growth rate reaches its maximum and begins to decline.\"\n,\n  \"feedbackInformationRequired\": false\n}"
+        },
+        "finish_reason": "stop",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 22899,
+      "completion_tokens": 2306,
+      "total_tokens": 25205,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "neurons": 271.0636291503906
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/google/gemma-4-26b-a4b-it-external",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 22899,
+    "completion_tokens": 2306,
+    "total_tokens": 25205,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "neurons": 271.0636291503906
+  },
+  "parsed_schema_valid": true,
+  "semantic_accuracy": "NOT_MEASURED"
+}

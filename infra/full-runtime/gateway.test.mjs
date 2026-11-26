@@ -80,8 +80,8 @@ test('accepted text and correlated tool responses pass through after recording',
   }
 });
 
-test('all seven editing and four simulation/data tools preserve original offered schemas; no other tools added',async()=>{
- const names=['get_current_model','read_model_section','edit_variables','edit_relationships','edit_specs','edit_modules','update_model','run_model','get_run_info','get_variable_data','read_file'];
+test('editing, simulation and feedback tools preserve the original offered schemas',async()=>{
+ const names=['get_current_model','read_model_section','edit_variables','edit_relationships','edit_specs','edit_modules','update_model','run_model','get_run_info','get_variable_data','read_file','get_feedback_information'];
  assert.deepEqual([...MODEL_TOOLS],names);
  const definitions=names.map(name=>({type:'function',function:{name,description:'original '+name,parameters:{type:'object',properties:{value:{type:'number'}}}}}));
  const request=new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'test'}],tools:[...definitions,tool('write_file'),tool('generate_quantitative_model')]})});
@@ -102,7 +102,9 @@ test('generation requires engine permission and the specific original tool offer
    ['generate_qualitative_model','generate_qualitative_model',true,200],
    ['generate_qualitative_model','generate_qualitative_model',false,422],
    ['generate_quantitative_model','generate_quantitative_model',false,422],
-   ['generate_quantitative_model','generate_qualitative_model',true,422]
+   ['generate_quantitative_model','generate_qualitative_model',true,422],
+   ['generate_ltm_narrative','generate_ltm_narrative',true,200],
+   ['generate_ltm_narrative','generate_ltm_narrative',false,422]
  ]){
    const generation=tool(offered);
    const request=new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'test'}],tools:[generation,tool('write_file')]})});

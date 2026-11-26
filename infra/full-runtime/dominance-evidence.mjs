@@ -8,7 +8,7 @@ const unverified = reason => ({status: 'unverified', reason});
 // Caller has already checked identifiers, period ordering, score ranges and alignment.
 export function assessDominance(content, time) {
   const loops = content.feedbackLoops;
-  if (loops.some(loop => Object.hasOwn(loop, withinSet))) return unverified('loop_set_denominator');
+  if (loops.some(loop => Object.hasOwn(loop, withinSet) || Object.hasOwn(loop,'partition'))) return unverified('loop_set_denominator');
   if (loops.some(loop => !Object.hasOwn(loop, wholeModel))) return unverified('missing_whole_model_scores');
   if (loops.some(loop => !['+', '-'].includes(loop.polarity))) return unverified('unknown_loop_polarity');
   const periods = content.dominantLoopsByPeriod;

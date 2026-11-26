@@ -15,7 +15,8 @@ function sample() {
     series:{time,x:[1,2,3]},links:[{from:'x',to:'x',polarity:'+',raw:null}],
     loops:[{id:'b1',polarity:'B',cycle:['x'],partition:0,signed:[0,-1,-1]},
       {id:'b1',polarity:'B',cycle:['y'],partition:1,signed:[0,-1,-1]},
-      {id:'u1',polarity:'U',cycle:['z'],partition:0,signed:[0,0,0]}],
+      {id:'u1',polarity:'U',cycle:['z'],partition:0,signed:[0,0,0]},
+      {id:'u2',polarity:'U',cycle:['w'],partition:0,signed:[0,null,0]}],
     periods:[0,1].map(partition=>({partition,startTime:.5,endTime:1,dominantLoops:['b1']}))};
 }
 
@@ -47,6 +48,7 @@ test('native evidence and client provenance survive reopening, retries and concu
     assert.deepEqual(feedbackContent.dominantLoopsByPeriod.map(p=>p.dominantLoops),[['P0/B1'],['P1/B1']]);
     assert.equal(feedbackContent.feedbackLoops[0].links[0].activity,'unavailable');
     assert.equal(feedbackContent.feedbackLoops[2].activity,'zero_on_saved_grid');
+    assert.equal(feedbackContent.feedbackLoops[3].activity,'incomplete');
     assert.equal((await projectRuns(request('PUT',selected.run),storage,crypto.randomUUID())).status,422);
   } finally {db.close();}
 });

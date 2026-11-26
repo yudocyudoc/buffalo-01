@@ -29,6 +29,19 @@ export async function seedNativeLtm(request,other) {
     assert.equal(data.loops.length,name==='maibab'?10:3);
     assert.equal(new Set(data.loops.map(l=>l.partition)).size,1);
     assert.equal(data.loops.filter(l=>l.signed.every(x=>x===0)).length,name==='maibab'?3:0);
+    if (name==='armsRace') {
+      for (const loop of fixture.feedback.feedbackLoops) {
+        const path = loop.links.map(e=>e.from.toLowerCase().replace(/\s+/g,'_'));
+        const measured = data.loops.find(l=>l.cycle.length===path.length &&
+          l.cycle.some((_,start)=>path.every((v,i)=>v===l.cycle[(i+start)%path.length])));
+        assert(measured,loop.identifier);
+        const scores=loop['Percent of Model Behavior Explained by Loop'];
+        for (const [i,p] of scores.entries()) {
+          assert.equal(data.time[i],p.time);
+          assert(Math.abs(100*Math.abs(measured.signed[i])-p.value)<1e-8,loop.identifier);
+        }
+      }
+    }
     if (name==='maibab') {
       assert.deepEqual(data.links.filter(e=>e.from==='food_availability' && e.raw?.every(x=>x===0))
         .map(e=>e.to).sort(),['deer_growth_fraction','food_consumption_per_deer']);

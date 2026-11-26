@@ -13,7 +13,12 @@ const samePartition = (id, partition) => JSON.stringify([partition, id]);
 
 function nativeFeedback(data) {
   const {series:{time}, loops, periods, links} = data;
-  const aligned = scores => Array.isArray(scores) && scores.length === time.length && scores.every(numeric);
+  const aligned = scores => Array.isArray(scores) && scores.length === time.length && scores.every(x=>x===null || numeric(x));
+  function activity(scores) {
+    if (scores == null) return 'unavailable';
+    if (scores.some(x=>x!==null && x!==0)) return 'observed';
+    return scores.includes(null) ? 'incomplete' : 'zero_on_saved_grid';
+  }
   const edgeKey = (from, to) => JSON.stringify([from,to]);
   const edges = new Map(links.map(e => [edgeKey(e.from,e.to), e]));
   if (links.some(e => e.raw !== null && !aligned(e.raw))) throw Error('INVALID_LINK_SERIES');
@@ -35,11 +40,11 @@ function nativeFeedback(data) {
       const to = cycle[(i+1)%cycle.length];
       const edge = edges.get(edgeKey(from,to));
       return {from, to, polarity: edge?.polarity ?? '?',
-        activity: edge?.raw == null ? 'unavailable' : edge.raw.some(x=>x!==0) ? 'observed' : 'zero_on_saved_grid'};
+        activity:activity(edge?.raw)};
     });
     return {identifier, links:path, polarity: ({R:'+',B:'-'})[loop.polarity] ?? '',
       nativePolarity:loop.polarity, partition, signedRelativeScores:signed && indices.map(i=>signed[i]),
-      activity:signed === null ? 'unavailable' : signed.some(x=>x!==0) ? 'observed' : 'zero_on_saved_grid'};
+      activity:activity(signed)};
   });
   const dominantLoopsByPeriod = periods.map(p => ({...p,
     dominantLoops:p.dominantLoops.map(id=>identifiers.get(samePartition(id,p.partition)))}));

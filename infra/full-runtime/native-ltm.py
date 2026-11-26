@@ -2,12 +2,19 @@
 import hashlib
 import importlib.metadata
 import json
+import math
 from pathlib import Path
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
 import simlin
+
+
+def scores(values):
+    if values is None:
+        return None
+    return [float(x) if math.isfinite(x) else None for x in values]
 
 
 def measure(xml):
@@ -23,17 +30,17 @@ def measure(xml):
             series = {str(k): frame[k].tolist() for k in frame.columns}
             series["time"] = frame.index.tolist()
             links = [{"from": e.from_var, "to": e.to_var, "polarity": str(e.polarity),
-                      "raw": None if e.score is None else e.score.tolist()}
+                      "raw": scores(e.score)}
                      for e in simulation.get_links()]
             loops = []
             for loop in run.loops:
                 nodes = list(loop.variables)
                 if len(nodes) > 1 and nodes[0] == nodes[-1]:
                     nodes.pop()
-                scores = loop.behavior_time_series
+                relative_scores = scores(loop.behavior_time_series)
                 loops.append({"id": loop.id, "cycle": nodes, "partition": loop.partition,
                               "polarity": str(loop.polarity),
-                              "signed": None if scores is None else scores.tolist()})
+                              "signed": relative_scores})
             periods = [{"startTime": float(p.start_time), "endTime": float(p.end_time),
                         "partition": p.partition, "dominantLoops": list(p.dominant_loops)}
                        for p in run.dominant_periods]

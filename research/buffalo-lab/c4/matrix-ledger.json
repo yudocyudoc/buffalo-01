@@ -1,1 +1,121 @@
-{"protocol":"C4-seldon-v1","source_commit":"1f827ab5c22d5fa8dd9088fbb78a8686a6ac45d4","source_artifact":15151674907,"max_additional_attempts":48,"max_cumulative_attempts":54,"pilot_attempts":6,"authorized_increment":{"ids":["C4-inventoryWorkforce-gemma-off-r1","C4-inventoryWorkforce-gemma-on-r1","C4-inventoryWorkforce-gpt-oss-r1","C4-maibab-gemma-off-r1","C4-maibab-gemma-on-r1","C4-maibab-gpt-oss-r1"],"max_attempts":6,"retries":0,"reason":"Complete original matrix first repetitions for Gemma off/on and GPT-OSS in Inventory and Mai-Bab. Exact frozen CI wires. No truncation, no retry."},"attempts":[{"id":"C4-inventoryWorkforce-inkling-r1","case_id":"inventoryWorkforce","config":"inkling","model":"@cf/thinkingmachines/inkling-2-small","wire_sha256":"65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269","bytes":268971,"status":"RETURNED","receipt":"research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-inkling-r1.json","schema_valid":true},{"id":"C4-maibab-inkling-r1","case_id":"maibab","config":"inkling","model":"@cf/thinkingmachines/inkling-2-small","wire_sha256":"35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410","bytes":334279,"status":"RETURNED","receipt":"research/buffalo-lab/c4/matrix-receipts/C4-maibab-inkling-r1.json","schema_valid":true},{"id":"C4-inventoryWorkforce-deepseek-r1","case_id":"inventoryWorkforce","config":"deepseek","model":"@cf/deepseek-ai/deepseek-v4.1-flash-1017","wire_sha256":"65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269","bytes":268971,"status":"RETURNED","receipt":"research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-deepseek-r1.json","schema_valid":false},{"id":"C4-maibab-deepseek-r1","case_id":"maibab","config":"deepseek","model":"@cf/deepseek-ai/deepseek-v4.1-flash-1017","wire_sha256":"35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410","bytes":334279,"status":"RETURNED","receipt":"research/buffalo-lab/c4/matrix-receipts/C4-maibab-deepseek-r1.json","schema_valid":false},{"id":"C4-inventoryWorkforce-glm-r1","case_id":"inventoryWorkforce","config":"glm","model":"@cf/zai-org/glm-5.3","wire_sha256":"65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269","bytes":268971,"status":"RETURNED","receipt":"research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-glm-r1.json","schema_valid":true},{"id":"C4-maibab-glm-r1","case_id":"maibab","config":"glm","model":"@cf/zai-org/glm-5.3","wire_sha256":"35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410","bytes":334279,"status":"RETURNED","receipt":"research/buffalo-lab/c4/matrix-receipts/C4-maibab-glm-r1.json","schema_valid":true}],"note":"No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded.","prior_increments":[{"ids":["C4-inventoryWorkforce-inkling-r1","C4-maibab-inkling-r1"],"max_attempts":2,"retries":0,"reason":"First large-input probes use same 1M-context Inkling configuration (observed low latency and cost on Bass); move these two pre-existing matrix rows ahead of planned order; no candidate elimination or change to wire."},{"ids":["C4-inventoryWorkforce-deepseek-r1","C4-maibab-deepseek-r1","C4-inventoryWorkforce-glm-r1","C4-maibab-glm-r1"],"max_attempts":4,"retries":0,"reason":"Advance DeepSeek and GLM high r1 large-input rows, as requested; reuse exact Inkling high wire with model identifier changed only at endpoint. No prompt changes."}]}
+{
+  "protocol": "C4-seldon-v1",
+  "source_commit": "1f827ab5c22d5fa8dd9088fbb78a8686a6ac45d4",
+  "source_artifact": 15151674907,
+  "max_additional_attempts": 48,
+  "max_cumulative_attempts": 54,
+  "pilot_attempts": 6,
+  "authorized_increment": {
+    "ids": [
+      "C4-inventoryWorkforce-gemma-off-r1",
+      "C4-inventoryWorkforce-gemma-on-r1",
+      "C4-inventoryWorkforce-gpt-oss-r1",
+      "C4-maibab-gemma-off-r1",
+      "C4-maibab-gemma-on-r1",
+      "C4-maibab-gpt-oss-r1"
+    ],
+    "max_attempts": 6,
+    "retries": 0,
+    "reason": "Complete original matrix first repetitions for Gemma off/on and GPT-OSS in Inventory and Mai-Bab. Exact frozen CI wires. No truncation, no retry."
+  },
+  "attempts": [
+    {
+      "id": "C4-inventoryWorkforce-inkling-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "inkling",
+      "model": "@cf/thinkingmachines/inkling-2-small",
+      "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+      "bytes": 268971,
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-inkling-r1.json",
+      "schema_valid": true
+    },
+    {
+      "id": "C4-maibab-inkling-r1",
+      "case_id": "maibab",
+      "config": "inkling",
+      "model": "@cf/thinkingmachines/inkling-2-small",
+      "wire_sha256": "35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410",
+      "bytes": 334279,
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-maibab-inkling-r1.json",
+      "schema_valid": true
+    },
+    {
+      "id": "C4-inventoryWorkforce-deepseek-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "deepseek",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+      "bytes": 268971,
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-deepseek-r1.json",
+      "schema_valid": false
+    },
+    {
+      "id": "C4-maibab-deepseek-r1",
+      "case_id": "maibab",
+      "config": "deepseek",
+      "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "wire_sha256": "35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410",
+      "bytes": 334279,
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-maibab-deepseek-r1.json",
+      "schema_valid": false
+    },
+    {
+      "id": "C4-inventoryWorkforce-glm-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "glm",
+      "model": "@cf/zai-org/glm-5.3",
+      "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+      "bytes": 268971,
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-glm-r1.json",
+      "schema_valid": true
+    },
+    {
+      "id": "C4-maibab-glm-r1",
+      "case_id": "maibab",
+      "config": "glm",
+      "model": "@cf/zai-org/glm-5.3",
+      "wire_sha256": "35ceaea3d1e29cc12381f2811b3990681be5e7b4a9a73a80a023b2642f5ae410",
+      "bytes": 334279,
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-maibab-glm-r1.json",
+      "schema_valid": true
+    },
+    {
+      "id": "C4-inventoryWorkforce-gemma-off-r1",
+      "case_id": "inventoryWorkforce",
+      "config": "gemma-off",
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "wire_sha256": "ca43528968108440a660abd6547395326c46ddc126892dae09bf9700ed7f38ca",
+      "bytes": 268994,
+      "status": "RESERVED"
+    }
+  ],
+  "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded.",
+  "prior_increments": [
+    {
+      "ids": [
+        "C4-inventoryWorkforce-inkling-r1",
+        "C4-maibab-inkling-r1"
+      ],
+      "max_attempts": 2,
+      "retries": 0,
+      "reason": "First large-input probes use same 1M-context Inkling configuration (observed low latency and cost on Bass); move these two pre-existing matrix rows ahead of planned order; no candidate elimination or change to wire."
+    },
+    {
+      "ids": [
+        "C4-inventoryWorkforce-deepseek-r1",
+        "C4-maibab-deepseek-r1",
+        "C4-inventoryWorkforce-glm-r1",
+        "C4-maibab-glm-r1"
+      ],
+      "max_attempts": 4,
+      "retries": 0,
+      "reason": "Advance DeepSeek and GLM high r1 large-input rows, as requested; reuse exact Inkling high wire with model identifier changed only at endpoint. No prompt changes."
+    }
+  ]
+}

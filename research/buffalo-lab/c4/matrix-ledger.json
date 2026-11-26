@@ -46,7 +46,9 @@
       "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
       "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
       "bytes": 268971,
-      "status": "RESERVED"
+      "status": "RETURNED",
+      "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-deepseek-r1.json",
+      "schema_valid": false
     }
   ],
   "note": "No automatic matrix execution. Reserve via CAS prior to invocation; ambiguous reservation consumed. Stop if response cannot be safely recorded.",

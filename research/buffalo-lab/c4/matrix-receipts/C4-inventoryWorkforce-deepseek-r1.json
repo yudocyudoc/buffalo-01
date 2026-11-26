@@ -1,0 +1,58 @@
+{
+  "id": "C4-inventoryWorkforce-deepseek-r1",
+  "case_id": "inventoryWorkforce",
+  "config": "deepseek",
+  "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "wire_sha256": "65936620de8ac4ad4d9b6e9cb155d29aaa1558d8878d946446a8ea705b3a4269",
+  "bytes": 268971,
+  "status": "RETURNED",
+  "receipt": "research/buffalo-lab/c4/matrix-receipts/C4-inventoryWorkforce-deepseek-r1.json",
+  "schema_valid": false,
+  "transport": "RETURNED",
+  "elapsed_ms": 55283,
+  "result": {
+    "id": "chatcmpl-18f73772-9acf-4735-acf3-ab37ff80325c",
+    "object": "chat.completion",
+    "created": 1795728615,
+    "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\"response\": \"## Step 1 — Identify what the three loops actually are\\n\\n| Loop | Loop set | Stocks | Polarity | Path |\\n|---|---|---|---|---|\\n| **B1** (2 stocks, 9 variables) | Set 1 | Inventory + Workers | − | Workers → producing → Inventory → inventory gap → desired change in inventory → desired production → desired workers → workers gap → hiring or firing → Workers |\\n| **B2** (1 stock, 3 variables) | Set 1 | Workers | − | workers gap → hiring or firing → Workers → workers gap |\\n| **B1** (1 stock, 2 variables) | Set 2 | Expected Demand | − | Expected Demand → changing expected → Expected Demand |\\n\\nTwo things follow immediately from the way the data is organised:\\n\\n- **B1 and B2 are in the *same* loop set**, so their percentages sum to 100%. They are competing for credit inside loop set 1. The dominance table is answering \\\"which of the two workforce/inventory loops is doing the work?\\\"\\n- **The expectation loop is alone in loop set 2**, so it is trivially 100% of its own set. The dominance table never compares it against B1/B2, so this analysis does **not** tell us how much of total behaviour expectation smoothing explains. Keep that in mind.\\n\\nNote also that B1 is a *two-stock* loop — it carries the Workers stock inside it, so it contains the hiring delay. B2 is a one-stock loop.\\n\\n## Step 2 — Identify the shock that everything is a response to\\n\\n`demand` is a graphical function of TIME with points (0, 20), (1, 20), (2, 25), (3, 25). Interpolated, demand is **flat at 20 until t = 1, ramps to 25 by t = 2, then flat at 25**. That single 25% step is the only exogenous event in the model.\\n\\nBefore t = 1 the model is at rest: Inventory = Desired Inventory = 100, Expected Demand = demand = 20, so desired production = 20, desired workers = 10, and Workers = 10. **That is why every loop reads exactly 0% from t = 0 to t = 1** — nothing is moving, so there is nothing to explain.\\n\\n## Step 3 — Read the dominance timeline\\n\\n| Period | Dominant | Peak share |\\n|---|---|---|\\n| 0 – 1.0625 | B1 (nominal) | 0% — no"
+        },
+        "finish_reason": "length",
+        "logprobs": null
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 73962,
+      "completion_tokens": 8192,
+      "total_tokens": 82154,
+      "prompt_tokens_details": {
+        "cached_tokens": 832
+      },
+      "neurons": 2888.581298828125
+    }
+  },
+  "reasoning_fields_omitted": [
+    "/choices/0/message/reasoning",
+    "/choices/0/message/reasoning_content"
+  ],
+  "api_success": true,
+  "errors": [],
+  "observed_model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 73962,
+    "completion_tokens": 8192,
+    "total_tokens": 82154,
+    "prompt_tokens_details": {
+      "cached_tokens": 832
+    },
+    "neurons": 2888.581298828125
+  },
+  "parsed_schema_valid": false,
+  "semantic_accuracy": "NOT_MEASURED"
+}

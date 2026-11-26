@@ -1,15 +1,8 @@
-name: Buffalo native LTM complete matrix (private binding, manual)
+name: Buffalo native LTM one-shot (private binding, max 64)
 on:
-  workflow_dispatch:
-    inputs:
-      source_commit:
-        description: Exact selected checkout SHA
-        required: true
-        type: string
-      approval:
-        description: Enter RUN_NATIVE_LTM_MATRIX_MAX_64
-        required: true
-        type: string
+  push:
+    branches:
+      - 'experiment/native-ltm-live-one-shot-adb9617'
 permissions:
   contents: read
 concurrency:
@@ -17,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   native-ltm:
-    if: ${{ inputs.source_commit == github.sha && inputs.approval == 'RUN_NATIVE_LTM_MATRIX_MAX_64' && github.run_attempt == 1 }}
+    if: ${{ github.ref == 'refs/heads/experiment/native-ltm-live-one-shot-adb9617' && github.event.before == 'adb9617e4cbf1653ae38bad101b65bee99d5de23' && github.event.head_commit.message == 'Authorize one private native LTM matrix at adb9617' && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:

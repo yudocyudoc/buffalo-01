@@ -1,0 +1,26 @@
+name: Buffalo C1 Parity (offline)
+on:
+  push:
+    branches: ['research/c1-parity']
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test infra/full-runtime/gateway.test.mjs research/buffalo-lab/c1-parity/parity.test.mjs
+      - name: Preserve original cache behavior
+        run: node --import ./research/buffalo-lab/c1/offline-guard.mjs research/buffalo-lab/c1/cache-controls.mjs "$RUNNER_TEMP/c1-cache-controls.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c1-parity-cache-baseline
+          path: ${{ runner.temp }}/c1-cache-controls.json

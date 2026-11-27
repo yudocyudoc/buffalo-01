@@ -1,0 +1,50 @@
+name: C1-Parity.2 WebSocket controlled
+on:
+  push:
+    branches: ['research/c1-parity-ws']
+permissions:
+  contents: read
+jobs:
+  ws:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test infra/full-runtime/gateway.test.mjs research/buffalo-lab/c1-parity/parity.test.mjs
+      - run: npm install --prefix "$RUNNER_TEMP/full-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m venv "$RUNNER_TEMP/simlin"
+          "$RUNNER_TEMP/simlin/bin/python" -m pip install --only-binary=:all: pysimlin==0.8.5
+          echo "BUFFALO_SIMLIN_PYTHON=$RUNNER_TEMP/simlin/bin/python" >> "$GITHUB_ENV"
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
+      - name: Isolated real WebSocket and nested engine path
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools" FULL_PYTHON_PATH="$(dirname "$(command -v python3)")"
+          export C1_PARITY_REPORT="$RUNNER_TEMP/c1-parity-ws.json"
+          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,BUFFALO_SIMLIN_PYTHON,C1_PARITY_REPORT unshare --net --mount --propagation private sh -ec '
+            ip link set lo up
+            sysctl -qw net.ipv4.ip_unprivileged_port_start=0
+            hosts=$(mktemp)
+            cat /etc/hosts > "$hosts"
+            echo "127.0.0.1 merlin-provider.internal" >> "$hosts"
+            chmod 644 "$hosts"
+            mount --bind "$hosts" /etc/hosts
+            exec runuser -u runner -- env PATH="$FULL_PYTHON_PATH:$PATH" "$FULL_NODE" infra/full-runtime/offline.mjs'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c1-parity-ws
+          path: ${{ runner.temp }}/c1-parity-ws.json
+          if-no-files-found: warn
+          retention-days: 30

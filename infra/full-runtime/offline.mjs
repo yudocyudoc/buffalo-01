@@ -30,6 +30,10 @@ import {seedNarrativeRuns, exerciseRunNarratives} from './test-run-narrative.mjs
 import {seedNativeLtm,reopenNativeLtm} from './test-native-ltm.mjs';
 import {seedLtmMatrix,reopenLtmMatrix,matrixReport} from './test-native-ltm-matrix.mjs';
 
+import {exerciseParitySession} from '../../research/buffalo-lab/c1-parity/websocket.mjs';
+const parityOnly=process.env.C1_PARITY_REPORT??null;
+if(parityOnly&&(process.env.FULL_LTM_LIVE_SOCKET||process.env.FULL_LTM_MATRIX_REPORT))throw Error('PARITY_EXCLUSIVE_OFFLINE_MODE');
+
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
 const {Miniflare,convertV4MiniflareOptions}=deps('miniflare');
 const {build}=deps('esbuild');
@@ -62,7 +66,7 @@ const fixtureOptions=(limit=27,ttl=600000)=>({...convertV4MiniflareOptions({cf:f
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project',q.headers.get('x-fixture-project')==='other'?'other':'example');q.headers.delete('x-fixture-project');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
     bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:String(limit),ENGINE_INFERENCE_ENABLED:'true',
-      AI_EXPIRES_AT:new Date(Date.now()+ttl).toISOString()},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
+      AI_EXPIRES_AT:new Date(Date.now()+ttl).toISOString(),...(parityOnly?{C1_PARITY_SELDON_ENABLED:'true'}:{})},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk});
 const options=fixtureOptions();
 let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null,lastEngineRequest=null,failNextEngine=false,invalidNextEngine=null;
@@ -162,6 +166,13 @@ const proxy=createServer(async(req,res)=>{
   }
 });
 try{
+  if(parityOnly){
+    mf=new Miniflare(fixtureOptions(6));await mf.ready;
+    proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
+    start(true);await rest(base,key);
+    const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
+    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly);
+  }else{
   mf=new Miniflare(options);await mf.ready;
   const created=await doc({method:'PUT',headers:{'if-none-match':'*'},body:JSON.stringify(model)});
   assert.equal(created.status,201);
@@ -397,5 +408,6 @@ try{
     await stop();await mf.dispose();mf=new Miniflare(matrixOptions);await mf.ready;
     start(true);await rest(base,key);
     await reopenLtmMatrix(request,other,key,report,save,provider=>{engineFixture=provider;},{socket});
+  }
   }
 }finally{await stop();proxy.close();await mf?.dispose();await rm(disk,{recursive:true,force:true});}

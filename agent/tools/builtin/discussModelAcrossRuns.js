@@ -1,3 +1,5 @@
+import { strictCacheEnabled, cacheLease, cacheModelHash } from './c1ParityCache.js';
+import { comparisonEnabled, loadComparisonCache } from './c1ParityComparison.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -23,6 +25,7 @@ export function createDiscussModelAcrossRunsTool(sessionManager, sessionId, send
       }).optional()
     }),
     handler: async ({ prompt, difficulty, runName, parameters }) => {
+      let release;
       try {
         const session = sessionManager.getSession(sessionId);
         if (!session) {
@@ -36,6 +39,21 @@ export function createDiscussModelAcrossRunsTool(sessionManager, sessionId, send
 
         const underlyingModel = selectEngineModel(agentProfile, difficulty, 'nonBuild');
         const baseParameters = { ...parameters, clientId: session.clientId, source: session.agentName, underlyingModel };
+        if (strictCacheEnabled()) {
+          if (!comparisonEnabled()) throw Error('C1_COMPARE_DISABLED');
+          release = cacheLease(session);
+          const modelHash = cacheModelHash(sessionManager, sessionId);
+          const evidence = loadComparisonCache(sessionManager, sessionId, session, parameters?.runIds, runName);
+          // Do not pass planner-supplied provenance or feedback into this branch.
+          const result = await callSeldonILEEngine(prompt, model, runName, {
+            ...baseParameters, ...evidence
+          });
+          if (cacheModelHash(sessionManager, sessionId) !== modelHash) throw Error('C1_CACHE_MODEL_CHANGED');
+          loadComparisonCache(sessionManager, sessionId, session, parameters?.runIds, runName);
+          if (!result.success) return createErrorResponse(result.error);
+          // Missing comparative feedback is not recoverable in 4a.
+          return createSuccessResponse(result.output);
+        }
         const sessionTempDir = sessionManager.getSessionTempDir(sessionId);
         const feedbackPath = join(sessionTempDir, 'feedback.json');
         const feedbackContent = existsSync(feedbackPath)
@@ -103,7 +121,7 @@ export function createDiscussModelAcrossRunsTool(sessionManager, sessionId, send
         return createSuccessResponse(result.output);
       } catch (error) {
         return createErrorResponse(error.message);
-      }
+      } finally { release?.(); }
     }
   };
 }

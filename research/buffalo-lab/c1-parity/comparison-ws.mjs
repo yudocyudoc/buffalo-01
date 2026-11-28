@@ -11,8 +11,8 @@ const schema=LLMWrapper.prototype.generateSeldonResponseSchema(true).toJSONSchem
 const sha=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const names=['Inventory','Workers','Expected Demand'],question='Compare the sampled Inventory and workforce behavior of the selected baseline and comparison. Do not attribute loop dominance.';
 const marker='C1_COMPARISON_CONTROLLED',final='C1_COMPARISON_FINAL';
-export async function exerciseComparisonSession(request,key,useProvider,file){
- const report={status:'PENDING',provider:'scripted-local-binding',semantic_accuracy:'not_measured',live_provider_calls:0,calls:[],requests:[],receipts:[],tool_results:[]};
+export async function exerciseComparisonSession(request,key,useProvider,file,{pairFeedback=false}={}){
+ const report={status:'PENDING',provider:'scripted-local-binding',semantic_accuracy:'not_measured',pairFeedback,live_provider_calls:0,calls:[],requests:[],receipts:[],tool_results:[]};
  const save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');save();
  try{
   const fixture=JSON.parse(readFileSync(new URL('../../../evals/categories/feedbackExplanationData/inventoryWorkforce.json',import.meta.url)));
@@ -39,17 +39,23 @@ export async function exerciseComparisonSession(request,key,useProvider,file){
    assert.deepEqual(data[s.runId][name],indices.map(i=>s.run.series[k][i]));
   }}
   const manifest={runs:selected.map(s=>({run_id:s.runId,revision:s.run.revision,model_sha256:s.run.model_sha256,run_sha256:s.feedback.run_sha256,simulator:s.run.simulator,settings:s.run.settings,execution:s.run.execution,model:s.model})),variables:names,detailed:false,behavior_sha256:comparisonHash(data)};
+  const feedbacks=[];
+  if(pairFeedback){
+   for(const s of selected){assert.equal(s.assessment.dominance.status,'supported_by_partition_scores');const f=await s.clientRequest({type:'feedback_request',runIds:[s.runId]});assert.deepEqual(f.runIds,[s.runId]);feedbacks.push(f.feedbackContent);}
+   manifest.feedback_sha256=feedbacks.map(comparisonHash);report.feedback=feedbacks;
+  }
   validatePairData(data,manifest);report.manifest=manifest;report.behavior=data;save();
   const actions=[['get_run_info',{}],['get_variable_data',{runIds:ids,variableNames:names,detailed:false}],
    ['discuss_model_across_runs',{prompt:question,difficulty:'normal',runName:a.runId,parameters:{runIds:[...ids].reverse()}}],
    ['discuss_model_across_runs',{prompt:question,difficulty:'normal',runName:b.runId,parameters:{runIds:ids}}]];
+  const expectedNested=pairFeedback?2:1,expectedCalls=5+expectedNested;
   let turn=0,nested=0;
   useProvider((model,wire)=>{
    const call={model,wire};report.calls.push(call);save();
-   assert.equal(model,GEMMA);assert(report.calls.length<=6);
+   assert.equal(model,GEMMA);assert(report.calls.length<=expectedCalls);
    let message={role:'assistant'};
    if(wire.response_format){
-    assert.equal(turn,4);assert.equal(++nested,1);
+    assert.equal(turn,4);assert(++nested<=expectedNested);
     assert.deepEqual(wire.response_format,{type:'json_schema',json_schema:schema});
     const user=wire.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n');
     // Context may be normalized by IPC; compare canonical manifest rather than
@@ -57,11 +63,13 @@ export async function exerciseComparisonSession(request,key,useProvider,file){
     const expectedBehavior=JSON.stringify(data);assert(user.includes(expectedBehavior));
     assert(user.includes(JSON.stringify(manifest)),'EXACT_COMPARISON_MANIFEST_MISSING');
     assert(user.includes('The current simulation run the user is working with is called: "'+b.runId+'"'));
-    assert(user.includes(question));assert(!user.includes('"feedbackLoops"'));
+    assert(user.includes(question));
+    if(pairFeedback&&nested===2){assert(user.includes(JSON.stringify(feedbacks,null,2)),'EXACT_PAIR_FEEDBACK_MISSING');assert.deepEqual(report.requests.map(x=>x.type),['get_run_info','get_variable_data','feedback_request']);}
+    else assert(!user.includes('"feedbackLoops"'));
     assert(wire.messages.find(m=>m.role==='system').content.includes(SeldonILEUserBrain.DEFAULT_SYSTEM_PROMPT));
     const current=JSON.parse(wire.messages.find(m=>m.role==='assistant').content);
     assert.deepEqual(current.variables.map(v=>[v.name,v.equation]),comparison.variables.map(v=>[v.name,v.equation]));
-    message.content=JSON.stringify({response:marker,feedbackInformationRequired:false});
+    message.content=JSON.stringify({response:pairFeedback&&nested===1?'C1_PAIR_FEEDBACK_REQUIRED':marker,feedbackInformationRequired:pairFeedback&&nested===1});
    }else if(turn<actions.length){
     if(turn)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-'+turn));
     if(turn===3)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-3'&&m.content.includes('C1_COMPARE_ORDERED_PAIR_REQUIRED')));
@@ -69,7 +77,7 @@ export async function exerciseComparisonSession(request,key,useProvider,file){
     assert(wire.tools.every(t=>['get_run_info','get_variable_data','discuss_model_across_runs'].includes(t.function.name)),'COMPARISON_TOOL_CEILING');
     message.tool_calls=[{type:'function',id:'comparison-'+turn,function:{name,arguments:JSON.stringify(args)}}];
    }else{
-    assert.equal(nested,1);assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-4'&&m.content.includes(marker)));
+    assert.equal(nested,expectedNested);assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-4'&&m.content.includes(marker)));
     message.content=final;
    }
    return {model,usage:{prompt_tokens:50,completion_tokens:20,total_tokens:70},choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}]};
@@ -79,17 +87,19 @@ export async function exerciseComparisonSession(request,key,useProvider,file){
    async clientRequest(m,current){
     assert.deepEqual(current,b.model);report.requests.push(m);save();
     if(m.type==='get_run_info')return {runs:selected.map(s=>({id:s.runId,name:'Simlin revision '+s.run.revision,variables:Object.keys(s.run.series).filter(k=>k!=='time')}))};
+    if(m.type==='feedback_request'){assert(pairFeedback);assert.equal(nested,1);assert.deepEqual(m.runIds,ids);return {runIds:[...ids],feedbackContent:structuredClone(feedbacks)};}
     assert.equal(m.type,'get_variable_data');assert.deepEqual(m.runIds,ids);assert.deepEqual(m.variableNames,names);assert.equal(m.detailed,false);
     return structuredClone(data);
    },
    onToolCompleted(m){report.tool_results.push(m);save();},
    verify(current,tools){assert.deepEqual(current,b.model);const done=tools.filter(t=>t.event==='tool_call_completed');assert.deepEqual(done.map(t=>t.name),actions.map(a=>a[0]));assert.deepEqual(done.map(t=>!!t.isError),[false,false,true,false]);}
   }});
-  assert(result.output.includes(final));assert(!result.output.includes(marker));assert.equal(nested,1);assert.equal(report.calls.length,6);
-  assert.deepEqual(report.requests.map(x=>x.type),['get_run_info','get_variable_data']);
-  for(let n=1;n<=6;n++){const r=await request('/project/inference/'+n);assert.equal(r.status,200);const receipt=await r.json();report.receipts.push(receipt);assert.equal(receipt.status,'OK');if(n===5){assert.equal(receipt.channel,'original-engine');assert.equal(receipt.schema_sha256,sha(schema));assert.equal(receipt.request_sha256,sha(report.calls[n-1].wire));assert(receipt.invocation_id);}else assert.notEqual(receipt.channel,'original-engine');}
-  assert.equal((await request('/project/inference/7')).status,404);
+  assert(result.output.includes(final));assert(!result.output.includes(marker));assert.equal(nested,expectedNested);assert.equal(report.calls.length,expectedCalls);
+  assert.deepEqual(report.requests.map(x=>x.type),['get_run_info','get_variable_data',...(pairFeedback?['feedback_request']:[])]);
+  for(let n=1;n<=expectedCalls;n++){const r=await request('/project/inference/'+n);assert.equal(r.status,200);const receipt=await r.json();report.receipts.push(receipt);assert.equal(receipt.status,'OK');if(n>=5&&n<5+expectedNested){assert.equal(receipt.channel,'original-engine');assert.equal(receipt.schema_sha256,sha(schema));assert.equal(receipt.request_sha256,sha(report.calls[n-1].wire));assert(receipt.invocation_id);}else assert.notEqual(receipt.channel,'original-engine');}
+  assert.equal(new Set(report.receipts.filter(r=>r.channel==='original-engine').map(r=>r.invocation_id)).size,expectedNested);
+  assert.equal((await request('/project/inference/'+(expectedCalls+1))).status,404);
   for(const s of selected){const reopened=await openNativeLtmRun(request,s.runId);assert.deepEqual(reopened.run,s.run);assert.deepEqual(reopened.feedback,s.feedback);assert.deepEqual(reopened.model,s.model);}
-  report.status='PASS';save();console.log('C1_PARITY_COMPARISON_PASS '+JSON.stringify({calls:6,planner:5,nested:1,runs:ids,full_samples:961,behavior_samples:50,live_provider_calls:0}));
+  report.status='PASS';save();console.log('C1_PARITY_COMPARISON_PASS '+JSON.stringify({pairFeedback,calls:expectedCalls,planner:5,nested:expectedNested,runs:ids,full_samples:961,behavior_samples:50,live_provider_calls:0}));
  }catch(e){report.status='FAIL';report.error=String(e.stack??e);save();throw e;}
 }

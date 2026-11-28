@@ -129,10 +129,14 @@ test('comparison pilot grants only declared read-only tools and requires engine 
  ]){
   const offered=names.filter(n=>declare||n!=='discuss_model_across_runs').map(tool);
   const req=new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'compare'}],tools:offered})});
+  let observed;
   const res=await completion(req,{run:async(_,wire)=>{
-   if(compare)assert.deepEqual(wire.tools.map(t=>t.function.name),['get_run_info','get_variable_data',...(engine&&declare?['discuss_model_across_runs']:[])]);
+   observed=wire.tools?.map(t=>t.function.name)??[];
    return {...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'comparison',type:'function',function:{name:chosen,arguments:'{}'}}]}}]};
   }},()=>1,()=>{},{engineEnabled:engine,parityComparisonEnabled:compare,paritySeldonEnabled:true});
   assert.equal(res.status,status);
+  assert(observed,'binding must be reached');
+  if(compare)assert.deepEqual(observed,['get_run_info','get_variable_data',...(engine&&declare?['discuss_model_across_runs']:[])]);
+  else assert(!observed.includes('discuss_model_across_runs'));
  }
 });

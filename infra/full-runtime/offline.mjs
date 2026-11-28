@@ -34,6 +34,10 @@ import {exerciseParitySession} from '../../research/buffalo-lab/c1-parity/websoc
 const parityOnly=process.env.C1_PARITY_REPORT??null;
 const parityAccumulate=process.env.C1_PARITY_ACCUMULATE==='true';
 const parityStrict=process.env.C1_PARITY_STRICT_CACHE==='true';
+const parityDemand=process.env.C1_PARITY_FEEDBACK_DEMAND==='true';
+const parityLtmDemand=process.env.C1_PARITY_LTM_DEMAND==='true';
+if(parityLtmDemand&&!parityDemand)throw Error('PARITY_LTM_DEMAND_REQUIRES_DEMAND');
+if(parityDemand&&!parityStrict)throw Error('PARITY_DEMAND_REQUIRES_STRICT');
 if(parityStrict&&(!parityOnly||!parityAccumulate))throw Error('PARITY_STRICT_REQUIRES_ACCUMULATE');
 if(parityAccumulate&&!parityOnly)throw Error('PARITY_ACCUMULATE_REQUIRES_REPORT');
 if(parityOnly&&(process.env.FULL_LTM_LIVE_SOCKET||process.env.FULL_LTM_MATRIX_REPORT))throw Error('PARITY_EXCLUSIVE_OFFLINE_MODE');
@@ -83,7 +87,7 @@ function start(edit){
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
       PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,BUFFALO_NATIVE_LTM:'true',
       BUFFALO_SIMLIN_PYTHON:process.env.BUFFALO_SIMLIN_PYTHON,
-      ...(parityStrict?{C1_PARITY_STRICT_CACHE:'true'}:{}),
+      ...(parityStrict?{C1_PARITY_STRICT_CACHE:'true',...(parityDemand?{C1_PARITY_FEEDBACK_DEMAND:'true'}:{})}:{}),
       ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
@@ -172,11 +176,11 @@ const proxy=createServer(async(req,res)=>{
 });
 try{
   if(parityOnly){
-    mf=new Miniflare(fixtureOptions(parityStrict?9:parityAccumulate?7:6));await mf.ready;
+    mf=new Miniflare(fixtureOptions(parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict});
+    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
   }else{
   mf=new Miniflare(options);await mf.ready;
   const created=await doc({method:'PUT',headers:{'if-none-match':'*'},body:JSON.stringify(model)});

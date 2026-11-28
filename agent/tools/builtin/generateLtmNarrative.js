@@ -1,4 +1,5 @@
-import { strictCacheEnabled, cacheLease, loadBoundCache, cacheModelHash } from './c1ParityCache.js';
+import { strictCacheEnabled, demandEnabled, cacheLease, loadBoundCache, cacheModelHash } from './c1ParityCache.js';
+import { recoverBoundFeedback } from './c1ParityDemand.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -43,7 +44,7 @@ export function createGenerateLtmNarrativeTool(sessionManager, sessionId, sendTo
         if (strict) {
           release = cacheLease(session);
           boundModel = cacheModelHash(sessionManager, sessionId);
-          bound = loadBoundCache(sessionManager, sessionId, session, parameters?.runIds);
+          bound = loadBoundCache(sessionManager, sessionId, session, parameters?.runIds, { allowMissingFeedback: demandEnabled() });
         }
         let feedbackContent = strict ? bound.feedbackContent : (existsSync(feedbackPath)
           ? JSON.parse(readFileSync(feedbackPath, 'utf-8')).feedbackContent
@@ -51,6 +52,11 @@ export function createGenerateLtmNarrativeTool(sessionManager, sessionId, sendTo
 
         const behaviorContent = strict ? bound.behaviorContent : loadBehaviorContent(sessionTempDir, parameters?.runIds);
         const enrichedParameters = behaviorContent ? { ...baseParameters, behaviorContent } : baseParameters;
+
+        if (strict && demandEnabled() && !feedbackContent) {
+          const recovered = await recoverBoundFeedback(sessionManager, sessionId, session, parameters?.runIds, boundModel, sendToClient);
+          feedbackContent = recovered.feedbackContent;
+        }
 
         if (!feedbackContent) {
 

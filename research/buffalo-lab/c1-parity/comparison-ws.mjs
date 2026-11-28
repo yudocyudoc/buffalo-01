@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {loadInterventionReference} from './intervention-reference.mjs';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {randomUUID,createHash} from 'node:crypto';
 import {session} from '../../../infra/full-runtime/test-session.mjs';
@@ -11,8 +12,8 @@ const schema=LLMWrapper.prototype.generateSeldonResponseSchema(true).toJSONSchem
 const sha=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const names=['Inventory','Workers','Expected Demand'],question='Compare the sampled Inventory and workforce behavior of the selected baseline and comparison. Do not attribute loop dominance.';
 const marker='C1_COMPARISON_CONTROLLED',final='C1_COMPARISON_FINAL';
-export async function exerciseComparisonSession(request,key,useProvider,file,{pairFeedback=false}={}){
- const report={status:'PENDING',provider:'scripted-local-binding',semantic_accuracy:'not_measured',pairFeedback,live_provider_calls:0,calls:[],requests:[],receipts:[],tool_results:[]};
+export async function exerciseComparisonSession(request,key,useProvider,file,{pairFeedback=false,interventionReference=false}={}){
+ const report={status:'PENDING',provider:'scripted-local-binding',semantic_accuracy:'not_measured',pairFeedback,interventionReference,live_provider_calls:0,calls:[],requests:[],receipts:[],tool_results:[]};
  const save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');save();
  try{
   const fixture=JSON.parse(readFileSync(new URL('../../../evals/categories/feedbackExplanationData/inventoryWorkforce.json',import.meta.url)));
@@ -45,6 +46,19 @@ export async function exerciseComparisonSession(request,key,useProvider,file,{pa
    manifest.feedback_sha256=feedbacks.map(comparisonHash);report.feedback=feedbacks;
   }
   validatePairData(data,manifest);report.manifest=manifest;report.behavior=data;save();
+  if(interventionReference){
+   assert(pairFeedback);
+   const measured=await loadInterventionReference(request,ids,{variable:'Desired Inventory',from:'100',to:'110',seriesNames:['inventory','workers','expected_demand']});
+   report.intervention_reference=measured.reference;report.intervention_originals=measured.originals;save();
+   assert.equal(measured.reference.samples,961);
+   assert.equal(measured.reference.trajectories[0].baseline.initial,100);
+   assert.equal(measured.reference.trajectories[0].comparison.initial,110);
+   assert.equal(measured.reference.structural_cycles.shared.length,3);
+   assert.deepEqual(measured.reference.structural_cycles.added,[]);assert.deepEqual(measured.reference.structural_cycles.removed,[]);
+   assert.equal(measured.reference.unmatchedGroups.length,0);
+   assert(measured.reference.trajectories[0].delta.max_abs>0);
+   console.log('C1_INTERVENTION_REFERENCE_PASS '+JSON.stringify({samples:measured.reference.samples,cycles:measured.reference.structural_cycles.shared.length,groups:measured.reference.comparableGroups.length,trajectory_delta:measured.reference.trajectories.map(x=>({variable:x.variable,max_abs:x.delta.max_abs})),dominance_changed_samples:measured.reference.comparableGroups.map(x=>x.dominance_changed_samples),score_max_abs_delta:measured.reference.comparableGroups.map(x=>x.loopScores.map(l=>l.max_abs_signed_relative_delta)),semantic_accuracy:'not_measured'}));
+  }
   const actions=[['get_run_info',{}],['get_variable_data',{runIds:ids,variableNames:names,detailed:false}],
    ['discuss_model_across_runs',{prompt:question,difficulty:'normal',runName:a.runId,parameters:{runIds:[...ids].reverse()}}],
    ['discuss_model_across_runs',{prompt:question,difficulty:'normal',runName:b.runId,parameters:{runIds:ids}}]];

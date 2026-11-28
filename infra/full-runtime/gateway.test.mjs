@@ -115,3 +115,24 @@ test('generation requires engine permission and the specific original tool offer
    assert.equal(response.status,status);
  }
 });
+
+test('comparison pilot grants only declared read-only tools and requires engine permission',async()=>{
+ const names=['get_run_info','get_variable_data','discuss_model_across_runs','get_feedback_information','read_file','edit_variables','run_model','generate_ltm_narrative','discuss_model_with_seldon'];
+ for(const [compare,engine,declare,chosen,status] of [
+  [true,true,true,'discuss_model_across_runs',200],
+  [true,false,true,'discuss_model_across_runs',422],
+  [false,true,true,'discuss_model_across_runs',422],
+  [true,true,false,'discuss_model_across_runs',422],
+  [true,true,true,'get_feedback_information',422],
+  [true,true,true,'read_file',422],
+  [true,true,true,'edit_variables',422]
+ ]){
+  const offered=names.filter(n=>declare||n!=='discuss_model_across_runs').map(tool);
+  const req=new Request(ENDPOINT,{method:'POST',body:JSON.stringify({model:GEMMA,messages:[{role:'user',content:'compare'}],tools:offered})});
+  const res=await completion(req,{run:async(_,wire)=>{
+   if(compare)assert.deepEqual(wire.tools.map(t=>t.function.name),['get_run_info','get_variable_data',...(engine&&declare?['discuss_model_across_runs']:[])]);
+   return {...textResponse(),choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'comparison',type:'function',function:{name:chosen,arguments:'{}'}}]}}]};
+  }},()=>1,()=>{},{engineEnabled:engine,parityComparisonEnabled:compare,paritySeldonEnabled:true});
+  assert.equal(res.status,status);
+ }
+});

@@ -1,3 +1,4 @@
+import { comparisonEnabled, comparisonManifest, comparisonHash, invalidateComparison, recordComparison, validatePairData } from './c1ParityComparison.js';
 import { strictCacheEnabled, cacheLease, cacheModelHash, explicitRun, invalidateCacheSlot, recordCache } from './c1ParityCache.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
@@ -228,12 +229,20 @@ export function createGetVariableDataTool(sessionManager, sessionId, sendToClien
         }
 
         const strict = strictCacheEnabled();
-        let runId, modelHash;
+        let runId, modelHash, manifestHash;
+        const compare = comparisonEnabled();
         if (strict) {
           release = cacheLease(session);
-          runId = explicitRun(runIds);
           modelHash = cacheModelHash(sessionManager, sessionId);
-          invalidateCacheSlot(session, 'behavior');
+          if (compare) {
+            const manifest = comparisonManifest(sessionManager, sessionId, session, runIds);
+            if (comparisonHash(variableNames) !== comparisonHash(manifest.variables) || detailed !== false) throw Error('C1_COMPARE_REQUEST_MISMATCH');
+            manifestHash = comparisonHash(manifest);
+            invalidateComparison(session);
+          } else {
+            runId = explicitRun(runIds);
+            invalidateCacheSlot(session, 'behavior');
+          }
         }
         const requestId = generateRequestId('vardata');
 
@@ -255,8 +264,10 @@ export function createGetVariableDataTool(sessionManager, sessionId, sendToClien
         const variableData = await resultPromise;
 
         const filename = strict ? `variable_data_${requestId}.json` : `variable_data_${Date.now()}.json`;
+        if (compare) validatePairData(variableData, comparisonManifest(sessionManager, sessionId, session, runIds));
         const { filePath, message } = sessionManager.writeDataToDisk(sessionId, filename, variableData);
-        if (strict) recordCache(sessionManager, sessionId, session, 'behavior', runId, modelHash, filename, variableData);
+        if (compare) recordComparison(sessionManager, sessionId, session, runIds, modelHash, manifestHash, filename, variableData);
+        else if (strict) recordCache(sessionManager, sessionId, session, 'behavior', runId, modelHash, filename, variableData);
 
         return createSuccessResponse({ message, filePath });
       } catch (error) {

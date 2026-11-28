@@ -159,14 +159,14 @@ A dominant feedback process is one that drives more than 50% of the model's beha
         if (this.#data.backgroundKnowledge) {
             messages.push({
                 role: "user",
-                content:  this.#data.backgroundPrompt.replaceAll("{backgroundKnowledge}", this.#data.backgroundKnowledge),
+                content:  this.#data.backgroundPrompt.replaceAll("{backgroundKnowledge}", () => this.#data.backgroundKnowledge),
             });
         }
 
         if (this.#data.problemStatement) {
             messages.push({
                 role: systemRole,
-                content: this.#data.problemStatementPrompt.replaceAll("{problemStatement}", this.#data.problemStatement),
+                content: this.#data.problemStatementPrompt.replaceAll("{problemStatement}", () => this.#data.problemStatement),
             });
         }
 
@@ -179,7 +179,7 @@ A dominant feedback process is one that drives more than 50% of the model's beha
                 messages.push({ role: "user", content: this.#data.structurePrompt });
 
             if (this.#data.behaviorPrompt && this.#data.behaviorContent)
-                messages.push({ role: "user", content: this.#data.behaviorPrompt.replaceAll("{behaviorContent}", this.#data.behaviorContent) });
+                messages.push({ role: "user", content: this.#data.behaviorPrompt.replaceAll("{behaviorContent}", () => this.#data.behaviorContent) });
 
             if (this.#data.currentRunName) {
                 messages.push({
@@ -190,13 +190,13 @@ A dominant feedback process is one that drives more than 50% of the model's beha
 
             if (this.#isValidFeedbackContent()) {
                 const feedbackPromptContent = this.#data.feedbackPrompt
-                    .replaceAll("{feedbackContent}", JSON.stringify(this.#data.feedbackContent, null, 2));
+                    .replaceAll("{feedbackContent}", () => JSON.stringify(this.#data.feedbackContent, null, 2));
                 messages.push({ role: "user", content: feedbackPromptContent });
             }
         } else {
 
             if (this.#data.behaviorPrompt && this.#data.behaviorContent)
-                messages.push({ role: "user", content: this.#data.behaviorPrompt.replaceAll("{behaviorContent}", this.#data.behaviorContent) });
+                messages.push({ role: "user", content: this.#data.behaviorPrompt.replaceAll("{behaviorContent}", () => this.#data.behaviorContent) });
 
         }
 

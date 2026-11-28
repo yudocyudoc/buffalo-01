@@ -30,10 +30,13 @@ import {seedNarrativeRuns, exerciseRunNarratives} from './test-run-narrative.mjs
 import {seedNativeLtm,reopenNativeLtm} from './test-native-ltm.mjs';
 import {seedLtmMatrix,reopenLtmMatrix,matrixReport} from './test-native-ltm-matrix.mjs';
 
+import {exerciseComparisonSession} from '../../research/buffalo-lab/c1-parity/comparison-ws.mjs';
 import {exerciseParitySession} from '../../research/buffalo-lab/c1-parity/websocket.mjs';
 const parityOnly=process.env.C1_PARITY_REPORT??null;
 const parityAccumulate=process.env.C1_PARITY_ACCUMULATE==='true';
 const parityStrict=process.env.C1_PARITY_STRICT_CACHE==='true';
+const parityCompare=process.env.C1_PARITY_COMPARISON==='true';
+if(parityCompare&&(!parityStrict||process.env.C1_PARITY_FEEDBACK_DEMAND==='true'))throw Error('PARITY_COMPARE_REQUIRES_STRICT_ONLY');
 const parityDemand=process.env.C1_PARITY_FEEDBACK_DEMAND==='true';
 const parityLtmDemand=process.env.C1_PARITY_LTM_DEMAND==='true';
 if(parityLtmDemand&&!parityDemand)throw Error('PARITY_LTM_DEMAND_REQUIRES_DEMAND');
@@ -74,7 +77,7 @@ const fixtureOptions=(limit=27,ttl=600000)=>({...convertV4MiniflareOptions({cf:f
     script:"export default {fetch(r,e){const q=new Request(r);q.headers.set('x-buffalo-project',q.headers.get('x-fixture-project')==='other'?'other':'example');q.headers.delete('x-fixture-project');return e.FULL.fetch(q)}}"},
   {name:'full',modules:true,compatibilityDate:'2026-11-19',script,
     bindings:{RUNTIME_ENABLED:'true',APP_AUTH_KEY:'fixture',AI_PROJECT:'example',AI_MAX_CALLS:String(limit),ENGINE_INFERENCE_ENABLED:'true',
-      AI_EXPIRES_AT:new Date(Date.now()+ttl).toISOString(),...(parityOnly?{C1_PARITY_SELDON_ENABLED:'true'}:{})},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
+      AI_EXPIRES_AT:new Date(Date.now()+ttl).toISOString(),...(parityOnly?{C1_PARITY_SELDON_ENABLED:'true',...(parityCompare?{C1_PARITY_COMPARISON:'true'}:{})}:{})},durableObjects:{PROJECTS:{className:'LocalProject',useSQLite:true}}}
 ]}),resourcePersistencePath:disk});
 const options=fixtureOptions();
 let mf,child,exited,calls=0,engineCalls=0,scenarioOffset=0,generationOffset=null,lastEngineRequest=null,failNextEngine=false,invalidNextEngine=null;
@@ -87,7 +90,7 @@ function start(edit){
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
       PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,BUFFALO_NATIVE_LTM:'true',
       BUFFALO_SIMLIN_PYTHON:process.env.BUFFALO_SIMLIN_PYTHON,
-      ...(parityStrict?{C1_PARITY_STRICT_CACHE:'true',...(parityDemand?{C1_PARITY_FEEDBACK_DEMAND:'true'}:{})}:{}),
+      ...(parityStrict?{C1_PARITY_STRICT_CACHE:'true',...(parityCompare?{C1_PARITY_COMPARISON:'true'}:{}),...(parityDemand?{C1_PARITY_FEEDBACK_DEMAND:'true'}:{})}:{}),
       ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
@@ -176,11 +179,12 @@ const proxy=createServer(async(req,res)=>{
 });
 try{
   if(parityOnly){
-    mf=new Miniflare(fixtureOptions(parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
+    mf=new Miniflare(fixtureOptions(parityCompare?6:parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
+    if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly);
+    else await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
   }else{
   mf=new Miniflare(options);await mf.ready;
   const created=await doc({method:'PUT',headers:{'if-none-match':'*'},body:JSON.stringify(model)});

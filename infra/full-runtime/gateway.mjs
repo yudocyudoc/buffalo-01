@@ -49,14 +49,19 @@ function responseDiagnostic(result,offered){
     predicates,failed_predicates:failed};
 }
 
-export async function completion(request,ai,reserve,record,{engineEnabled=false,paritySeldonEnabled=false}={}){
+export async function completion(request,ai,reserve,record,{engineEnabled=false,paritySeldonEnabled=false,parityComparisonEnabled=false}={}){
   if(request.url!==ENDPOINT || request.method!=='POST' || !ai?.run)return reject(403);
   let body;
   try{body=await boundedJSON(request.body,512*1024);}catch{return reject(400);}
   if(body?.model!==GEMMA || body.stream || !Array.isArray(body.messages) || !body.messages.length ||
     !body.messages.every(m=>['system','assistant','tool','user'].includes(m?.role)) ||
     !Array.isArray(body.tools))return reject(400);
-  const tools=body.tools.filter(t=>t?.type==='function' && (MODEL_TOOLS.has(t.function?.name)||(engineEnabled&&(engineTools.has(t.function?.name)||(paritySeldonEnabled===true&&t.function?.name==='discuss_model_with_seldon')))));
+  // The comparison pilot is deliberately read-only and descriptive. Do not
+  // advertise feedback or filesystem reads, edits, simulation or other engines.
+  const comparisonTools=new Set(['get_run_info','get_variable_data']);
+  const tools=body.tools.filter(t=>t?.type==='function' && (parityComparisonEnabled===true
+    ? (comparisonTools.has(t.function?.name)||(engineEnabled===true&&t.function?.name==='discuss_model_across_runs'))
+    : (MODEL_TOOLS.has(t.function?.name)||(engineEnabled&&(engineTools.has(t.function?.name)||(paritySeldonEnabled===true&&t.function?.name==='discuss_model_with_seldon'))))));
   const offered=new Set(tools.map(t=>t.function.name));
   const wire={messages:body.messages,...(tools.length?{tools}:{}),max_completion_tokens:maxTokens,
     stream:false,chat_template_kwargs:{enable_thinking:false}};

@@ -1,5 +1,6 @@
 import { strictCacheEnabled, cacheLease, cacheModelHash } from './c1ParityCache.js';
-import { comparisonEnabled, loadComparisonCache } from './c1ParityComparison.js';
+import { recoverComparativeFeedback } from './c1ParityComparativeFeedback.js';
+import { comparisonEnabled, comparativeFeedbackEnabled, loadComparisonCache } from './c1ParityComparison.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -52,7 +53,17 @@ export function createDiscussModelAcrossRunsTool(sessionManager, sessionId, send
           if (cacheModelHash(sessionManager, sessionId) !== modelHash) throw Error('C1_CACHE_MODEL_CHANGED');
           loadComparisonCache(sessionManager, sessionId, session, parameters?.runIds, runName);
           if (!result.success) return createErrorResponse(result.error);
-          // Missing comparative feedback is not recoverable in 4a.
+          if (comparativeFeedbackEnabled() && result.output.feedbackInformationRequired) {
+            const feedbackContent = await recoverComparativeFeedback(sessionManager, sessionId, session, parameters?.runIds, runName, modelHash, sendToClient);
+            const retry = await callSeldonILEEngine(prompt, model, runName, {
+              clientId: session.clientId, source: session.agentName, underlyingModel, ...evidence, feedbackContent
+            });
+            if (cacheModelHash(sessionManager, sessionId) !== modelHash) throw Error('C1_CACHE_MODEL_CHANGED');
+            loadComparisonCache(sessionManager, sessionId, session, parameters?.runIds, runName);
+            if (!retry.success) return createErrorResponse(retry.error);
+            return createSuccessResponse(retry.output);
+          }
+          // 4a retains the original feedback-needed flag without recovery.
           return createSuccessResponse(result.output);
         }
         const sessionTempDir = sessionManager.getSessionTempDir(sessionId);

@@ -36,6 +36,8 @@ const parityOnly=process.env.C1_PARITY_REPORT??null;
 const parityAccumulate=process.env.C1_PARITY_ACCUMULATE==='true';
 const parityStrict=process.env.C1_PARITY_STRICT_CACHE==='true';
 const parityCompare=process.env.C1_PARITY_COMPARISON==='true';
+const parityPairFeedback=process.env.C1_PARITY_COMPARATIVE_FEEDBACK==='true';
+if(parityPairFeedback&&!parityCompare)throw Error('PARITY_PAIR_FEEDBACK_REQUIRES_COMPARE');
 if(parityCompare&&(!parityStrict||process.env.C1_PARITY_FEEDBACK_DEMAND==='true'))throw Error('PARITY_COMPARE_REQUIRES_STRICT_ONLY');
 const parityDemand=process.env.C1_PARITY_FEEDBACK_DEMAND==='true';
 const parityLtmDemand=process.env.C1_PARITY_LTM_DEMAND==='true';
@@ -90,7 +92,7 @@ function start(edit){
     '--import','./infra/full-runtime/bootstrap.mjs','app.js'],{stdio:'inherit',env:{
       PATH:process.env.PATH,HOME:process.env.HOME,PORT:'8080',WEBSOCKET_PORT:'8080',AUTHENTICATION_KEY:key,BUFFALO_NATIVE_LTM:'true',
       BUFFALO_SIMLIN_PYTHON:process.env.BUFFALO_SIMLIN_PYTHON,
-      ...(parityStrict?{C1_PARITY_STRICT_CACHE:'true',...(parityCompare?{C1_PARITY_COMPARISON:'true'}:{}),...(parityDemand?{C1_PARITY_FEEDBACK_DEMAND:'true'}:{})}:{}),
+      ...(parityStrict?{C1_PARITY_STRICT_CACHE:'true',...(parityCompare?{C1_PARITY_COMPARISON:'true',...(parityPairFeedback?{C1_PARITY_COMPARATIVE_FEEDBACK:'true'}:{})}:{}),...(parityDemand?{C1_PARITY_FEEDBACK_DEMAND:'true'}:{})}:{}),
       ALLOW_UNSANDBOXED_FALLBACK:'false',...(edit?{BUFFALO_PRIVATE_MERLIN_MODEL:GEMMA,BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})}});
   exited=once(child,'exit');
 }
@@ -179,11 +181,11 @@ const proxy=createServer(async(req,res)=>{
 });
 try{
   if(parityOnly){
-    mf=new Miniflare(fixtureOptions(parityCompare?6:parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
+    mf=new Miniflare(fixtureOptions(parityPairFeedback?7:parityCompare?6:parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly);
+    if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly,{pairFeedback:parityPairFeedback});
     else await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
   }else{
   mf=new Miniflare(options);await mf.ready;

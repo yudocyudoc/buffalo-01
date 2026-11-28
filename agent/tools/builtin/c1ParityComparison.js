@@ -12,6 +12,7 @@ const uuid=x=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab]
 const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonical(x[k])])):x;
 export const comparisonHash=x=>createHash('sha256').update(JSON.stringify(canonical(x))).digest('hex');
 export const comparisonEnabled=()=>strictCacheEnabled()&&process.env.C1_PARITY_COMPARISON==='true';
+export const comparativeFeedbackEnabled=()=>comparisonEnabled()&&process.env.C1_PARITY_COMPARATIVE_FEEDBACK==='true';
 const eq=(a,b)=>comparisonHash(a)===comparisonHash(b);
 const exact=(x,keys)=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
 const str=x=>typeof x==='string'&&x.trim().length>0&&x.length<=256;
@@ -24,7 +25,7 @@ export const MAX_COMPARISON_MANIFEST_BYTES=48*1024;
 export function comparisonManifest(manager,id,session,ids){
  const m=session.context?.c1Comparison;
  check(m&&Array.isArray(m.runs)&&m.runs.length===2,'C1_COMPARE_MANIFEST_MISSING');
- check(exact(m,['runs','variables','detailed','behavior_sha256'])&&m.runs.every(r=>exact(r,['run_id','revision','model_sha256','run_sha256','simulator','settings','execution','model'])),'C1_COMPARE_MANIFEST_INVALID');
+ check(exact(m,['runs','variables','detailed','behavior_sha256',...(comparativeFeedbackEnabled()?['feedback_sha256']:[])])&&m.runs.every(r=>exact(r,['run_id','revision','model_sha256','run_sha256','simulator','settings','execution','model'])),'C1_COMPARE_MANIFEST_INVALID');
  check(Buffer.byteLength(JSON.stringify(m),'utf8')<=MAX_COMPARISON_MANIFEST_BYTES,'C1_COMPARE_MANIFEST_TOO_LARGE');
  const pair=m.runs.map(r=>r.run_id);
  check(pair.every(uuid)&&new Set(pair).size===2&&Array.isArray(ids)&&eq(ids,pair),'C1_COMPARE_ORDERED_PAIR_REQUIRED');
@@ -35,6 +36,7 @@ export function comparisonManifest(manager,id,session,ids){
  check(eq(a.settings,b.settings)&&eq(a.execution,b.execution)&&eq(a.simulator,b.simulator),'C1_COMPARE_INCOMPATIBLE_RUNS');
  check(eq(SDModelSchema.parse(b.model),SDModelSchema.parse(manager.getClientModel(id))),'C1_COMPARE_CURRENT_MODEL_MISMATCH');
  check(Array.isArray(m.variables)&&m.variables.length>0&&new Set(m.variables).size===m.variables.length&&m.variables.length<=20&&m.variables.every(v=>str(v)&&v.toLowerCase()!=='time'&&m.runs.every(r=>r.model.variables.some(x=>x.name===v)))&&m.detailed===false&&hex(m.behavior_sha256),'C1_COMPARE_MANIFEST_INVALID');
+ if(comparativeFeedbackEnabled())check(Array.isArray(m.feedback_sha256)&&m.feedback_sha256.length===2&&m.feedback_sha256.every(hex),'C1_COMPARE_FEEDBACK_MANIFEST_INVALID');
  return m;
 }
 export function invalidateComparison(session){slots.delete(session);}
@@ -67,5 +69,5 @@ export function loadComparisonCache(manager,id,session,ids,runName){
  const data=JSON.parse(readFileSync(join(manager.getSessionTempDir(id),r.filename),'utf8'));
  validatePairData(data,m);check(comparisonHash(data)===r.payloadHash,'C1_COMPARE_PAYLOAD_MISMATCH');
  return {behaviorContent:JSON.stringify(Object.fromEntries(ids.map(k=>[k,data[k]]))),backgroundKnowledge:
- 'Two immutable server-simulated runs, ordered baseline then comparison. The current model is the comparison revision only. Historical models and provenance are supplied below. Only sampled behavior is supplied; no comparative feedback/loop scores. Do not invent dominance or claim a causal attribution from the comparison alone.\n'+JSON.stringify(m)};
+ 'Two immutable server-simulated runs, ordered baseline then comparison. The current model is the comparison revision only. Historical models and provenance are supplied below. '+(comparativeFeedbackEnabled()?'Behavior is sampled. If feedback is supplied, it is an ordered Buffalo array of complete per-run native feedback documents, not a merged loop inventory. Loop IDs and partitions are local to each run; do not equate IDs across runs. Signed relative scores are normalized within partitions, not whole-model percentages. Period endpoints are inclusive saved samples. Do not treat relative dominance as absolute causal magnitude. ':'Only sampled behavior is supplied; no comparative feedback/loop scores. Do not invent dominance or claim a causal attribution from the comparison alone.\n')+JSON.stringify(m)};
 }

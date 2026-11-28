@@ -37,6 +37,8 @@ const parityAccumulate=process.env.C1_PARITY_ACCUMULATE==='true';
 const parityStrict=process.env.C1_PARITY_STRICT_CACHE==='true';
 const parityCompare=process.env.C1_PARITY_COMPARISON==='true';
 const parityPairFeedback=process.env.C1_PARITY_COMPARATIVE_FEEDBACK==='true';
+const parityInterventionReference=process.env.C1_PARITY_INTERVENTION_REFERENCE==='true';
+if(parityInterventionReference&&!parityPairFeedback)throw Error('PARITY_REFERENCE_REQUIRES_PAIR_FEEDBACK');
 if(parityPairFeedback&&!parityCompare)throw Error('PARITY_PAIR_FEEDBACK_REQUIRES_COMPARE');
 if(parityCompare&&(!parityStrict||process.env.C1_PARITY_FEEDBACK_DEMAND==='true'))throw Error('PARITY_COMPARE_REQUIRES_STRICT_ONLY');
 const parityDemand=process.env.C1_PARITY_FEEDBACK_DEMAND==='true';
@@ -185,7 +187,7 @@ try{
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly,{pairFeedback:parityPairFeedback});
+    if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly,{pairFeedback:parityPairFeedback,interventionReference:parityInterventionReference});
     else await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
   }else{
   mf=new Miniflare(options);await mf.ready;

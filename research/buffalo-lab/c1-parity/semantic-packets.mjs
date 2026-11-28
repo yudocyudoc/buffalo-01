@@ -1,6 +1,6 @@
 // Frozen source: accepted #107 artifact. No solver reruns or provider dispatch here.
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {digest} from '../../../infra/full-runtime/provider-wire.mjs';
 import {comparisonHash,validatePairData,MAX_COMPARISON_MANIFEST_BYTES} from '../../../agent/tools/builtin/c1ParityComparison.js';
 import {validateComparativeFeedback} from '../../../agent/tools/builtin/c1ParityComparativeFeedback.js';
@@ -84,4 +84,28 @@ export function validateAnnotation(review,annotation){
  }
  assert.equal(new Set(annotation.omissions).size,annotation.omissions.length);assert(annotation.omissions.every(t=>TARGETS.includes(t)));
  return {status:'annotation_shape_valid_not_semantically_adjudicated',counts:Object.fromEntries(Object.keys(RUBRIC.labels).map(l=>[l,annotation.claims.filter(c=>c.label===l).length])),omissions:[...annotation.omissions]};
+}
+
+// Planner gateway V1 stores request size and response predicates, not request
+// digest. Original-engine gateway stores both. Never manufacture a planner
+// receipt hash from the fixture's locally captured request.
+export function verifyCaptureReceipt(receipt,call,{nested,schema}){
+ const text=JSON.stringify(call.wire),hash=createHash('sha256').update(text).digest('hex');
+ assert.equal(call.wire_sha256,hash,'CAPTURE_WIRE_HASH_MISMATCH');
+ assert.equal(receipt.status,'OK');assert.equal(receipt.request_bytes,Buffer.byteLength(text,'utf8'),'RECEIPT_SIZE_MISMATCH');
+ assert.equal(receipt.response_model,call.response.model);
+ assert.equal(receipt.finish_reason,call.response.choices[0].finish_reason);
+ assert.equal(receipt.usage.prompt_tokens,call.response.usage.prompt_tokens);
+ assert.equal(receipt.usage.completion_tokens,call.response.usage.completion_tokens);
+ assert(receipt.predicates&&Object.keys(receipt.predicates).length>0&&Object.values(receipt.predicates).every(v=>v===true),'RECEIPT_PREDICATES');
+ if(nested){
+  assert.equal(receipt.channel,'original-engine');assert.equal(receipt.request_sha256,hash,'ENGINE_RECEIPT_HASH_MISMATCH');
+  assert.equal(receipt.schema_sha256,createHash('sha256').update(JSON.stringify(schema)).digest('hex'));
+  assert(typeof receipt.invocation_id==='string'&&receipt.invocation_id.length>0);
+  return 'engine_receipt_hash_verified';
+ }
+ assert.notEqual(receipt.channel,'original-engine');
+ // If a later gateway adds a digest, require equality rather than ignore it.
+ if(Object.hasOwn(receipt,'request_sha256')){assert.equal(receipt.request_sha256,hash,'PLANNER_RECEIPT_HASH_MISMATCH');return 'planner_receipt_hash_verified';}
+ return 'planner_receipt_size_and_response_verified_local_wire_hash_only';
 }

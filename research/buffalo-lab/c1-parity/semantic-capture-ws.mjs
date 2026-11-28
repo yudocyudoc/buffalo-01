@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {session} from '../../../infra/full-runtime/test-session.mjs';
 import {GEMMA} from '../../../infra/private-merlin/gemma-response.mjs';
 import {LLMWrapper} from '../../../utilities/LLMWrapper.js';
-import {SOURCE,CONTRACT,prepareAcceptedCase,matchedSingleCallWires,blindPacket} from './semantic-packets.mjs';
+import {SOURCE,CONTRACT,prepareAcceptedCase,matchedSingleCallWires,blindPacket,verifyCaptureReceipt} from './semantic-packets.mjs';
 const schema=LLMWrapper.prototype.generateSeldonResponseSchema(true).toJSONSchema();
 const sha=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export async function exerciseSemanticCapture(request,key,useProvider,file,sourcePath,caseId){
@@ -54,8 +54,7 @@ export async function exerciseSemanticCapture(request,key,useProvider,file,sourc
   assert.deepEqual(report.requests.map(m=>m.type),['get_run_info','get_variable_data','feedback_request']);
   for(let n=1;n<=6;n++){
    const res=await request('/project/inference/'+n);assert.equal(res.status,200);const receipt=await res.json();report.receipts.push(receipt);
-   assert.equal(receipt.status,'OK');assert.equal(receipt.request_sha256,report.calls[n-1].wire_sha256);
-   if(n===4||n===5){assert.equal(receipt.channel,'original-engine');assert.equal(receipt.schema_sha256,sha(schema));assert(receipt.invocation_id);}else assert.notEqual(receipt.channel,'original-engine');
+   report.calls[n-1].receipt_verification=verifyCaptureReceipt(receipt,report.calls[n-1],{nested:n===4||n===5,schema});save();
   }
   assert.notEqual(report.receipts[3].invocation_id,report.receipts[4].invocation_id);
   assert.equal((await request('/project/inference/7')).status,404);

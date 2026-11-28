@@ -15,15 +15,23 @@ jobs:
           - accumulate: 'false'
             strict: 'false'
             demand: 'false'
+            ltm: 'false'
           - accumulate: 'true'
             strict: 'false'
             demand: 'false'
+            ltm: 'false'
           - accumulate: 'true'
             strict: 'true'
             demand: 'false'
+            ltm: 'false'
           - accumulate: 'true'
             strict: 'true'
             demand: 'true'
+            ltm: 'false'
+          - accumulate: 'true'
+            strict: 'true'
+            demand: 'true'
+            ltm: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,8 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools" FULL_PYTHON_PATH="$(dirname "$(command -v python3)")"
-          export C1_PARITY_REPORT="$RUNNER_TEMP/c1-parity-demand-${{ matrix.accumulate }}-${{ matrix.strict }}-${{ matrix.demand }}.json" C1_PARITY_ACCUMULATE="${{ matrix.accumulate }}" C1_PARITY_STRICT_CACHE="${{ matrix.strict }}" C1_PARITY_FEEDBACK_DEMAND="${{ matrix.demand }}"
-          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,BUFFALO_SIMLIN_PYTHON,C1_PARITY_REPORT,C1_PARITY_ACCUMULATE,C1_PARITY_STRICT_CACHE,C1_PARITY_FEEDBACK_DEMAND unshare --net --mount --propagation private sh -ec '
+          export C1_PARITY_REPORT="$RUNNER_TEMP/c1-parity-demand-${{ matrix.accumulate }}-${{ matrix.strict }}-${{ matrix.demand }}-${{ matrix.ltm }}.json" C1_PARITY_ACCUMULATE="${{ matrix.accumulate }}" C1_PARITY_STRICT_CACHE="${{ matrix.strict }}" C1_PARITY_FEEDBACK_DEMAND="${{ matrix.demand }}" C1_PARITY_LTM_DEMAND="${{ matrix.ltm }}"
+          sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,BUFFALO_SIMLIN_PYTHON,C1_PARITY_REPORT,C1_PARITY_ACCUMULATE,C1_PARITY_STRICT_CACHE,C1_PARITY_FEEDBACK_DEMAND,C1_PARITY_LTM_DEMAND unshare --net --mount --propagation private sh -ec '
             ip link set lo up
             sysctl -qw net.ipv4.ip_unprivileged_port_start=0
             hosts=$(mktemp)
@@ -60,7 +68,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: c1-parity-demand-${{ matrix.accumulate }}-${{ matrix.strict }}-${{ matrix.demand }}
-          path: ${{ runner.temp }}/c1-parity-demand-${{ matrix.accumulate }}-${{ matrix.strict }}-${{ matrix.demand }}.json
+          name: c1-parity-demand-${{ matrix.accumulate }}-${{ matrix.strict }}-${{ matrix.demand }}-${{ matrix.ltm }}
+          path: ${{ runner.temp }}/c1-parity-demand-${{ matrix.accumulate }}-${{ matrix.strict }}-${{ matrix.demand }}-${{ matrix.ltm }}.json
           if-no-files-found: warn
           retention-days: 30

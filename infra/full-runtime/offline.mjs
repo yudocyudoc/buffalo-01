@@ -35,6 +35,8 @@ const parityOnly=process.env.C1_PARITY_REPORT??null;
 const parityAccumulate=process.env.C1_PARITY_ACCUMULATE==='true';
 const parityStrict=process.env.C1_PARITY_STRICT_CACHE==='true';
 const parityDemand=process.env.C1_PARITY_FEEDBACK_DEMAND==='true';
+const parityLtmDemand=process.env.C1_PARITY_LTM_DEMAND==='true';
+if(parityLtmDemand&&!parityDemand)throw Error('PARITY_LTM_DEMAND_REQUIRES_DEMAND');
 if(parityDemand&&!parityStrict)throw Error('PARITY_DEMAND_REQUIRES_STRICT');
 if(parityStrict&&(!parityOnly||!parityAccumulate))throw Error('PARITY_STRICT_REQUIRES_ACCUMULATE');
 if(parityAccumulate&&!parityOnly)throw Error('PARITY_ACCUMULATE_REQUIRES_REPORT');
@@ -174,11 +176,11 @@ const proxy=createServer(async(req,res)=>{
 });
 try{
   if(parityOnly){
-    mf=new Miniflare(fixtureOptions(parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
+    mf=new Miniflare(fixtureOptions(parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand});
+    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
   }else{
   mf=new Miniflare(options);await mf.ready;
   const created=await doc({method:'PUT',headers:{'if-none-match':'*'},body:JSON.stringify(model)});

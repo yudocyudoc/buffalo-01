@@ -8,6 +8,7 @@ import {openNativeLtmRun} from '../../../infra/full-runtime/native-ltm-client.mj
 import {GEMMA} from '../../../infra/private-merlin/gemma-response.mjs';
 import {LLMWrapper} from '../../../utilities/LLMWrapper.js';
 import SeldonBrain from '../../../engines/seldon/SeldonBrain.js';
+import LTMNarrativeBrain from '../../../engines/ltm-narrative/LTMNarrativeBrain.js';
 import {createEvidenceClient} from './evidence-client.mjs';
 
 const marker='C1_PARITY_NESTED_REAL_TRANSPORT';
@@ -18,8 +19,10 @@ const sha=x=>createHash('sha256').update(x).digest('hex');
 const names=['Inventory','Workers','Expected Demand'];
 const matches=(wire,text)=>wire.messages.some(m=>m.role==='user'&&m.content.includes(text));
 
-export async function exerciseParitySession(request,key,useProvider,file,{accumulate=false,strictCache=false,demand=false}={}){
- const report={status:'PENDING',provider:'scripted-local-binding',live_provider_calls:0,planner_selection:'scripted',semantic_accuracy:'not_measured',accumulate,strictCache,demand,calls:[],client_requests:[],tool_results:[],receipts:[]};
+export async function exerciseParitySession(request,key,useProvider,file,{accumulate=false,strictCache=false,demand=false,ltmDemand=false}={}){
+ assert(!ltmDemand||(accumulate&&strictCache&&demand),'LTM_DEMAND_REQUIRES_STRICT_DEMAND');
+ const nestedSchema=ltmDemand?LLMWrapper.prototype.generateLTMNarrativeResponseSchema().toJSONSchema():schema;
+ const report={status:'PENDING',provider:'scripted-local-binding',live_provider_calls:0,planner_selection:'scripted',semantic_accuracy:'not_measured',accumulate,strictCache,demand,ltmDemand,calls:[],client_requests:[],tool_results:[],receipts:[]};
  const save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');
  save();
  try{
@@ -51,9 +54,9 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     ['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[randomUUID()]}}],
     ['generate_ltm_narrative',{difficulty:'normal',parameters:{runIds:[]}}]
    ]:[]),
-   ['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[id]}}]
+   ltmDemand?['generate_ltm_narrative',{difficulty:'normal',parameters:{runIds:[id],problemStatement:question}}]:['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[id]}}]
   ];
-  const expectedNested=demand?2:1;
+  const expectedNested=demand&&!ltmDemand?2:1;
   const expectedCalls=actions.length+1+expectedNested;
   let turn=0,nested=0,behavior;
   if(evidence){
@@ -70,9 +73,23 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     let message={role:'assistant'};
     if(wire.response_format){
      assert.equal(turn,actions.length);assert(++nested<=expectedNested);
-     assert.deepEqual(wire.response_format,{type:'json_schema',json_schema:schema});
+     assert.deepEqual(wire.response_format,{type:'json_schema',json_schema:nestedSchema});
      assert(behavior,'missing selected behavior');
      assert(matches(wire,JSON.stringify(behavior)),'EXACT_BEHAVIOR_MISSING');
+     if(ltmDemand){
+      // The original narrative brain ignores the model and strips auto-generated
+      // loop names before serializing feedback. Compare the entire payload after
+      // this documented projection, not just the presence of a feedback key.
+      assert.deepEqual(report.client_requests.map(x=>x.request.type),['get_run_info','get_variable_data','get_variable_data','feedback_request']);
+      const expected=structuredClone(selected.feedback.content);
+      for(const loop of expected.feedbackLoops){if(loop.identifier&&loop.name&&/^(B\d|Bu\d|R\d|Ru\d|U\d)/.test(loop.name))delete loop.name;}
+      const feedbackMessages=wire.messages.filter(m=>m.role==='assistant');
+      assert.equal(feedbackMessages.length,1);
+      assert.deepEqual(JSON.parse(feedbackMessages[0].content),expected,'EXACT_LTM_FEEDBACK_MISSING');
+      assert(wire.messages.some(m=>m.role==='system'&&m.content.includes(LTMNarrativeBrain.DEFAULT_SYSTEM_PROMPT)));
+      assert(wire.messages.some(m=>m.role==='system'&&m.content.includes(question)));
+      message.content=JSON.stringify({feedbackLoops:expected.feedbackLoops.map(loop=>({identifier:loop.identifier,name:'Loop '+loop.identifier,description:'Controlled fixture; no causal assertion.'})),narrativeMarkdown:marker});
+     }else{
      const hasFeedback=matches(wire,JSON.stringify(selected.feedback.content,null,2));
      assert.equal(hasFeedback,!demand||nested===2,'EXACT_FEEDBACK_STATE');
      if(demand&&nested===1)assert(!wire.messages.some(m=>m.role==='user'&&m.content.includes('"feedbackLoops"')),'UNEXPECTED_FEEDBACK');
@@ -82,6 +99,7 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
      const originalModel=JSON.parse(wire.messages.find(m=>m.role==='assistant').content);
      assert.deepEqual(originalModel.variables.map(v=>[v.name,v.equation]),modelVariables(selected.model));
      message.content=JSON.stringify({response:demand&&nested===1?'C1_DEMAND_REQUEST_FEEDBACK':marker,feedbackInformationRequired:demand&&nested===1});
+     }
     }else if(turn<actions.length){
      if(turn>0)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn),'PREVIOUS_RESULT_MISSING');
      if(strictCache&&!demand&&turn===actions.length-2){
@@ -128,7 +146,10 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
      assert.deepEqual(evidence.snapshot(),before);
      report.evidence_client=evidence.snapshot();save();
     }
-    if(m.type==='feedback_request'){assert.deepEqual(m.runIds,[id]);assert.deepEqual(answer.feedbackContent,selected.feedback.content);}
+    if(m.type==='feedback_request'){
+     assert.deepEqual(m.runIds,[id]);assert.deepEqual(answer.feedbackContent,selected.feedback.content);
+     if(ltmDemand){assert.equal(turn,actions.length);assert.equal(nested,0,'LTM_ENGINE_CALLED_BEFORE_FEEDBACK');}
+    }
     return answer;
    },
    onToolCompleted(m){report.tool_results.push(m);save();},
@@ -147,7 +168,7 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
    const r=await request('/project/inference/'+n);assert.equal(r.status,200);
    const receipt=await r.json();report.receipts.push(receipt);save();assert.equal(receipt.status,'OK');
    if(n>actions.length&&n<=actions.length+expectedNested){
-    assert.equal(receipt.channel,'original-engine');assert.equal(receipt.schema_sha256,sha(JSON.stringify(schema)));
+    assert.equal(receipt.channel,'original-engine');assert.equal(receipt.schema_sha256,sha(JSON.stringify(nestedSchema)));
     assert.equal(receipt.request_sha256,sha(JSON.stringify(report.calls[n-1].wire)));
     assert(receipt.invocation_id);assert(receipt.max_completion_tokens<=8192);
    }else assert.notEqual(receipt.channel,'original-engine');
@@ -158,7 +179,7 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
   const reopened=await openNativeLtmRun(request,id);
   assert.deepEqual(reopened.run,selected.run);assert.deepEqual(reopened.feedback,selected.feedback);
   if(evidence)report.evidence_client=evidence.snapshot();
-  report.status='PASS';save();console.log('C1_PARITY_WS_PASS '+JSON.stringify({accumulate,strictCache,demand,calls:expectedCalls,planner:actions.length+1,nested:expectedNested,live_provider_calls:0,run_id:id,samples:961,behavior_samples:200}));
+  report.status='PASS';save();console.log('C1_PARITY_WS_PASS '+JSON.stringify({accumulate,strictCache,demand,ltmDemand,calls:expectedCalls,planner:actions.length+1,nested:expectedNested,live_provider_calls:0,run_id:id,samples:961,behavior_samples:200}));
  }catch(e){report.status='FAIL';report.error=String(e.stack??e);save();throw e;}
 }
 function modelVariables(model){return model.variables.map(v=>[v.name,v.equation]);}

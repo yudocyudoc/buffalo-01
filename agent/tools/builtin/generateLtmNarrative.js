@@ -1,3 +1,4 @@
+import { strictCacheEnabled, cacheLease, loadBoundCache, cacheModelHash } from './c1ParityCache.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -21,6 +22,7 @@ export function createGenerateLtmNarrativeTool(sessionManager, sessionId, sendTo
       }).optional()
     }),
     handler: async ({ difficulty, parameters }) => {
+      let release;
       try {
         const session = sessionManager.getSession(sessionId);
         if (!session) {
@@ -36,11 +38,18 @@ export function createGenerateLtmNarrativeTool(sessionManager, sessionId, sendTo
         const baseParameters = { ...parameters, clientId: session.clientId, source: session.agentName, underlyingModel };
         const sessionTempDir = sessionManager.getSessionTempDir(sessionId);
         const feedbackPath = join(sessionTempDir, 'feedback.json');
-        let feedbackContent = existsSync(feedbackPath)
+        const strict = strictCacheEnabled();
+        let bound, boundModel;
+        if (strict) {
+          release = cacheLease(session);
+          boundModel = cacheModelHash(sessionManager, sessionId);
+          bound = loadBoundCache(sessionManager, sessionId, session, parameters?.runIds);
+        }
+        let feedbackContent = strict ? bound.feedbackContent : (existsSync(feedbackPath)
           ? JSON.parse(readFileSync(feedbackPath, 'utf-8')).feedbackContent
-          : undefined;
+          : undefined);
 
-        const behaviorContent = loadBehaviorContent(sessionTempDir, parameters?.runIds);
+        const behaviorContent = strict ? bound.behaviorContent : loadBehaviorContent(sessionTempDir, parameters?.runIds);
         const enrichedParameters = behaviorContent ? { ...baseParameters, behaviorContent } : baseParameters;
 
         if (!feedbackContent) {
@@ -72,6 +81,7 @@ export function createGenerateLtmNarrativeTool(sessionManager, sessionId, sendTo
         }
 
         const result = await callLTMEngine(model, feedbackContent, enrichedParameters);
+        if (strict && cacheModelHash(sessionManager, sessionId) !== boundModel) throw Error('C1_CACHE_MODEL_CHANGED');
 
         if (!result.success) {
           return createErrorResponse(result.error);
@@ -83,7 +93,7 @@ export function createGenerateLtmNarrativeTool(sessionManager, sessionId, sendTo
         });
       } catch (error) {
         return createErrorResponse(error.message);
-      }
+      } finally { release?.(); }
     }
   };
 }

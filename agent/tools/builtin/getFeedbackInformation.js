@@ -1,3 +1,4 @@
+import { strictCacheEnabled, cacheLease, cacheModelHash, explicitRun, invalidateCacheSlot, recordCache } from './c1ParityCache.js';
 import { z } from 'zod';
 import { createFeedbackRequestMessage } from '../../utilities/MessageProtocol.js';
 import { generateRequestId, createSuccessResponse, createErrorResponse } from './toolHelpers.js';
@@ -13,6 +14,7 @@ export function createGetFeedbackInformationTool(sessionManager, sessionId, send
       runIds: z.array(z.string()).describe('List of simulation run IDs to get feedback for')
     }),
     handler: async ({ runIds }) => {
+      let release;
       try {
         // Create a promise that will be resolved when client responds
         const session = sessionManager.getSession(sessionId);
@@ -20,6 +22,14 @@ export function createGetFeedbackInformationTool(sessionManager, sessionId, send
           throw new Error(`Session not found: ${sessionId}`);
         }
 
+        const strict = strictCacheEnabled();
+        let runId, modelHash;
+        if (strict) {
+          release = cacheLease(session);
+          runId = explicitRun(runIds);
+          modelHash = cacheModelHash(sessionManager, sessionId);
+          invalidateCacheSlot(session, 'feedback');
+        }
         const requestId = generateRequestId('feedback');
 
         // Send request to client for feedback data
@@ -40,10 +50,9 @@ export function createGetFeedbackInformationTool(sessionManager, sessionId, send
 
         const feedbackData = await resultPromise;
 
-        const { filePath } = sessionManager.writeDataToDisk(sessionId, 'feedback.json', {
-          feedbackContent: feedbackData.feedbackContent,
-          runIds: feedbackData.runIds
-        });
+        const cacheData = { feedbackContent: feedbackData.feedbackContent, runIds: feedbackData.runIds };
+        const { filePath } = sessionManager.writeDataToDisk(sessionId, 'feedback.json', cacheData);
+        if (strict) recordCache(sessionManager, sessionId, session, 'feedback', runId, modelHash, 'feedback.json', cacheData);
 
         return createSuccessResponse({
           message: 'Feedback information cached. Other tools will load it automatically — you do not need to read this file.',
@@ -52,7 +61,7 @@ export function createGetFeedbackInformationTool(sessionManager, sessionId, send
         });
       } catch (error) {
         return createErrorResponse(`Failed to get feedback information: ${error.message}`, error);
-      }
+      } finally { release?.(); }
     }
   };
 }

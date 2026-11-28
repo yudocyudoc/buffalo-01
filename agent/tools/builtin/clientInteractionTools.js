@@ -1,3 +1,4 @@
+import { strictCacheEnabled, cacheLease, cacheModelHash, explicitRun, invalidateCacheSlot, recordCache } from './c1ParityCache.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -219,12 +220,21 @@ export function createGetVariableDataTool(sessionManager, sessionId, sendToClien
       detailed: z.boolean().optional().describe('Whether to return detailed data suitable for plotting (default: false). When true, returns more data points for visualization purposes.')
     }),
     handler: async ({ variableNames, runIds, detailed }) => {
+      let release;
       try {
         const session = sessionManager.getSession(sessionId);
         if (!session) {
           throw new Error(`Session not found: ${sessionId}`);
         }
 
+        const strict = strictCacheEnabled();
+        let runId, modelHash;
+        if (strict) {
+          release = cacheLease(session);
+          runId = explicitRun(runIds);
+          modelHash = cacheModelHash(sessionManager, sessionId);
+          invalidateCacheSlot(session, 'behavior');
+        }
         const requestId = generateRequestId('vardata');
 
         // Send request to client for variable data
@@ -244,13 +254,14 @@ export function createGetVariableDataTool(sessionManager, sessionId, sendToClien
 
         const variableData = await resultPromise;
 
-        const filename = `variable_data_${Date.now()}.json`;
+        const filename = strict ? `variable_data_${requestId}.json` : `variable_data_${Date.now()}.json`;
         const { filePath, message } = sessionManager.writeDataToDisk(sessionId, filename, variableData);
+        if (strict) recordCache(sessionManager, sessionId, session, 'behavior', runId, modelHash, filename, variableData);
 
         return createSuccessResponse({ message, filePath });
       } catch (error) {
         return createErrorResponse(`Failed to get variable data: ${error.message}`, error);
-      }
+      } finally { release?.(); }
     }
   };
 }

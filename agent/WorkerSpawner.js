@@ -505,7 +505,8 @@ export class WorkerSpawner {
               BUFFALO_PRIVATE_MERLIN_MODEL: process.env.BUFFALO_PRIVATE_MERLIN_MODEL,
               NODE_OPTIONS: '--import=/app/infra/private-merlin/provider.mjs'+
                  (process.env.BUFFALO_FULL_ENGINE_PROVIDER==='true'?' --import=/app/infra/full-runtime/engine-provider.mjs':''),
-               ...(process.env.BUFFALO_FULL_ENGINE_PROVIDER==='true'?{BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{})
+               ...(process.env.BUFFALO_FULL_ENGINE_PROVIDER==='true'?{BUFFALO_FULL_ENGINE_PROVIDER:'true'}:{}),
+               ...(process.env.C1_PARITY_STRICT_CACHE==='true'?{C1_PARITY_STRICT_CACHE:'true'}:{})
             } : {}),
             TOKEN_REPORTER_URL: process.env.TOKEN_REPORTER_URL,
             SESSION_ID: sessionId,

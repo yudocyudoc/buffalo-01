@@ -18,8 +18,8 @@ const sha=x=>createHash('sha256').update(x).digest('hex');
 const names=['Inventory','Workers','Expected Demand'];
 const matches=(wire,text)=>wire.messages.some(m=>m.role==='user'&&m.content.includes(text));
 
-export async function exerciseParitySession(request,key,useProvider,file,{accumulate=false}={}){
- const report={status:'PENDING',provider:'scripted-local-binding',live_provider_calls:0,planner_selection:'scripted',semantic_accuracy:'not_measured',accumulate,calls:[],client_requests:[],tool_results:[],receipts:[]};
+export async function exerciseParitySession(request,key,useProvider,file,{accumulate=false,strictCache=false}={}){
+ const report={status:'PENDING',provider:'scripted-local-binding',live_provider_calls:0,planner_selection:'scripted',semantic_accuracy:'not_measured',accumulate,strictCache,calls:[],client_requests:[],tool_results:[],receipts:[]};
  const save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');
  save();
  try{
@@ -47,6 +47,10 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     ['get_variable_data',{runIds:[id],variableNames:names.slice(1),detailed:true}]
    ]:[['get_variable_data',{runIds:[id],variableNames:names,detailed:true}]]),
    ['get_feedback_information',{runIds:[id]}],
+   ...(strictCache?[
+    ['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[randomUUID()]}}],
+    ['generate_ltm_narrative',{difficulty:'normal',parameters:{runIds:[]}}]
+   ]:[]),
    ['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[id]}}]
   ];
   const expectedCalls=actions.length+2;
@@ -77,6 +81,12 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
      message.content=JSON.stringify({response:marker,feedbackInformationRequired:false});
     }else if(turn<actions.length){
      if(turn>0)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn),'PREVIOUS_RESULT_MISSING');
+     if(strictCache&&turn===actions.length-2){
+      assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn&&m.content.includes('C1_CACHE_FEEDBACK_RUN_MISMATCH')),'WRONG_RUN_NOT_REJECTED');
+     }
+     if(strictCache&&turn===actions.length-1){
+      assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn&&m.content.includes('C1_CACHE_EXPLICIT_SINGLE_RUN_REQUIRED')),'IMPLICIT_RUN_NOT_REJECTED');
+     }
      const [name,args]=actions[turn++];
      assert(wire.tools.some(t=>t.function.name===name),'MISSING_TOOL '+name);
      message.tool_calls=[{type:'function',id:'parity-'+turn,function:{name,arguments:JSON.stringify(args)}}];
@@ -123,7 +133,7 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     assert.deepEqual(current,selected.model);
     const completed=tools.filter(t=>t.event==='tool_call_completed');
     assert.deepEqual(completed.map(t=>t.name),actions.map(a=>a[0]));
-    assert(completed.every(t=>!t.isError));
+    assert.deepEqual(completed.map(t=>!!t.isError),actions.map((_,i)=>strictCache&&(i===actions.length-3||i===actions.length-2)));
    }
   }});
   report.session=result;save();
@@ -144,7 +154,7 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
   const reopened=await openNativeLtmRun(request,id);
   assert.deepEqual(reopened.run,selected.run);assert.deepEqual(reopened.feedback,selected.feedback);
   if(evidence)report.evidence_client=evidence.snapshot();
-  report.status='PASS';save();console.log('C1_PARITY_WS_PASS '+JSON.stringify({accumulate,calls:expectedCalls,planner:actions.length+1,nested:1,live_provider_calls:0,run_id:id,samples:961,behavior_samples:200}));
+  report.status='PASS';save();console.log('C1_PARITY_WS_PASS '+JSON.stringify({accumulate,strictCache,calls:expectedCalls,planner:actions.length+1,nested:1,live_provider_calls:0,run_id:id,samples:961,behavior_samples:200}));
  }catch(e){report.status='FAIL';report.error=String(e.stack??e);save();throw e;}
 }
 function modelVariables(model){return model.variables.map(v=>[v.name,v.equation]);}

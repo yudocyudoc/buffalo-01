@@ -1,3 +1,4 @@
+import { strictCacheEnabled, cacheLease, loadBoundCache, cacheModelHash } from './c1ParityCache.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -22,6 +23,7 @@ export function createDiscussModelWithSeldonTool(sessionManager, sessionId, send
       }).optional()
     }),
     handler: async ({ prompt, difficulty, parameters }) => {
+      let release;
       try {
         const session = sessionManager.getSession(sessionId);
         if (!session) {
@@ -37,14 +39,22 @@ export function createDiscussModelWithSeldonTool(sessionManager, sessionId, send
         const baseParameters = { ...parameters, clientId: session.clientId, source: session.agentName, underlyingModel };
         const sessionTempDir = sessionManager.getSessionTempDir(sessionId);
         const feedbackPath = join(sessionTempDir, 'feedback.json');
-        const feedbackContent = existsSync(feedbackPath)
+        const strict = strictCacheEnabled();
+        let bound, boundModel;
+        if (strict) {
+          release = cacheLease(session);
+          boundModel = cacheModelHash(sessionManager, sessionId);
+          bound = loadBoundCache(sessionManager, sessionId, session, parameters?.runIds);
+        }
+        const feedbackContent = strict ? bound.feedbackContent : (existsSync(feedbackPath)
           ? JSON.parse(readFileSync(feedbackPath, 'utf-8')).feedbackContent
-          : undefined;
+          : undefined);
 
-        const behaviorContent = loadBehaviorContent(sessionTempDir, parameters?.runIds);
+        const behaviorContent = strict ? bound.behaviorContent : loadBehaviorContent(sessionTempDir, parameters?.runIds);
         const enrichedParameters = behaviorContent ? { ...baseParameters, behaviorContent } : baseParameters;
 
         const result = await callSeldonEngine(prompt, model, feedbackContent, enrichedParameters);
+        if (strict && cacheModelHash(sessionManager, sessionId) !== boundModel) throw Error('C1_CACHE_MODEL_CHANGED');
 
         if (!result.success) {
           return createErrorResponse(result.error);
@@ -90,7 +100,7 @@ export function createDiscussModelWithSeldonTool(sessionManager, sessionId, send
         return createSuccessResponse(result.output);
       } catch (error) {
         return createErrorResponse(error.message);
-      }
+      } finally { release?.(); }
     }
   };
 }

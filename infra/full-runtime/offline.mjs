@@ -32,6 +32,8 @@ import {seedLtmMatrix,reopenLtmMatrix,matrixReport} from './test-native-ltm-matr
 
 import {exerciseParitySession} from '../../research/buffalo-lab/c1-parity/websocket.mjs';
 const parityOnly=process.env.C1_PARITY_REPORT??null;
+const parityAccumulate=process.env.C1_PARITY_ACCUMULATE==='true';
+if(parityAccumulate&&!parityOnly)throw Error('PARITY_ACCUMULATE_REQUIRES_REPORT');
 if(parityOnly&&(process.env.FULL_LTM_LIVE_SOCKET||process.env.FULL_LTM_MATRIX_REPORT))throw Error('PARITY_EXCLUSIVE_OFFLINE_MODE');
 
 const deps=createRequire(join(process.env.FULL_TEST_TOOLS,'entry.cjs'));
@@ -167,11 +169,11 @@ const proxy=createServer(async(req,res)=>{
 });
 try{
   if(parityOnly){
-    mf=new Miniflare(fixtureOptions(6));await mf.ready;
+    mf=new Miniflare(fixtureOptions(parityAccumulate?7:6));await mf.ready;
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly);
+    await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate});
   }else{
   mf=new Miniflare(options);await mf.ready;
   const created=await doc({method:'PUT',headers:{'if-none-match':'*'},body:JSON.stringify(model)});

@@ -42,3 +42,51 @@ test('source identity and exact payload checks fail closed',async()=>{
  const w=fixture(),x=createEvidenceClient(w);w.clientRequest=async()=>({runIds:['run-B'],feedbackContent:w.feedback.content});
  await assert.rejects(x.clientRequest({type:'feedback_request',runIds:['run-A']},w.model),/EVIDENCE_FEEDBACK_CHANGED/);
 });
+
+function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
+test('overlapping requests cannot overwrite columns or establish a different first grid',async()=>{
+ const s=fixture(),original=s.clientRequest,gate=deferred(),entered=deferred();
+ let calls=0;
+ s.clientRequest=async m=>{calls++;if(calls===1){entered.resolve();await gate.promise;}return original(m);};
+ const c=createEvidenceClient(s),before=c.snapshot();
+ const first=c.clientRequest(data(['Inventory']),s.model);
+ await entered.promise;
+ try{
+  for(const m of [data(['Workers']),data(['Workers'],false),{type:'feedback_request',runIds:['run-A']},{type:'get_run_info'}]){
+   await assert.rejects(c.clientRequest(m,s.model),/EVIDENCE_REQUEST_IN_FLIGHT/);
+   assert.deepEqual(c.snapshot(),before);
+  }
+  assert.equal(calls,1);
+ }finally{gate.resolve();await first;}
+ const result=await c.clientRequest(data(['Workers']),s.model);
+ assert.deepEqual(Object.keys(result['run-A']),['time','Inventory','Workers']);
+ assert.deepEqual(c.snapshot().columns,['Inventory','Workers']);
+ assert.equal(calls,2);
+});
+test('failed in-flight request releases guard without committing columns',async()=>{
+ const s=fixture(),original=s.clientRequest,gate=deferred(),entered=deferred();
+ s.clientRequest=async()=>{entered.resolve();await gate.promise;throw Error('CLIENT_FAILED');};
+ const c=createEvidenceClient(s),before=c.snapshot();
+ const pending=c.clientRequest(data(['Inventory']),s.model);
+ const failure=assert.rejects(pending,/CLIENT_FAILED/);
+ await entered.promise;
+ try{await assert.rejects(c.clientRequest(data(['Workers']),s.model),/EVIDENCE_REQUEST_IN_FLIGHT/);}
+ finally{gate.resolve();await failure;}
+ assert.deepEqual(c.snapshot(),before);
+ s.clientRequest=original;
+ await c.clientRequest(data(['Workers'],false),s.model);
+ assert.deepEqual(c.snapshot().columns,['Workers']);
+ assert.equal(c.snapshot().grid.samples,50);
+});
+test('model or source changes during await do not commit stale evidence',async()=>{
+ for(const mutate of [s=>{s.model.variables=[];},s=>{s.run.series.inventory[0]=-1;},s=>{s.feedback.content.provenance.revision=2;}]){
+  const s=fixture(),original=s.clientRequest,gate=deferred(),entered=deferred();
+  s.clientRequest=async m=>{const answer=await original(m);entered.resolve();await gate.promise;return answer;};
+  const c=createEvidenceClient(s),before=c.snapshot();
+  const pending=c.clientRequest(data(['Inventory']),s.model);
+  const failure=assert.rejects(pending,/EVIDENCE_(MODEL|SOURCE)_CHANGED/);
+  await entered.promise;
+  mutate(s);gate.resolve();await failure;
+  assert.deepEqual(c.snapshot(),before);
+ }
+});

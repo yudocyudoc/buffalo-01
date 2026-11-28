@@ -8,6 +8,10 @@ jobs:
   ws:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        accumulate: ['false', 'true']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           export FULL_NODE="$(command -v node)" FULL_TEST_TOOLS="$RUNNER_TEMP/full-tools" FULL_PYTHON_PATH="$(dirname "$(command -v python3)")"
-          export C1_PARITY_REPORT="$RUNNER_TEMP/c1-parity-evidence.json" C1_PARITY_ACCUMULATE=true
+          export C1_PARITY_REPORT="$RUNNER_TEMP/c1-parity-evidence-${{ matrix.accumulate }}.json" C1_PARITY_ACCUMULATE="${{ matrix.accumulate }}"
           sudo --preserve-env=FULL_NODE,FULL_TEST_TOOLS,FULL_PYTHON_PATH,BUFFALO_SIMLIN_PYTHON,C1_PARITY_REPORT,C1_PARITY_ACCUMULATE unshare --net --mount --propagation private sh -ec '
             ip link set lo up
             sysctl -qw net.ipv4.ip_unprivileged_port_start=0
@@ -44,7 +48,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: c1-parity-evidence
-          path: ${{ runner.temp }}/c1-parity-evidence.json
+          name: c1-parity-evidence-${{ matrix.accumulate }}
+          path: ${{ runner.temp }}/c1-parity-evidence-${{ matrix.accumulate }}.json
           if-no-files-found: warn
           retention-days: 30

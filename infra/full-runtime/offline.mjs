@@ -30,6 +30,7 @@ import {seedNarrativeRuns, exerciseRunNarratives} from './test-run-narrative.mjs
 import {seedNativeLtm,reopenNativeLtm} from './test-native-ltm.mjs';
 import {seedLtmMatrix,reopenLtmMatrix,matrixReport} from './test-native-ltm-matrix.mjs';
 
+import {exerciseInterventionFamilies} from '../../research/buffalo-lab/c1-parity/intervention-families-run.mjs';
 import {exerciseComparisonSession} from '../../research/buffalo-lab/c1-parity/comparison-ws.mjs';
 import {exerciseParitySession} from '../../research/buffalo-lab/c1-parity/websocket.mjs';
 const parityOnly=process.env.C1_PARITY_REPORT??null;
@@ -38,6 +39,8 @@ const parityStrict=process.env.C1_PARITY_STRICT_CACHE==='true';
 const parityCompare=process.env.C1_PARITY_COMPARISON==='true';
 const parityPairFeedback=process.env.C1_PARITY_COMPARATIVE_FEEDBACK==='true';
 const parityInterventionReference=process.env.C1_PARITY_INTERVENTION_REFERENCE==='true';
+const parityFamilies=process.env.C1_PARITY_INTERVENTION_FAMILIES==='true';
+if(parityFamilies&&(!parityOnly||parityAccumulate||parityStrict||parityCompare||parityPairFeedback||parityInterventionReference||process.env.C1_PARITY_FEEDBACK_DEMAND==='true'||process.env.C1_PARITY_LTM_DEMAND==='true'))throw Error('PARITY_FAMILIES_EXCLUSIVE');
 if(parityInterventionReference&&!parityPairFeedback)throw Error('PARITY_REFERENCE_REQUIRES_PAIR_FEEDBACK');
 if(parityPairFeedback&&!parityCompare)throw Error('PARITY_PAIR_FEEDBACK_REQUIRES_COMPARE');
 if(parityCompare&&(!parityStrict||process.env.C1_PARITY_FEEDBACK_DEMAND==='true'))throw Error('PARITY_COMPARE_REQUIRES_STRICT_ONLY');
@@ -183,11 +186,12 @@ const proxy=createServer(async(req,res)=>{
 });
 try{
   if(parityOnly){
-    mf=new Miniflare(fixtureOptions(parityPairFeedback?7:parityCompare?6:parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
+    mf=new Miniflare(fixtureOptions(parityFamilies?1:parityPairFeedback?7:parityCompare?6:parityLtmDemand?6:parityDemand?7:parityStrict?9:parityAccumulate?7:6));await mf.ready;
     proxy.listen(80,'127.0.0.1');await once(proxy,'listening');
     start(true);await rest(base,key);
     const request=(path,init={})=>mf.dispatchFetch('http://localhost'+path,init);
-    if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly,{pairFeedback:parityPairFeedback,interventionReference:parityInterventionReference});
+    if(parityFamilies){engineFixture=()=>{throw Error('FAMILIES_INFERENCE_FORBIDDEN');};await exerciseInterventionFamilies(request,parityOnly);}
+    else if(parityCompare)await exerciseComparisonSession(request,key,provider=>{engineFixture=provider;},parityOnly,{pairFeedback:parityPairFeedback,interventionReference:parityInterventionReference});
     else await exerciseParitySession(request,key,provider=>{engineFixture=provider;},parityOnly,{accumulate:parityAccumulate,strictCache:parityStrict,demand:parityDemand,ltmDemand:parityLtmDemand});
   }else{
   mf=new Miniflare(options);await mf.ready;

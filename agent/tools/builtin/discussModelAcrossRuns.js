@@ -47,7 +47,7 @@ export function createDiscussModelAcrossRunsTool(sessionManager, sessionId, send
           // Do not pass planner-supplied provenance or feedback into this branch.
           const result = await callSeldonILEEngine(prompt, model, runName, {
             clientId: session.clientId, source: session.agentName, underlyingModel,
-            problemStatement: parameters?.problemStatement, ...evidence
+            ...evidence
           });
           if (cacheModelHash(sessionManager, sessionId) !== modelHash) throw Error('C1_CACHE_MODEL_CHANGED');
           loadComparisonCache(sessionManager, sessionId, session, parameters?.runIds, runName);

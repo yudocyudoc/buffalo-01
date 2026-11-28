@@ -13,16 +13,28 @@ const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Obje
 export const comparisonHash=x=>createHash('sha256').update(JSON.stringify(canonical(x))).digest('hex');
 export const comparisonEnabled=()=>strictCacheEnabled()&&process.env.C1_PARITY_COMPARISON==='true';
 const eq=(a,b)=>comparisonHash(a)===comparisonHash(b);
+const exact=(x,keys)=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
+const str=x=>typeof x==='string'&&x.trim().length>0&&x.length<=256;
+const validModel=x=>SDModelSchema.safeParse(x).success&&Array.isArray(x.variables)&&x.variables.length>0&&x.variables.every(v=>str(v.name)&&str(v.type)&&typeof v.equation==='string')&&new Set(x.variables.map(v=>v.name)).size===x.variables.length;
+const validSettings=x=>exact(x,['startTime','stopTime','dt','timeUnits','integrationMethod'])&&[x.startTime,x.stopTime,x.dt].every(Number.isFinite)&&x.stopTime>=x.startTime&&x.dt>0&&str(x.timeUnits)&&str(x.integrationMethod);
+const validExecution=x=>exact(x,['integrationMethod','dt'])&&str(x.integrationMethod)&&Number.isFinite(x.dt)&&x.dt>0;
+const validSimulator=x=>exact(x,['name','version','source','implementation_sha256'])&&x.source==='server'&&str(x.name)&&str(x.version)&&hex(x.implementation_sha256);
+export const MAX_COMPARISON_MANIFEST_BYTES=48*1024;
+
 export function comparisonManifest(manager,id,session,ids){
  const m=session.context?.c1Comparison;
  check(m&&Array.isArray(m.runs)&&m.runs.length===2,'C1_COMPARE_MANIFEST_MISSING');
+ check(exact(m,['runs','variables','detailed','behavior_sha256'])&&m.runs.every(r=>exact(r,['run_id','revision','model_sha256','run_sha256','simulator','settings','execution','model'])),'C1_COMPARE_MANIFEST_INVALID');
+ check(Buffer.byteLength(JSON.stringify(m),'utf8')<=MAX_COMPARISON_MANIFEST_BYTES,'C1_COMPARE_MANIFEST_TOO_LARGE');
  const pair=m.runs.map(r=>r.run_id);
  check(pair.every(uuid)&&new Set(pair).size===2&&Array.isArray(ids)&&eq(ids,pair),'C1_COMPARE_ORDERED_PAIR_REQUIRED');
- check(m.runs.every(r=>hex(r.model_sha256)&&hex(r.run_sha256)&&Number.isSafeInteger(r.revision)&&r.revision>0&&r.simulator?.source==='server'&&r.model&&r.settings&&r.execution),'C1_COMPARE_PROVENANCE_INVALID');
+ check(m.runs.every(r=>hex(r.model_sha256)&&hex(r.run_sha256)&&Number.isSafeInteger(r.revision)&&r.revision>0&&validSimulator(r.simulator)&&validSettings(r.settings)&&validExecution(r.execution)&&validModel(r.model)&&r.model.specs&&Object.entries(r.settings).every(([k,v])=>r.model.specs[k]===v)),'C1_COMPARE_PROVENANCE_INVALID');
  const [a,b]=m.runs;
+ // This pilot is specifically a cross-revision intervention, not replicate runs.
+ check(a.revision!==b.revision&&a.model_sha256!==b.model_sha256&&a.run_sha256!==b.run_sha256&&!eq(a.model,b.model),'C1_COMPARE_DISTINCT_REVISIONS_REQUIRED');
  check(eq(a.settings,b.settings)&&eq(a.execution,b.execution)&&eq(a.simulator,b.simulator),'C1_COMPARE_INCOMPATIBLE_RUNS');
  check(eq(SDModelSchema.parse(b.model),SDModelSchema.parse(manager.getClientModel(id))),'C1_COMPARE_CURRENT_MODEL_MISMATCH');
- check(Array.isArray(m.variables)&&m.variables.length>0&&new Set(m.variables).size===m.variables.length&&m.variables.every(v=>typeof v==='string'&&v!=='time')&&m.detailed===false&&hex(m.behavior_sha256),'C1_COMPARE_MANIFEST_INVALID');
+ check(Array.isArray(m.variables)&&m.variables.length>0&&new Set(m.variables).size===m.variables.length&&m.variables.length<=20&&m.variables.every(v=>str(v)&&v.toLowerCase()!=='time'&&m.runs.every(r=>r.model.variables.some(x=>x.name===v)))&&m.detailed===false&&hex(m.behavior_sha256),'C1_COMPARE_MANIFEST_INVALID');
  return m;
 }
 export function invalidateComparison(session){slots.delete(session);}

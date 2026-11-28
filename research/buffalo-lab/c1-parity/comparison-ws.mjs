@@ -66,6 +66,7 @@ export async function exerciseComparisonSession(request,key,useProvider,file){
     if(turn)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-'+turn));
     if(turn===3)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-3'&&m.content.includes('C1_COMPARE_ORDERED_PAIR_REQUIRED')));
     const [name,args]=actions[turn++];assert(wire.tools.some(t=>t.function.name===name));
+    assert(wire.tools.every(t=>['get_run_info','get_variable_data','discuss_model_across_runs'].includes(t.function.name)),'COMPARISON_TOOL_CEILING');
     message.tool_calls=[{type:'function',id:'comparison-'+turn,function:{name,arguments:JSON.stringify(args)}}];
    }else{
     assert.equal(nested,1);assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='comparison-4'&&m.content.includes(marker)));

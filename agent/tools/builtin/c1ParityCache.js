@@ -8,6 +8,7 @@ const require=(ok,code)=>{if(!ok)throw Error(code);};
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const hex=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 export const strictCacheEnabled=()=>process.env.C1_PARITY_STRICT_CACHE==='true';
+export const demandEnabled=()=>strictCacheEnabled()&&process.env.C1_PARITY_FEEDBACK_DEMAND==='true';
 function state(session){let s=states.get(session);if(!s){s={busy:false};states.set(session,s);}return s;}
 export function cacheLease(session){
  const s=state(session);require(!s.busy,'C1_CACHE_BUSY');s.busy=true;return ()=>{s.busy=false;};
@@ -43,10 +44,11 @@ export function recordCache(manager,id,session,kind,runId,modelHash,filename,dat
  require(hash(saved)===hash(data),'C1_CACHE_WRITE_MISMATCH');
  state(session)[kind]={runId,modelHash,filename,payloadHash:hash(data)};
 }
-export function loadBoundCache(manager,id,session,ids){
+export function loadBoundCache(manager,id,session,ids,{allowMissingFeedback=false}={}){
  const runId=explicitRun(ids),s=state(session),modelHash=cacheModelHash(manager,id);
- // In 3b, no absent-cache fallback: 3c will recover evidence with explicit identity.
- require(s.feedback&&s.behavior,'C1_CACHE_EVIDENCE_MISSING');
+ // Only a genuinely absent receipt may trigger recovery; an invalid or
+ // mismatched registered receipt is never treated as a cache miss.
+ require(s.behavior&&(s.feedback||allowMissingFeedback),'C1_CACHE_EVIDENCE_MISSING');
  const get=kind=>{
   const r=s[kind];
   require(r.runId===runId,'C1_CACHE_'+kind.toUpperCase()+'_RUN_MISMATCH');
@@ -55,7 +57,7 @@ export function loadBoundCache(manager,id,session,ids){
   require(hash(data)===r.payloadHash,'C1_CACHE_PAYLOAD_CHANGED');
   return data;
  };
- const feedbackContent=validFeedback(get('feedback'),runId);
+ const feedbackContent=s.feedback?validFeedback(get('feedback'),runId):undefined;
  const behaviorContent=JSON.stringify(validBehavior(get('behavior'),runId));
  return {feedbackContent,behaviorContent};
 }

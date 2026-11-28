@@ -1,4 +1,5 @@
-import { strictCacheEnabled, cacheLease, loadBoundCache, cacheModelHash } from './c1ParityCache.js';
+import { strictCacheEnabled, demandEnabled, cacheLease, loadBoundCache, cacheModelHash } from './c1ParityCache.js';
+import { recoverBoundFeedback } from './c1ParityDemand.js';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -44,7 +45,7 @@ export function createDiscussModelWithSeldonTool(sessionManager, sessionId, send
         if (strict) {
           release = cacheLease(session);
           boundModel = cacheModelHash(sessionManager, sessionId);
-          bound = loadBoundCache(sessionManager, sessionId, session, parameters?.runIds);
+          bound = loadBoundCache(sessionManager, sessionId, session, parameters?.runIds, { allowMissingFeedback: demandEnabled() });
         }
         const feedbackContent = strict ? bound.feedbackContent : (existsSync(feedbackPath)
           ? JSON.parse(readFileSync(feedbackPath, 'utf-8')).feedbackContent
@@ -58,6 +59,14 @@ export function createDiscussModelWithSeldonTool(sessionManager, sessionId, send
 
         if (!result.success) {
           return createErrorResponse(result.error);
+        }
+
+        if (strict && demandEnabled() && result.output.feedbackInformationRequired && !feedbackContent) {
+          const recovered = await recoverBoundFeedback(sessionManager, sessionId, session, parameters?.runIds, boundModel, sendToClient);
+          const retry = await callSeldonEngine(prompt, model, recovered.feedbackContent, { ...baseParameters, behaviorContent: recovered.behaviorContent });
+          if (cacheModelHash(sessionManager, sessionId) !== boundModel) throw Error('C1_CACHE_MODEL_CHANGED');
+          if (!retry.success) return createErrorResponse(retry.error);
+          return createSuccessResponse(retry.output);
         }
 
         // Check if feedback information is required but not provided

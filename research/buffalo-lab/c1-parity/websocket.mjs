@@ -18,8 +18,8 @@ const sha=x=>createHash('sha256').update(x).digest('hex');
 const names=['Inventory','Workers','Expected Demand'];
 const matches=(wire,text)=>wire.messages.some(m=>m.role==='user'&&m.content.includes(text));
 
-export async function exerciseParitySession(request,key,useProvider,file,{accumulate=false,strictCache=false}={}){
- const report={status:'PENDING',provider:'scripted-local-binding',live_provider_calls:0,planner_selection:'scripted',semantic_accuracy:'not_measured',accumulate,strictCache,calls:[],client_requests:[],tool_results:[],receipts:[]};
+export async function exerciseParitySession(request,key,useProvider,file,{accumulate=false,strictCache=false,demand=false}={}){
+ const report={status:'PENDING',provider:'scripted-local-binding',live_provider_calls:0,planner_selection:'scripted',semantic_accuracy:'not_measured',accumulate,strictCache,demand,calls:[],client_requests:[],tool_results:[],receipts:[]};
  const save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');
  save();
  try{
@@ -46,14 +46,15 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     ['get_variable_data',{runIds:[id],variableNames:[names[0]],detailed:true}],
     ['get_variable_data',{runIds:[id],variableNames:names.slice(1),detailed:true}]
    ]:[['get_variable_data',{runIds:[id],variableNames:names,detailed:true}]]),
-   ['get_feedback_information',{runIds:[id]}],
-   ...(strictCache?[
+   ...(demand?[]:[['get_feedback_information',{runIds:[id]}]]),
+   ...(strictCache&&!demand?[
     ['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[randomUUID()]}}],
     ['generate_ltm_narrative',{difficulty:'normal',parameters:{runIds:[]}}]
    ]:[]),
    ['discuss_model_with_seldon',{prompt:question,difficulty:'normal',parameters:{runIds:[id]}}]
   ];
-  const expectedCalls=actions.length+2;
+  const expectedNested=demand?2:1;
+  const expectedCalls=actions.length+1+expectedNested;
   let turn=0,nested=0,behavior;
   if(evidence){
    const before=evidence.snapshot();
@@ -68,30 +69,32 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     assert.equal(model,GEMMA);assert(report.calls.length<=expectedCalls);
     let message={role:'assistant'};
     if(wire.response_format){
-     assert.equal(turn,actions.length);assert.equal(++nested,1);
+     assert.equal(turn,actions.length);assert(++nested<=expectedNested);
      assert.deepEqual(wire.response_format,{type:'json_schema',json_schema:schema});
      assert(behavior,'missing selected behavior');
      assert(matches(wire,JSON.stringify(behavior)),'EXACT_BEHAVIOR_MISSING');
-     assert(matches(wire,JSON.stringify(selected.feedback.content,null,2)),'EXACT_FEEDBACK_MISSING');
+     const hasFeedback=matches(wire,JSON.stringify(selected.feedback.content,null,2));
+     assert.equal(hasFeedback,!demand||nested===2,'EXACT_FEEDBACK_STATE');
+     if(demand&&nested===1)assert(!wire.messages.some(m=>m.role==='user'&&m.content.includes('"feedbackLoops"')),'UNEXPECTED_FEEDBACK');
      assert(matches(wire,question),'QUESTION_MISSING');
      const sys=wire.messages.find(m=>m.role==='system').content;
      assert(sys.includes(SeldonBrain.DEFAULT_SYSTEM_PROMPT));assert(sys.includes('Be brief in your response.'));
      const originalModel=JSON.parse(wire.messages.find(m=>m.role==='assistant').content);
      assert.deepEqual(originalModel.variables.map(v=>[v.name,v.equation]),modelVariables(selected.model));
-     message.content=JSON.stringify({response:marker,feedbackInformationRequired:false});
+     message.content=JSON.stringify({response:demand&&nested===1?'C1_DEMAND_REQUEST_FEEDBACK':marker,feedbackInformationRequired:demand&&nested===1});
     }else if(turn<actions.length){
      if(turn>0)assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn),'PREVIOUS_RESULT_MISSING');
-     if(strictCache&&turn===actions.length-2){
+     if(strictCache&&!demand&&turn===actions.length-2){
       assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn&&m.content.includes('C1_CACHE_FEEDBACK_RUN_MISMATCH')),'WRONG_RUN_NOT_REJECTED');
      }
-     if(strictCache&&turn===actions.length-1){
+     if(strictCache&&!demand&&turn===actions.length-1){
       assert(wire.messages.some(m=>m.role==='tool'&&m.tool_call_id==='parity-'+turn&&m.content.includes('C1_CACHE_EXPLICIT_SINGLE_RUN_REQUIRED')),'IMPLICIT_RUN_NOT_REJECTED');
      }
      const [name,args]=actions[turn++];
      assert(wire.tools.some(t=>t.function.name===name),'MISSING_TOOL '+name);
      message.tool_calls=[{type:'function',id:'parity-'+turn,function:{name,arguments:JSON.stringify(args)}}];
     }else{
-     assert.equal(nested,1);
+     assert.equal(nested,expectedNested);
      const result=wire.messages.find(m=>m.role==='tool'&&m.tool_call_id==='parity-'+actions.length);
      assert(result?.content.includes(marker),'ACTUAL_NESTED_RESULT_MISSING');
      message.content=final;
@@ -133,28 +136,29 @@ export async function exerciseParitySession(request,key,useProvider,file,{accumu
     assert.deepEqual(current,selected.model);
     const completed=tools.filter(t=>t.event==='tool_call_completed');
     assert.deepEqual(completed.map(t=>t.name),actions.map(a=>a[0]));
-    assert.deepEqual(completed.map(t=>!!t.isError),actions.map((_,i)=>strictCache&&(i===actions.length-3||i===actions.length-2)));
+    assert.deepEqual(completed.map(t=>!!t.isError),actions.map((_,i)=>strictCache&&!demand&&(i===actions.length-3||i===actions.length-2)));
    }
   }});
   report.session=result;save();
   assert(result.output.includes(final));assert(!result.output.includes(marker));
-  assert.equal(report.calls.length,expectedCalls);assert.equal(nested,1);assert.equal(turn,actions.length);
+  assert.equal(report.calls.length,expectedCalls);assert.equal(nested,expectedNested);assert.equal(turn,actions.length);
   assert.deepEqual(report.client_requests.map(x=>x.request.type),['get_run_info','get_variable_data',...(accumulate?['get_variable_data']:[]),'feedback_request']);
   for(let n=1;n<=expectedCalls;n++){
    const r=await request('/project/inference/'+n);assert.equal(r.status,200);
    const receipt=await r.json();report.receipts.push(receipt);save();assert.equal(receipt.status,'OK');
-   if(n===actions.length+1){
+   if(n>actions.length&&n<=actions.length+expectedNested){
     assert.equal(receipt.channel,'original-engine');assert.equal(receipt.schema_sha256,sha(JSON.stringify(schema)));
     assert.equal(receipt.request_sha256,sha(JSON.stringify(report.calls[n-1].wire)));
     assert(receipt.invocation_id);assert(receipt.max_completion_tokens<=8192);
    }else assert.notEqual(receipt.channel,'original-engine');
   }
+  assert.equal(new Set(report.receipts.filter(r=>r.channel==='original-engine').map(r=>r.invocation_id)).size,expectedNested);
   assert.equal((await request('/project/inference/'+(expectedCalls+1))).status,404);
   const latest=await request('/project/model');assert.equal(latest.headers.get('x-buffalo-model-sha256'),identity.model_sha256);
   const reopened=await openNativeLtmRun(request,id);
   assert.deepEqual(reopened.run,selected.run);assert.deepEqual(reopened.feedback,selected.feedback);
   if(evidence)report.evidence_client=evidence.snapshot();
-  report.status='PASS';save();console.log('C1_PARITY_WS_PASS '+JSON.stringify({accumulate,strictCache,calls:expectedCalls,planner:actions.length+1,nested:1,live_provider_calls:0,run_id:id,samples:961,behavior_samples:200}));
+  report.status='PASS';save();console.log('C1_PARITY_WS_PASS '+JSON.stringify({accumulate,strictCache,demand,calls:expectedCalls,planner:actions.length+1,nested:expectedNested,live_provider_calls:0,run_id:id,samples:961,behavior_samples:200}));
  }catch(e){report.status='FAIL';report.error=String(e.stack??e);save();throw e;}
 }
 function modelVariables(model){return model.variables.map(v=>[v.name,v.equation]);}

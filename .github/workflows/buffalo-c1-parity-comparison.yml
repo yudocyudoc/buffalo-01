@@ -50,7 +50,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test infra/full-runtime/gateway.test.mjs research/buffalo-lab/c1-parity/parity.test.mjs research/buffalo-lab/c1-parity/evidence-client.test.mjs research/buffalo-lab/c1-parity/cache-bound.test.mjs research/buffalo-lab/c1-parity/cache-demand.test.mjs
+      - run: node --import ./research/buffalo-lab/c1/offline-guard.mjs --test infra/full-runtime/gateway.test.mjs research/buffalo-lab/c1-parity/parity.test.mjs research/buffalo-lab/c1-parity/evidence-client.test.mjs research/buffalo-lab/c1-parity/cache-bound.test.mjs research/buffalo-lab/c1-parity/cache-demand.test.mjs research/buffalo-lab/c1-parity/comparison-bound.test.mjs
       - run: npm install --prefix "$RUNNER_TEMP/full-tools" --no-audit --no-fund miniflare@5.20261119.0-beta esbuild@0.28.2
       - uses: actions/setup-python@v5
         with:
